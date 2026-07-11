@@ -42,7 +42,7 @@
   - `uv run python -m mypy app config`
   - `uv run python -c "from streamlit.testing.v1 import AppTest; ..."`
 - 验证结果：`14 passed`；Ruff 全部通过；mypy 检查 22 个源文件无问题；Streamlit 无异常并显示“批量导入/人工复核”
-- 最新提交：本次功能提交写入后补记
+- 最新提交：`71e8001`
 - 已知问题：GitHub HTTPS 推送被本机 Schannel 证书错误 `0x80096004` 阻断
 - 下一位操作：从本分支提交继续 P2；证书恢复后推送 `phase-0-bootstrap` 和 `phase-1-manual-loop`
 
