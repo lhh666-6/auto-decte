@@ -64,7 +64,7 @@
 - 未完成：GitHub 推送与 Pull Request
 - 验证命令：`uv run python -m pytest -q`；`uv run python -m ruff check .`；`uv run python -m mypy app config`；Streamlit AppTest
 - 验证结果：`18 passed`；Ruff 全部通过；mypy 检查 28 个源文件无问题；四个 UI 标签页加载无异常
-- 最新提交：本次功能提交写入后补记
+- 最新提交：`943a174`
 - 已知问题：GitHub HTTPS 推送仍受 Schannel 证书错误阻断
 - 下一位操作：从本分支继续 P4 规则与审计；P3 留给开发者 B
 
