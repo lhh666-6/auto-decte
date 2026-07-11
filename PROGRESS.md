@@ -18,7 +18,7 @@
 - 验证命令：`python -m pytest -v`；`python -m ruff check .`
 - 验证结果：`1 passed`；Ruff `All checks passed!`；mypy `Success: no issues found in 5 source files`
 - 最新提交：`d8d2b6c`
-- 已知问题：GitHub `origin` 尚未配置，本机也未验证仓库认证
+- 已知问题：`origin` 已配置；HTTPS 返回错误代理证书，SSH 无可用公钥，GitHub App 也无法访问目标仓库
 - 下一位操作：P0 合并后从最新 `main` 创建 `phase-1-manual-loop`
 
 ## P1 人工闭环
@@ -43,7 +43,7 @@
   - `uv run python -c "from streamlit.testing.v1 import AppTest; ..."`
 - 验证结果：`14 passed`；Ruff 全部通过；mypy 检查 22 个源文件无问题；Streamlit 无异常并显示“批量导入/人工复核”
 - 最新提交：`71e8001`
-- 已知问题：GitHub HTTPS 推送被本机 Schannel 证书错误 `0x80096004` 阻断
+- 已知问题：GitHub HTTPS 返回非 GitHub 证书，SSH 无可用公钥，GitHub App 对目标仓库返回 Not Found
 - 下一位操作：从本分支提交继续 P2；证书恢复后推送 `phase-0-bootstrap` 和 `phase-1-manual-loop`
 
 ## P2 查询与导出
@@ -65,7 +65,7 @@
 - 验证命令：`uv run python -m pytest -q`；`uv run python -m ruff check .`；`uv run python -m mypy app config`；Streamlit AppTest
 - 验证结果：`18 passed`；Ruff 全部通过；mypy 检查 28 个源文件无问题；四个 UI 标签页加载无异常
 - 最新提交：`943a174`
-- 已知问题：GitHub HTTPS 推送仍受 Schannel 证书错误阻断
+- 已知问题：GitHub HTTPS 返回非 GitHub 证书，SSH 无可用公钥，GitHub App 对目标仓库返回 Not Found
 - 下一位操作：从本分支继续 P4 规则与审计；P3 留给开发者 B
 
 ## P3 图像与识别
@@ -91,7 +91,7 @@
 - 验证命令：`uv run python -m pytest -q`；`uv run python -m ruff check .`；`uv run python -m mypy app config`；Streamlit AppTest
 - 验证结果：`29 passed`；Ruff 全部通过；mypy 检查 30 个源文件无问题；五个 UI 标签页加载无异常
 - 最新提交：`f6da6ec`
-- 已知问题：P3 尚未由开发者 B 实现；GitHub HTTPS 推送受 Schannel 证书错误阻断
+- 已知问题：P3 尚未由开发者 B 实现；三种安全 GitHub 通道均无法访问目标仓库
 - 下一位操作：开发者 B 完成 P3 后，扩展审计完整性测试覆盖人工重分类和识别 Attempt
 
 ## P5 AI 与向量
