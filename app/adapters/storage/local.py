@@ -1,0 +1,38 @@
+"""Immutable content-addressed local evidence storage."""
+
+import hashlib
+import shutil
+from dataclasses import dataclass
+from pathlib import Path
+from uuid import uuid4
+
+
+@dataclass(frozen=True, slots=True)
+class StoredFile:
+    file_id: str
+    uri: str
+    sha256: str
+
+
+class LocalEvidenceStorage:
+    def __init__(self, root: Path) -> None:
+        self._root = root
+
+    def store_path(self, source: Path, category: str) -> StoredFile:
+        digest = self.hash_path(source)
+        file_id = f"FILE-{uuid4().hex}"
+        suffix = source.suffix.lower()
+        relative = Path(category) / digest[:2] / f"{file_id}{suffix}"
+        destination = self._root / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        with source.open("rb") as reader, destination.open("xb") as writer:
+            shutil.copyfileobj(reader, writer)
+        return StoredFile(file_id=file_id, uri=relative.as_posix(), sha256=digest)
+
+    @staticmethod
+    def hash_path(source: Path) -> str:
+        digest = hashlib.sha256()
+        with source.open("rb") as stream:
+            for block in iter(lambda: stream.read(1024 * 1024), b""):
+                digest.update(block)
+        return digest.hexdigest()
