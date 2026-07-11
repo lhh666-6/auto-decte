@@ -48,8 +48,25 @@
 
 ## P2 查询与导出
 
-- 状态：未开始
-- 负责人：开发者 A
+- 状态：已完成（本地，待 GitHub 推送）
+- 负责人：开发者 A（仓库所有者）
+- 分支：`phase-2-query-export`
+- 开始时间：2026-07-12
+- 完成时间：2026-07-12
+- 已完成：
+  - 基于 SQLite JSON 字段的表单/员工/工单组合精确筛选
+  - 表单版本、证据和审计事件完整追溯
+  - 正式数据、异常与复核、汇总、导出说明四工作表 XLSX
+  - ExportBatch、文件 SHA-256、表单/版本反查标识
+  - 已导出记录更正后自动标记 `REEXPORT_REQUIRED`
+  - 唯一文件名导出，不覆盖旧 XLSX
+  - Streamlit 查询追溯与导出页面
+- 未完成：GitHub 推送与 Pull Request
+- 验证命令：`uv run python -m pytest -q`；`uv run python -m ruff check .`；`uv run python -m mypy app config`；Streamlit AppTest
+- 验证结果：`18 passed`；Ruff 全部通过；mypy 检查 28 个源文件无问题；四个 UI 标签页加载无异常
+- 最新提交：本次功能提交写入后补记
+- 已知问题：GitHub HTTPS 推送仍受 Schannel 证书错误阻断
+- 下一位操作：从本分支继续 P4 规则与审计；P3 留给开发者 B
 
 ## P3 图像与识别
 

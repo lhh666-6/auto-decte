@@ -3,7 +3,14 @@
 from pathlib import Path
 from typing import BinaryIO, Protocol
 
-from app.domain.models import AuditEvent, EvidenceFile, Form, RecordVersion, ReviewStatus
+from app.domain.models import (
+    AuditEvent,
+    EvidenceFile,
+    ExportStatus,
+    Form,
+    RecordVersion,
+    ReviewStatus,
+)
 
 
 class FormRepository(Protocol):
@@ -12,6 +19,7 @@ class FormRepository(Protocol):
     def add_record_version(self, version: RecordVersion) -> None: ...
     def list_record_versions(self, form_id: str) -> list[RecordVersion]: ...
     def set_review_status(self, form_id: str, status: ReviewStatus) -> None: ...
+    def set_export_status(self, form_id: str, status: ExportStatus) -> None: ...
 
 
 class EvidenceRepository(Protocol):

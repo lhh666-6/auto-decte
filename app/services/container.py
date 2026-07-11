@@ -6,17 +6,23 @@ from sqlalchemy import create_engine
 
 from app.adapters.database.models import Base
 from app.adapters.database.repositories import SqlAlchemyFormRepository
+from app.adapters.export.xlsx import XlsxExporter
 from app.adapters.storage.local import LocalEvidenceStorage
+from app.application.export_forms import ExportForms
 from app.application.import_forms import ImportForms
+from app.application.query_forms import QueryForms
 from app.application.review_forms import ReviewForms
 from config.settings import Settings
 
 
 @dataclass(frozen=True, slots=True)
 class Services:
+    settings: Settings
     repository: SqlAlchemyFormRepository
     imports: ImportForms
     reviews: ReviewForms
+    queries: QueryForms
+    exports: ExportForms
 
 
 def build_services(settings: Settings) -> Services:
@@ -25,8 +31,12 @@ def build_services(settings: Settings) -> Services:
     Base.metadata.create_all(engine)
     repository = SqlAlchemyFormRepository(engine)
     storage = LocalEvidenceStorage(settings.evidence_root)
+    queries = QueryForms(repository)
     return Services(
+        settings=settings,
         repository=repository,
         imports=ImportForms(repository, repository, repository, storage),
         reviews=ReviewForms(repository, repository),
+        queries=queries,
+        exports=ExportForms(repository, XlsxExporter(), queries),
     )

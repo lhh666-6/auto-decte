@@ -64,3 +64,17 @@ class AuditEventRow(Base):
     after: Mapped[dict[str, Any] | None] = mapped_column(JSON)
     reason: Mapped[str | None] = mapped_column(String)
     evidence_ids: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+
+
+class ExportBatchRow(Base):
+    __tablename__ = "export_batches"
+
+    export_batch_id: Mapped[str] = mapped_column(String, primary_key=True)
+    export_type: Mapped[str] = mapped_column(String, nullable=False)
+    filters: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    included_records: Mapped[list[list[Any]]] = mapped_column(JSON, nullable=False)
+    file_path: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+    file_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    exported_by: Mapped[str] = mapped_column(String, nullable=False)
+    exported_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    supersedes_batch_id: Mapped[str | None] = mapped_column(String)

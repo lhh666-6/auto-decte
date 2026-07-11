@@ -1,13 +1,20 @@
 """SQLAlchemy repository implementations."""
 
-from sqlalchemy import Engine, select
+from sqlalchemy import Engine, func, select
 from sqlalchemy.orm import Session
 
-from app.adapters.database.models import AuditEventRow, EvidenceFileRow, FormRow, RecordVersionRow
+from app.adapters.database.models import (
+    AuditEventRow,
+    EvidenceFileRow,
+    ExportBatchRow,
+    FormRow,
+    RecordVersionRow,
+)
 from app.domain.models import (
     AuditEvent,
     EvidenceFile,
     EvidenceType,
+    ExportBatch,
     ExportStatus,
     Form,
     RecordStatus,
@@ -103,6 +110,13 @@ class SqlAlchemyFormRepository:
                 raise KeyError(f"Unknown form: {form_id}")
             form.review_status = status.value
 
+    def set_export_status(self, form_id: str, status: ExportStatus) -> None:
+        with Session(self._engine) as session, session.begin():
+            form = session.get(FormRow, form_id)
+            if form is None:
+                raise KeyError(f"Unknown form: {form_id}")
+            form.export_status = status.value
+
     def add_evidence(self, evidence: EvidenceFile) -> None:
         with Session(self._engine) as session, session.begin():
             session.add(
@@ -173,3 +187,122 @@ class SqlAlchemyFormRepository:
                 )
                 for row in rows
             ]
+
+    def list_evidence(self, form_id: str) -> list[EvidenceFile]:
+        statement = (
+            select(EvidenceFileRow)
+            .where(EvidenceFileRow.form_id == form_id)
+            .order_by(EvidenceFileRow.created_at, EvidenceFileRow.file_id)
+        )
+        with Session(self._engine) as session:
+            rows = session.scalars(statement).all()
+            return [
+                EvidenceFile(
+                    file_id=row.file_id,
+                    form_id=row.form_id,
+                    related_field_id=row.related_field_id,
+                    type=EvidenceType(row.type),
+                    uri=row.uri,
+                    sha256=row.sha256,
+                    immutable=row.immutable,
+                    created_at=row.created_at,
+                )
+                for row in rows
+            ]
+
+    def search_current(
+        self,
+        *,
+        form_id: str | None = None,
+        employee_id: str | None = None,
+        work_order_id: str | None = None,
+        review_status: ReviewStatus | None = None,
+        export_status: ExportStatus | None = None,
+    ) -> list[tuple[Form, RecordVersion]]:
+        statement = select(FormRow, RecordVersionRow).join(
+            RecordVersionRow,
+            (RecordVersionRow.form_id == FormRow.form_id)
+            & (RecordVersionRow.version == FormRow.current_record_version),
+        )
+        if form_id is not None:
+            statement = statement.where(FormRow.form_id == form_id)
+        if employee_id is not None:
+            statement = statement.where(
+                func.json_extract(RecordVersionRow.values, "$.employee_id") == employee_id
+            )
+        if work_order_id is not None:
+            statement = statement.where(
+                func.json_extract(RecordVersionRow.values, "$.work_order_id") == work_order_id
+            )
+        if review_status is not None:
+            statement = statement.where(FormRow.review_status == review_status.value)
+        if export_status is not None:
+            statement = statement.where(FormRow.export_status == export_status.value)
+        statement = statement.order_by(FormRow.form_id)
+        with Session(self._engine) as session:
+            rows = session.execute(statement).all()
+            return [(self._to_form(form), self._to_record(record)) for form, record in rows]
+
+    def add_export_batch(self, batch: ExportBatch) -> None:
+        with Session(self._engine) as session, session.begin():
+            session.add(
+                ExportBatchRow(
+                    export_batch_id=batch.export_batch_id,
+                    export_type=batch.export_type,
+                    filters=batch.filters,
+                    included_records=[list(item) for item in batch.included_records],
+                    file_path=batch.file_path,
+                    file_sha256=batch.file_sha256,
+                    exported_by=batch.exported_by,
+                    exported_at=batch.exported_at,
+                    supersedes_batch_id=batch.supersedes_batch_id,
+                )
+            )
+
+    def list_export_batches(self) -> list[ExportBatch]:
+        statement = select(ExportBatchRow).order_by(ExportBatchRow.exported_at)
+        with Session(self._engine) as session:
+            rows = session.scalars(statement).all()
+            return [
+                ExportBatch(
+                    export_batch_id=row.export_batch_id,
+                    export_type=row.export_type,
+                    filters=row.filters,
+                    included_records=tuple(
+                        (str(form_id), int(version)) for form_id, version in row.included_records
+                    ),
+                    file_path=row.file_path,
+                    file_sha256=row.file_sha256,
+                    exported_by=row.exported_by,
+                    exported_at=row.exported_at,
+                    supersedes_batch_id=row.supersedes_batch_id,
+                )
+                for row in rows
+            ]
+
+    @staticmethod
+    def _to_form(row: FormRow) -> Form:
+        return Form(
+            form_id=row.form_id,
+            template_id=row.template_id,
+            template_version=row.template_version,
+            coordinate_version=row.coordinate_version,
+            review_status=ReviewStatus(row.review_status),
+            export_status=ExportStatus(row.export_status),
+            current_record_version=row.current_record_version,
+            created_at=row.created_at,
+        )
+
+    @staticmethod
+    def _to_record(row: RecordVersionRow) -> RecordVersion:
+        return RecordVersion(
+            record_id=row.record_id,
+            form_id=row.form_id,
+            version=row.version,
+            previous_version=row.previous_version,
+            status=RecordStatus(row.status),
+            values=row.values,
+            change_reason=row.change_reason,
+            confirmed_by=row.confirmed_by,
+            created_at=row.created_at,
+        )

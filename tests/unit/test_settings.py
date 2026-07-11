@@ -8,4 +8,5 @@ def test_settings_keep_runtime_data_below_configured_root(tmp_path: Path) -> Non
 
     assert settings.database_path == tmp_path / "database" / "demo.db"
     assert settings.evidence_root == tmp_path / "evidence"
+    assert settings.exports_root == tmp_path / "exports"
     assert settings.ai_enabled is False

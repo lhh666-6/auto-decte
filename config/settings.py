@@ -24,3 +24,7 @@ class Settings(BaseSettings):
     @property
     def evidence_root(self) -> Path:
         return self.data_root / "evidence"
+
+    @property
+    def exports_root(self) -> Path:
+        return self.data_root / "exports"

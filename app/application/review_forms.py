@@ -5,6 +5,7 @@ from uuid import uuid4
 from app.application.ports import AuditRepository, FormRepository
 from app.domain.models import (
     AuditEvent,
+    ExportStatus,
     RecordStatus,
     RecordVersion,
     ReviewStatus,
@@ -52,6 +53,8 @@ class ReviewForms:
         )
         self._forms.add_record_version(record)
         self._forms.set_review_status(form_id, ReviewStatus.CONFIRMED)
+        if form.export_status is ExportStatus.EXPORTED:
+            self._forms.set_export_status(form_id, ExportStatus.REEXPORT_REQUIRED)
         self._audits.add_audit_event(
             AuditEvent(
                 event_id=f"EVENT-{uuid4().hex}",
