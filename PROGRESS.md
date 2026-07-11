@@ -4,21 +4,20 @@
 
 ## P0 项目初始化
 
-- 状态：进行中
+- 状态：已完成
 - 负责人：开发者 A（仓库所有者）
 - 分支：`phase-0-bootstrap`
 - 开始时间：2026-07-12
-- 完成时间：未完成
+- 完成时间：2026-07-12
 - 已完成：
   - 建立 Python 3.11 项目配置和开发依赖
   - 建立环境配置、Streamlit 入口和测试框架
   - 建立 Git 忽略规则和协作说明
 - 未完成：
-  - 运行全量 P0 验证
   - 写入最终提交哈希并推送 GitHub
 - 验证命令：`python -m pytest -v`；`python -m ruff check .`
-- 验证结果：待执行
-- 最新提交：尚未提交
+- 验证结果：`1 passed`；Ruff `All checks passed!`；mypy `Success: no issues found in 5 source files`
+- 最新提交：`d8d2b6c`
 - 已知问题：GitHub `origin` 尚未配置，本机也未验证仓库认证
 - 下一位操作：P0 合并后从最新 `main` 创建 `phase-1-manual-loop`
 
