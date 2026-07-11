@@ -90,7 +90,7 @@
 - 未完成：开发者 B 交叉审查；P3 接入后补充分类型/识别审计事件
 - 验证命令：`uv run python -m pytest -q`；`uv run python -m ruff check .`；`uv run python -m mypy app config`；Streamlit AppTest
 - 验证结果：`29 passed`；Ruff 全部通过；mypy 检查 30 个源文件无问题；五个 UI 标签页加载无异常
-- 最新提交：本次功能提交写入后补记
+- 最新提交：`f6da6ec`
 - 已知问题：P3 尚未由开发者 B 实现；GitHub HTTPS 推送受 Schannel 证书错误阻断
 - 下一位操作：开发者 B 完成 P3 后，扩展审计完整性测试覆盖人工重分类和识别 Attempt
 
