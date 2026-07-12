@@ -1,0 +1,19 @@
+{
+  "name": "form-detection-frontend",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "packages/*",
+    "features/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "build:api-client": "npm run build -w packages/api-client",
+    "build:shell-ports": "npm run build -w packages/shell-ports",
+    "typecheck": "tsc --noEmit --project tsconfig.json",
+    "test": "jest"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0"
+  }
+}

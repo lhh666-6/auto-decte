@@ -1,0 +1,23 @@
+{
+  "name": "@form-detection/shell-ports",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index_ds.js",
+  "types": "./dist/index_ds.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index_ds.js",
+      "types": "./dist/index_ds.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "test": "tsc --noEmit --strict src/ports_ds.test.ts"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "typescript": "^5.4.0"
+  }
+}

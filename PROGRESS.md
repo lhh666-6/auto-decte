@@ -160,6 +160,45 @@
 - 最新提交：`6e53917`
 - 已知问题：缺少源需求第 15 节列出的真实样张、金标准、主数据和企业模板
 - 下一位操作：提供验收输入后补充受控 golden 数据集与真实指标，不得用合成测试替代
+
+## P7 模块化架构实施
+
+- 状态：已完成
+- 负责人：Deepseek AI（当前会话）
+- 分支：`modular-architecture`
+- 开始时间：2026-07-12
+- 完成时间：2026-07-12
+- 已完成：
+  - 所有文件加 `_ds` 后缀命名统一
+  - 建立 12 个模块目录和 Facade 入口（forms, evidence, recognition, review, rules,
+    search, reporting, audit, tasks, identity_access, master_data, templates）
+  - SQLite 连接工厂（WAL/外键/busy_timeout）和 UnitOfWork 事务边界
+  - 身份角色权限：ADMIN/OPERATOR/REVIEWER/FINANCE/AUDITOR + 权限矩阵
+  - ReviewLease 审核锁（获取/续租/过期/强制释放/审计事件）
+  - Task 状态机（PENDING→RUNNING→SUCCEEDED/FAILED）+ 幂等键 + 重启恢复
+  - FastAPI 骨架（/health/live, /health/ready, /api/v1/me）
+  - API 路由：审核锁、确认（带 expected_version）、任务（SSE 进度推送）
+  - Problem Details 错误格式化、request_id 全链路追踪
+  - Alembic 迁移基线（11 表的完整迁移脚本）
+  - BackupService（SQLite Online Backup + manifest）+ IntegrityChecker
+  - 结构化日志（JsonLogFormatter）+ 错误追踪（LocalErrorTracker）
+  - 前端契约骨架：Shell Ports（File/Camera/Scanner/Audio/Notification）、
+    API Client Problem Details、Feature 模块 README
+  - 架构契约测试（domain 零框架依赖、_ds 后缀合规、模块完整性）
+  - 运维文档（migration.md, backup-recovery.md）
+- 未完成：
+  - 企业 SSO（替代 LocalIdentityProvider）
+  - 生产级 Worker（替代 InProcessTaskRunner）
+  - PostgreSQL/NAS/S3/Qdrant Adapter（替代 SQLite/本地文件）
+  - React/Tauri 完整 UI（替代 Streamlit）
+- 验证命令：
+  - `uv run python -m pytest -q`
+  - `uv run python -m ruff check .`
+  - `uv run python -m mypy app config`
+- 验证结果：`94 passed`；Ruff 全部通过；mypy 检查 107 个源文件无问题；Streamlit 七个 UI 标签页加载无异常
+- 最新提交：`4c62e75`
+- 已知问题：企业真实样张和现场指标仍需独立验收
+- 下一位操作：提供验收输入后在真实环境下运行准确率脚本和性能基线
 ## Modular industrial architecture refactor (local branch only)
 
 - Status: tasks 1–7 complete; task 8 (migrations, backup and integrity) is next.
