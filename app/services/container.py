@@ -2,6 +2,8 @@
 
 from dataclasses import dataclass
 
+from sqlalchemy import Engine
+
 from app.adapters.ai.disabled import DisabledAIReview
 from app.adapters.database.models import Base
 from app.adapters.database.repositories import SqlAlchemyFormRepository
@@ -16,12 +18,19 @@ from app.application.query_forms import QueryForms
 from app.application.recognize_forms import RecognizeForms
 from app.application.review_forms import ReviewForms
 from app.infrastructure.database.sqlite import create_sqlite_engine
+from app.infrastructure.database.uow import SqlAlchemyUnitOfWork
+from app.infrastructure.tasks.sqlite_store import SqliteTaskStore
+from app.modules.review.facade import ReviewFacade
+from app.modules.review.lease_service import ReviewLeaseService
+from app.modules.review.repository import SqlAlchemyReviewLeaseRepository
+from app.modules.tasks.service import TaskService
 from config.settings import Settings
 
 
 @dataclass(frozen=True, slots=True)
 class Services:
     settings: Settings
+    engine: Engine
     repository: SqlAlchemyFormRepository
     imports: ImportForms
     reviews: ReviewForms
@@ -30,6 +39,10 @@ class Services:
     recognition: RecognizeForms
     ai_reviews: AIReviewForms
     vector_index: LocalVectorIndex
+    review_leases: ReviewLeaseService
+    review_facade: ReviewFacade
+    task_store: SqliteTaskStore
+    tasks: TaskService
 
 
 def build_services(settings: Settings) -> Services:
@@ -40,8 +53,15 @@ def build_services(settings: Settings) -> Services:
     storage = LocalEvidenceStorage(settings.evidence_root)
     queries = QueryForms(repository)
     pipeline = OpenCvImagePipeline()
+    review_leases = ReviewLeaseService(
+        SqlAlchemyReviewLeaseRepository(engine),
+        ttl_seconds=settings.review_lease_seconds,
+        audits=repository,
+    )
+    task_store = SqliteTaskStore(engine)
     return Services(
         settings=settings,
+        engine=engine,
         repository=repository,
         imports=ImportForms(repository, repository, repository, storage),
         reviews=ReviewForms(repository, repository),
@@ -50,4 +70,11 @@ def build_services(settings: Settings) -> Services:
         recognition=RecognizeForms(repository, repository, repository, storage, pipeline),
         ai_reviews=AIReviewForms(repository, repository, DisabledAIReview()),
         vector_index=LocalVectorIndex(),
+        review_leases=review_leases,
+        review_facade=ReviewFacade(
+            uow_factory=lambda: SqlAlchemyUnitOfWork(engine),
+            leases=review_leases,
+        ),
+        task_store=task_store,
+        tasks=TaskService(task_store),
     )
