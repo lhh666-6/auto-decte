@@ -1,5 +1,8 @@
 """SQLAlchemy repository implementations."""
 
+from collections.abc import Iterator
+from contextlib import contextmanager
+
 from sqlalchemy import Engine, func, select
 from sqlalchemy.orm import Session
 
@@ -31,11 +34,32 @@ from app.domain.models import (
 
 
 class SqlAlchemyFormRepository:
-    def __init__(self, engine: Engine) -> None:
+    def __init__(self, engine: Engine, session: Session | None = None) -> None:
         self._engine = engine
+        self._session = session
+
+    def with_session(self, session: Session) -> "SqlAlchemyFormRepository":
+        """Bind this compatible repository facade to an outer transaction."""
+        return SqlAlchemyFormRepository(self._engine, session)
+
+    @contextmanager
+    def _transaction(self) -> Iterator[Session]:
+        if self._session is not None:
+            yield self._session
+            return
+        with Session(self._engine) as session, session.begin():
+            yield session
+
+    @contextmanager
+    def _read_session(self) -> Iterator[Session]:
+        if self._session is not None:
+            yield self._session
+            return
+        with Session(self._engine) as session:
+            yield session
 
     def add_form(self, form: Form) -> None:
-        with Session(self._engine) as session, session.begin():
+        with self._transaction() as session:
             session.add(
                 FormRow(
                     form_id=form.form_id,
@@ -50,7 +74,7 @@ class SqlAlchemyFormRepository:
             )
 
     def get_form(self, form_id: str) -> Form | None:
-        with Session(self._engine) as session:
+        with self._read_session() as session:
             row = session.get(FormRow, form_id)
             if row is None:
                 return None
@@ -66,7 +90,7 @@ class SqlAlchemyFormRepository:
             )
 
     def add_record_version(self, version: RecordVersion) -> None:
-        with Session(self._engine) as session, session.begin():
+        with self._transaction() as session:
             form = session.get(FormRow, version.form_id)
             if form is None:
                 raise KeyError(f"Unknown form: {version.form_id}")
@@ -93,7 +117,7 @@ class SqlAlchemyFormRepository:
             .where(RecordVersionRow.form_id == form_id)
             .order_by(RecordVersionRow.version)
         )
-        with Session(self._engine) as session:
+        with self._read_session() as session:
             rows = session.scalars(statement).all()
             return [
                 RecordVersion(
@@ -111,7 +135,7 @@ class SqlAlchemyFormRepository:
             ]
 
     def set_review_status(self, form_id: str, status: ReviewStatus) -> None:
-        with Session(self._engine) as session, session.begin():
+        with self._transaction() as session:
             form = session.get(FormRow, form_id)
             if form is None:
                 raise KeyError(f"Unknown form: {form_id}")
@@ -120,7 +144,7 @@ class SqlAlchemyFormRepository:
     def set_template(
         self, form_id: str, template_id: str, template_version: str, status: ReviewStatus
     ) -> None:
-        with Session(self._engine) as session, session.begin():
+        with self._transaction() as session:
             form = session.get(FormRow, form_id)
             if form is None:
                 raise KeyError(f"Unknown form: {form_id}")
@@ -129,14 +153,14 @@ class SqlAlchemyFormRepository:
             form.review_status = status.value
 
     def set_export_status(self, form_id: str, status: ExportStatus) -> None:
-        with Session(self._engine) as session, session.begin():
+        with self._transaction() as session:
             form = session.get(FormRow, form_id)
             if form is None:
                 raise KeyError(f"Unknown form: {form_id}")
             form.export_status = status.value
 
     def add_evidence(self, evidence: EvidenceFile) -> None:
-        with Session(self._engine) as session, session.begin():
+        with self._transaction() as session:
             session.add(
                 EvidenceFileRow(
                     file_id=evidence.file_id,
@@ -151,7 +175,7 @@ class SqlAlchemyFormRepository:
             )
 
     def add_form_field(self, field: FormField) -> None:
-        with Session(self._engine) as session, session.begin():
+        with self._transaction() as session:
             session.add(
                 FormFieldRow(
                     field_id=field.field_id,
@@ -167,7 +191,7 @@ class SqlAlchemyFormRepository:
             )
 
     def add_recognition_attempt(self, attempt: RecognitionAttempt) -> None:
-        with Session(self._engine) as session, session.begin():
+        with self._transaction() as session:
             session.add(
                 RecognitionAttemptRow(
                     attempt_id=attempt.attempt_id,
@@ -187,7 +211,7 @@ class SqlAlchemyFormRepository:
             .where(RecognitionAttemptRow.field_id == field_id)
             .order_by(RecognitionAttemptRow.created_at, RecognitionAttemptRow.attempt_id)
         )
-        with Session(self._engine) as session:
+        with self._read_session() as session:
             rows = session.scalars(statement).all()
             return [
                 RecognitionAttempt(
@@ -210,7 +234,7 @@ class SqlAlchemyFormRepository:
             .where(FormFieldRow.form_id == form_id)
             .order_by(RecognitionAttemptRow.created_at, RecognitionAttemptRow.attempt_id)
         )
-        with Session(self._engine) as session:
+        with self._read_session() as session:
             rows = session.scalars(statement).all()
             return [
                 RecognitionAttempt(
@@ -228,7 +252,7 @@ class SqlAlchemyFormRepository:
 
     def find_by_sha256(self, sha256: str) -> EvidenceFile | None:
         statement = select(EvidenceFileRow).where(EvidenceFileRow.sha256 == sha256)
-        with Session(self._engine) as session:
+        with self._read_session() as session:
             row = session.scalar(statement)
             if row is None:
                 return None
@@ -244,7 +268,7 @@ class SqlAlchemyFormRepository:
             )
 
     def add_audit_event(self, event: AuditEvent) -> None:
-        with Session(self._engine) as session, session.begin():
+        with self._transaction() as session:
             session.add(
                 AuditEventRow(
                     event_id=event.event_id,
@@ -265,7 +289,7 @@ class SqlAlchemyFormRepository:
             .where(AuditEventRow.form_id == form_id)
             .order_by(AuditEventRow.timestamp, AuditEventRow.event_id)
         )
-        with Session(self._engine) as session:
+        with self._read_session() as session:
             rows = session.scalars(statement).all()
             return [
                 AuditEvent(
@@ -288,7 +312,7 @@ class SqlAlchemyFormRepository:
             .where(EvidenceFileRow.form_id == form_id)
             .order_by(EvidenceFileRow.created_at, EvidenceFileRow.file_id)
         )
-        with Session(self._engine) as session:
+        with self._read_session() as session:
             rows = session.scalars(statement).all()
             return [
                 EvidenceFile(
@@ -333,12 +357,12 @@ class SqlAlchemyFormRepository:
         if export_status is not None:
             statement = statement.where(FormRow.export_status == export_status.value)
         statement = statement.order_by(FormRow.form_id)
-        with Session(self._engine) as session:
+        with self._read_session() as session:
             rows = session.execute(statement).all()
             return [(self._to_form(form), self._to_record(record)) for form, record in rows]
 
     def add_export_batch(self, batch: ExportBatch) -> None:
-        with Session(self._engine) as session, session.begin():
+        with self._transaction() as session:
             session.add(
                 ExportBatchRow(
                     export_batch_id=batch.export_batch_id,
@@ -355,7 +379,7 @@ class SqlAlchemyFormRepository:
 
     def list_export_batches(self) -> list[ExportBatch]:
         statement = select(ExportBatchRow).order_by(ExportBatchRow.exported_at)
-        with Session(self._engine) as session:
+        with self._read_session() as session:
             rows = session.scalars(statement).all()
             return [
                 ExportBatch(
@@ -375,7 +399,7 @@ class SqlAlchemyFormRepository:
             ]
 
     def add_ai_review(self, review: AIReviewRecord) -> None:
-        with Session(self._engine) as session, session.begin():
+        with self._transaction() as session:
             session.add(
                 AIReviewRow(
                     review_id=review.review_id,
@@ -392,7 +416,7 @@ class SqlAlchemyFormRepository:
             .where(AIReviewRow.form_id == form_id)
             .order_by(AIReviewRow.created_at, AIReviewRow.review_id)
         )
-        with Session(self._engine) as session:
+        with self._read_session() as session:
             rows = session.scalars(statement).all()
             return [
                 AIReviewRecord(
