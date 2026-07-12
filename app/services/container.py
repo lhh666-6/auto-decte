@@ -17,13 +17,13 @@ from app.application.import_forms import ImportForms
 from app.application.query_forms import QueryForms
 from app.application.recognize_forms import RecognizeForms
 from app.application.review_forms import ReviewForms
-from app.infrastructure.database.sqlite import create_sqlite_engine
-from app.infrastructure.database.uow import SqlAlchemyUnitOfWork
-from app.infrastructure.tasks.sqlite_store import SqliteTaskStore
-from app.modules.review.facade import ReviewFacade
-from app.modules.review.lease_service import ReviewLeaseService
-from app.modules.review.repository import SqlAlchemyReviewLeaseRepository
-from app.modules.tasks.service import TaskService
+from app.infrastructure.database.sqlite_ds import create_sqlite_engine
+from app.infrastructure.database.uow_ds import SqlAlchemyUnitOfWork
+from app.infrastructure.tasks.sqlite_store_ds import SqliteTaskStore
+from app.modules.review.facade_ds import ReviewFacade
+from app.modules.review.lease_service_ds import ReviewLeaseService
+from app.modules.review.repository_ds import SqlAlchemyReviewLeaseRepository
+from app.modules.tasks.service_ds import TaskService
 from config.settings import Settings
 
 

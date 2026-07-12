@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from app.infrastructure.database.sqlite import create_sqlite_engine
+from app.infrastructure.database.sqlite_ds import create_sqlite_engine
 
 
 def test_sqlite_engine_enables_wal_foreign_keys_and_busy_timeout(tmp_path: Path) -> None:

@@ -2,8 +2,8 @@
 
 from fastapi import APIRouter, Depends, Request
 
-from app.api.dependencies import get_current_actor, get_services
-from app.modules.identity_access.models import Actor
+from app.api.dependencies_ds import get_current_actor, get_services
+from app.modules.identity_access.models_ds import Actor
 from app.services.container import Services
 
 router = APIRouter(prefix="/api/v1", tags=["identity"])

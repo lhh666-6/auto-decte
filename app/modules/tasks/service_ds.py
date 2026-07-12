@@ -1,7 +1,7 @@
 """Task application service for idempotency, state changes and recovery."""
 
-from app.infrastructure.tasks.sqlite_store import SqliteTaskStore
-from app.modules.tasks.models import IdempotencyConflict, Task, TaskCommand, TaskStatus
+from app.infrastructure.tasks.sqlite_store_ds import SqliteTaskStore
+from app.modules.tasks.models_ds import IdempotencyConflict, Task, TaskCommand, TaskStatus
 
 
 class TaskService:

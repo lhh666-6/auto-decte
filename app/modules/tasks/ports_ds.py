@@ -2,7 +2,7 @@
 
 from typing import Protocol
 
-from app.modules.tasks.models import Task, TaskEvent
+from app.modules.tasks.models_ds import Task, TaskEvent
 
 
 class TaskStore(Protocol):

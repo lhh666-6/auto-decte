@@ -1,5 +1,5 @@
-from app.modules.identity_access.models import Actor, Permission, Role
-from app.modules.identity_access.policy import PermissionPolicy
+from app.modules.identity_access.models_ds import Actor, Permission, Role
+from app.modules.identity_access.policy_ds import PermissionPolicy
 
 
 def test_operator_cannot_confirm_and_reviewer_can_confirm() -> None:
@@ -23,7 +23,7 @@ def test_auditor_is_read_only_and_finance_can_export() -> None:
 
 
 def test_admin_can_force_release_and_local_identity_defaults_to_configured_role() -> None:
-    from app.modules.identity_access.local import LocalIdentityProvider
+    from app.modules.identity_access.local_ds import LocalIdentityProvider
 
     policy = PermissionPolicy()
     admin = Actor("admin-1", frozenset({Role.ADMIN}))

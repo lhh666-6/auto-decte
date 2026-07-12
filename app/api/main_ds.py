@@ -3,9 +3,12 @@
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 
-from app.api.errors.problem import ProblemDetails
-from app.api.middleware.request_id import RequestIdMiddleware
-from app.api.routers import health, identity, review, tasks
+from app.api.errors.problem_ds import ProblemDetails
+from app.api.middleware.request_id_ds import RequestIdMiddleware
+from app.api.routers import health_ds as health
+from app.api.routers import identity_ds as identity
+from app.api.routers import review_ds as review
+from app.api.routers import tasks_ds as tasks
 from app.services.container import Services
 
 

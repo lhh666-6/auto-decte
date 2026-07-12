@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter, Depends
 
-from app.api.dependencies import get_services
+from app.api.dependencies_ds import get_services
 from app.services.container import Services
 
 router = APIRouter(prefix="/health", tags=["health"])

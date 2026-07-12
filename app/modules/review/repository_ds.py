@@ -6,7 +6,7 @@ from sqlalchemy import Engine
 from sqlalchemy.orm import Session
 
 from app.adapters.database.models import ReviewLeaseRow
-from app.modules.review.models import ReviewLease
+from app.modules.review.models_ds import ReviewLease
 
 
 class SqlAlchemyReviewLeaseRepository:

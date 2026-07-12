@@ -3,11 +3,11 @@ from pathlib import Path
 import pytest
 
 from app.adapters.database.models import Base
-from app.infrastructure.database.sqlite import create_sqlite_engine
-from app.infrastructure.tasks.in_process import InProcessTaskRunner
-from app.infrastructure.tasks.sqlite_store import SqliteTaskStore
-from app.modules.tasks.models import IdempotencyConflict, TaskCommand, TaskStatus
-from app.modules.tasks.service import TaskService
+from app.infrastructure.database.sqlite_ds import create_sqlite_engine
+from app.infrastructure.tasks.in_process_ds import InProcessTaskRunner
+from app.infrastructure.tasks.sqlite_store_ds import SqliteTaskStore
+from app.modules.tasks.models_ds import IdempotencyConflict, TaskCommand, TaskStatus
+from app.modules.tasks.service_ds import TaskService
 
 
 def build_service(tmp_path: Path) -> tuple[TaskService, SqliteTaskStore]:

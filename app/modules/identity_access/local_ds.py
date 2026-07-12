@@ -1,6 +1,6 @@
 """Single-machine identity provider configured by local settings."""
 
-from app.modules.identity_access.models import Actor, Role
+from app.modules.identity_access.models_ds import Actor, Role
 
 
 class LocalIdentityProvider:

@@ -1,6 +1,6 @@
 """Explicit local role-to-permission policy."""
 
-from app.modules.identity_access.models import Actor, Permission, Role
+from app.modules.identity_access.models_ds import Actor, Permission, Role
 
 ROLE_PERMISSIONS: dict[Role, frozenset[Permission]] = {
     Role.ADMIN: frozenset(Permission),

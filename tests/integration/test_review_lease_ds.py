@@ -6,12 +6,12 @@ from app.adapters.database.models import Base
 from app.adapters.database.repositories import SqlAlchemyFormRepository
 from app.adapters.storage.local import LocalEvidenceStorage
 from app.application.import_forms import ImportForms
-from app.infrastructure.database.sqlite import create_sqlite_engine
-from app.infrastructure.database.uow import SqlAlchemyUnitOfWork
-from app.modules.review.facade import ConfirmReviewCommand, ReviewFacade
-from app.modules.review.lease_service import LeaseHeldError, ReviewLeaseService
-from app.modules.review.models import ReviewVersionConflict
-from app.modules.review.repository import SqlAlchemyReviewLeaseRepository
+from app.infrastructure.database.sqlite_ds import create_sqlite_engine
+from app.infrastructure.database.uow_ds import SqlAlchemyUnitOfWork
+from app.modules.review.facade_ds import ConfirmReviewCommand, ReviewFacade
+from app.modules.review.lease_service_ds import LeaseHeldError, ReviewLeaseService
+from app.modules.review.models_ds import ReviewVersionConflict
+from app.modules.review.repository_ds import SqlAlchemyReviewLeaseRepository
 
 
 class FrozenClock:

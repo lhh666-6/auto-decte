@@ -5,8 +5,8 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
 from threading import BoundedSemaphore, Lock
 
-from app.modules.tasks.models import Task, TaskCommand, TaskStatus
-from app.modules.tasks.service import TaskService
+from app.modules.tasks.models_ds import Task, TaskCommand, TaskStatus
+from app.modules.tasks.service_ds import TaskService
 
 
 @dataclass(frozen=True, slots=True)

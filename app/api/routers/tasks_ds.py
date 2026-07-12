@@ -5,11 +5,11 @@ from json import dumps
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
 
-from app.api.dependencies import get_current_actor, get_services
-from app.api.schemas.tasks import TaskCreateRequest
-from app.modules.identity_access.models import Permission
-from app.modules.identity_access.policy import PermissionPolicy
-from app.modules.tasks.models import IdempotencyConflict, TaskCommand, TaskEvent
+from app.api.dependencies_ds import get_current_actor, get_services
+from app.api.schemas.tasks_ds import TaskCreateRequest
+from app.modules.identity_access.models_ds import Permission
+from app.modules.identity_access.policy_ds import PermissionPolicy
+from app.modules.tasks.models_ds import IdempotencyConflict, TaskCommand, TaskEvent
 from app.services.container import Services
 
 router = APIRouter(prefix="/api/v1/tasks", tags=["tasks"])

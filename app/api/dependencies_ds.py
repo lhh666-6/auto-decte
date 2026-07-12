@@ -2,8 +2,8 @@
 
 from fastapi import Request
 
-from app.modules.identity_access.local import LocalIdentityProvider
-from app.modules.identity_access.models import Actor
+from app.modules.identity_access.local_ds import LocalIdentityProvider
+from app.modules.identity_access.models_ds import Actor
 from app.services.container import Services
 
 

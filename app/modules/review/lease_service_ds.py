@@ -6,8 +6,8 @@ from typing import Protocol
 from uuid import uuid4
 
 from app.domain.models import AuditEvent
-from app.modules.review.models import LeaseHeldError, LeaseOwnershipError, ReviewLease
-from app.modules.review.repository import SqlAlchemyReviewLeaseRepository
+from app.modules.review.models_ds import LeaseHeldError, LeaseOwnershipError, ReviewLease
+from app.modules.review.repository_ds import SqlAlchemyReviewLeaseRepository
 
 
 class LeaseAuditWriter(Protocol):

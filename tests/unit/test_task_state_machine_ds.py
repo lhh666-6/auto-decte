@@ -1,6 +1,6 @@
 import pytest
 
-from app.modules.tasks.models import InvalidTaskTransition, Task, TaskStatus
+from app.modules.tasks.models_ds import InvalidTaskTransition, Task, TaskStatus
 
 
 def test_pending_task_moves_to_running_then_succeeded() -> None:

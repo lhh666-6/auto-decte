@@ -6,12 +6,12 @@ from typing import Protocol
 from uuid import uuid4
 
 from app.domain.models import AuditEvent, ExportStatus, RecordStatus, RecordVersion, ReviewStatus
-from app.infrastructure.database.uow import UnitOfWork
-from app.modules.audit.facade import AuditFacade
-from app.modules.identity_access.models import Actor, Permission
-from app.modules.identity_access.policy import PermissionPolicy
-from app.modules.review.lease_service import ReviewLeaseService
-from app.modules.review.models import ReviewVersionConflict
+from app.infrastructure.database.uow_ds import UnitOfWork
+from app.modules.audit.facade_ds import AuditFacade
+from app.modules.identity_access.models_ds import Actor, Permission
+from app.modules.identity_access.policy_ds import PermissionPolicy
+from app.modules.review.lease_service_ds import ReviewLeaseService
+from app.modules.review.models_ds import ReviewVersionConflict
 
 
 @dataclass(frozen=True, slots=True)

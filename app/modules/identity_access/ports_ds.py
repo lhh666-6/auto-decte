@@ -2,7 +2,7 @@
 
 from typing import Protocol
 
-from app.modules.identity_access.models import Actor
+from app.modules.identity_access.models_ds import Actor
 
 
 class IdentityProvider(Protocol):

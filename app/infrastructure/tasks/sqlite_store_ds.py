@@ -7,7 +7,7 @@ from sqlalchemy import Engine, func, select
 from sqlalchemy.orm import Session
 
 from app.adapters.database.models import TaskEventRow, TaskRow
-from app.modules.tasks.models import Task, TaskEvent, TaskStatus
+from app.modules.tasks.models_ds import Task, TaskEvent, TaskStatus
 
 
 class SqliteTaskStore:

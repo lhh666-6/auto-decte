@@ -7,9 +7,9 @@ from app.adapters.database.repositories import SqlAlchemyFormRepository
 from app.adapters.storage.local import LocalEvidenceStorage
 from app.application.import_forms import ImportForms
 from app.domain.models import AuditEvent
-from app.infrastructure.database.sqlite import create_sqlite_engine
-from app.infrastructure.database.uow import SqlAlchemyUnitOfWork
-from app.modules.review.facade import ConfirmReviewCommand, ReviewFacade
+from app.infrastructure.database.sqlite_ds import create_sqlite_engine
+from app.infrastructure.database.uow_ds import SqlAlchemyUnitOfWork
+from app.modules.review.facade_ds import ConfirmReviewCommand, ReviewFacade
 
 
 class FailingAuditRepository:

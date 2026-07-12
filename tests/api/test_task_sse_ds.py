@@ -2,8 +2,8 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from app.api.main import create_app
-from app.modules.tasks.models import TaskCommand
+from app.api.main_ds import create_app
+from app.modules.tasks.models_ds import TaskCommand
 from app.services.container import build_services
 from config.settings import Settings
 

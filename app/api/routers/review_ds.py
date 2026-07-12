@@ -2,12 +2,12 @@
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 
-from app.api.dependencies import get_current_actor, get_services
-from app.api.schemas.review import ConfirmRequest, LeaseResponse
-from app.modules.identity_access.models import Actor, Permission
-from app.modules.identity_access.policy import PermissionPolicy
-from app.modules.review.facade import ConfirmReviewCommand
-from app.modules.review.models import ReviewVersionConflict
+from app.api.dependencies_ds import get_current_actor, get_services
+from app.api.schemas.review_ds import ConfirmRequest, LeaseResponse
+from app.modules.identity_access.models_ds import Actor, Permission
+from app.modules.identity_access.policy_ds import PermissionPolicy
+from app.modules.review.facade_ds import ConfirmReviewCommand
+from app.modules.review.models_ds import ReviewVersionConflict
 from app.services.container import Services
 
 router = APIRouter(prefix="/api/v1/forms", tags=["review"])
