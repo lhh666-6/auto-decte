@@ -5,10 +5,13 @@ from dataclasses import dataclass
 from typing import Protocol
 from uuid import uuid4
 
-from app.application.review_forms import ConcurrentReviewError
 from app.domain.models import AuditEvent, ExportStatus, RecordStatus, RecordVersion, ReviewStatus
 from app.infrastructure.database.uow import UnitOfWork
 from app.modules.audit.facade import AuditFacade
+from app.modules.identity_access.models import Actor, Permission
+from app.modules.identity_access.policy import PermissionPolicy
+from app.modules.review.lease_service import ReviewLeaseService
+from app.modules.review.models import ReviewVersionConflict
 
 
 @dataclass(frozen=True, slots=True)
@@ -19,6 +22,8 @@ class ConfirmReviewCommand:
     actor_id: str
     reason: str
     evidence_ids: tuple[str, ...]
+    actor: Actor | None = None
+    lease_token: str | None = None
 
 
 class AuditWriter(Protocol):
@@ -30,19 +35,31 @@ class ReviewFacade:
         self,
         uow_factory: Callable[[], UnitOfWork],
         audits: AuditWriter | None = None,
+        policy: PermissionPolicy | None = None,
+        leases: ReviewLeaseService | None = None,
     ) -> None:
         self._uow_factory = uow_factory
         self._audits = audits
+        self._policy = policy
+        self._leases = leases
 
     def confirm(self, command: ConfirmReviewCommand) -> RecordVersion:
+        if command.actor is not None:
+            if command.actor.actor_id != command.actor_id:
+                raise ValueError("The command actor must match actor_id")
+            (self._policy or PermissionPolicy()).require(command.actor, Permission.REVIEW_CONFIRM)
+        if self._leases is not None:
+            if command.lease_token is None:
+                raise ValueError("An active review lease token is required")
+            self._leases.assert_owned(command.form_id, command.actor_id, command.lease_token)
         with self._uow_factory() as uow:
             form = uow.forms.get_form(command.form_id)
             if form is None:
                 raise KeyError(f"Unknown form: {command.form_id}")
             if form.current_record_version != command.expected_version:
-                raise ConcurrentReviewError(
-                    f"Expected version {command.expected_version}, "
-                    f"current is {form.current_record_version}"
+                raise ReviewVersionConflict(
+                    submitted_version=command.expected_version,
+                    current_version=form.current_record_version,
                 )
             versions = uow.forms.list_record_versions(command.form_id)
             before = versions[-1].values if versions else None

@@ -93,6 +93,19 @@ class AuditEventRow(Base):
     evidence_ids: Mapped[list[str]] = mapped_column(JSON, nullable=False)
 
 
+class ReviewLeaseRow(Base):
+    __tablename__ = "review_leases"
+
+    form_id: Mapped[str] = mapped_column(String, primary_key=True)
+    owner_id: Mapped[str] = mapped_column(String, nullable=False)
+    lease_token: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+    acquired_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    heartbeat_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    forced_release_by: Mapped[str | None] = mapped_column(String)
+    forced_release_reason: Mapped[str | None] = mapped_column(String)
+
+
 class ExportBatchRow(Base):
     __tablename__ = "export_batches"
 
