@@ -8,6 +8,7 @@ from app.domain.models import (
     EvidenceFile,
     ExportStatus,
     Form,
+    RecognitionAttempt,
     RecordVersion,
     ReviewStatus,
 )
@@ -34,6 +35,7 @@ class FormTrace:
     versions: tuple[RecordVersion, ...]
     evidence: tuple[EvidenceFile, ...]
     audits: tuple[AuditEvent, ...]
+    attempts: tuple[RecognitionAttempt, ...]
 
 
 class QueryRepository(Protocol):
@@ -41,6 +43,7 @@ class QueryRepository(Protocol):
     def list_record_versions(self, form_id: str) -> list[RecordVersion]: ...
     def list_evidence(self, form_id: str) -> list[EvidenceFile]: ...
     def list_audit_events(self, form_id: str) -> list[AuditEvent]: ...
+    def list_recognition_attempts_for_form(self, form_id: str) -> list[RecognitionAttempt]: ...
     def search_current(
         self,
         *,
@@ -75,4 +78,5 @@ class QueryForms:
             versions=tuple(self._repository.list_record_versions(form_id)),
             evidence=tuple(self._repository.list_evidence(form_id)),
             audits=tuple(self._repository.list_audit_events(form_id)),
+            attempts=tuple(self._repository.list_recognition_attempts_for_form(form_id)),
         )

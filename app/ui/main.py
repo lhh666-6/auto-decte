@@ -3,7 +3,7 @@
 import streamlit as st
 
 from app.services.container import Services, build_services
-from app.ui.pages import exceptions, export_page, import_page, review, search
+from app.ui.pages import classification, exceptions, export_page, import_page, review, search
 from config.settings import Settings
 
 st.set_page_config(page_title="工业级产量数据采集 Demo", layout="wide")
@@ -15,11 +15,13 @@ def services() -> Services:
     return build_services(Settings())
 
 
-import_tab, review_tab, rules_tab, search_tab, export_tab = st.tabs(
-    ["批量导入", "人工复核", "规则异常", "查询追溯", "XLSX 导出"]
+import_tab, classification_tab, review_tab, rules_tab, search_tab, export_tab = st.tabs(
+    ["批量导入", "图像分类", "人工复核", "规则异常", "查询追溯", "XLSX 导出"]
 )
 with import_tab:
     import_page.render(services().imports)
+with classification_tab:
+    classification.render(services().recognition)
 with review_tab:
     review.render(services().reviews)
 with rules_tab:

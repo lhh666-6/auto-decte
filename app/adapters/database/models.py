@@ -39,6 +39,33 @@ class RecordVersionRow(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
+class FormFieldRow(Base):
+    __tablename__ = "form_fields"
+
+    field_id: Mapped[str] = mapped_column(String, primary_key=True)
+    form_id: Mapped[str] = mapped_column(ForeignKey("forms.form_id"), nullable=False, index=True)
+    field_name: Mapped[str] = mapped_column(String, nullable=False)
+    source_region: Mapped[dict[str, int]] = mapped_column(JSON, nullable=False)
+    current_value: Mapped[Any | None] = mapped_column(JSON)
+    current_value_source: Mapped[str | None] = mapped_column(String)
+    current_record_version: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+
+class RecognitionAttemptRow(Base):
+    __tablename__ = "recognition_attempts"
+
+    attempt_id: Mapped[str] = mapped_column(String, primary_key=True)
+    field_id: Mapped[str] = mapped_column(
+        ForeignKey("form_fields.field_id"), nullable=False, index=True
+    )
+    engine: Mapped[str] = mapped_column(String, nullable=False)
+    model_version: Mapped[str] = mapped_column(String, nullable=False)
+    candidate_value: Mapped[Any | None] = mapped_column(JSON)
+    confidence: Mapped[float] = mapped_column(nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    crop_file_id: Mapped[str] = mapped_column(ForeignKey("evidence_files.file_id"), nullable=False)
+
+
 class EvidenceFileRow(Base):
     __tablename__ = "evidence_files"
 

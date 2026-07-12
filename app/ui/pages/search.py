@@ -41,6 +41,7 @@ def render(queries: QueryForms) -> None:
                     "versions": [asdict(item) for item in trace.versions],
                     "evidence": [asdict(item) for item in trace.evidence],
                     "audits": [asdict(item) for item in trace.audits],
+                    "recognition_attempts": [asdict(item) for item in trace.attempts],
                 }
             )
         except KeyError as error:

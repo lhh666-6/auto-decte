@@ -1,6 +1,7 @@
 """Immutable content-addressed local evidence storage."""
 
 import hashlib
+import io
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
@@ -19,13 +20,16 @@ class LocalEvidenceStorage:
         self._root = root
 
     def store_path(self, source: Path, category: str) -> StoredFile:
-        digest = self.hash_path(source)
+        with source.open("rb") as stream:
+            return self.store_bytes(stream.read(), source.suffix.lower(), category)
+
+    def store_bytes(self, content: bytes, suffix: str, category: str) -> StoredFile:
+        digest = hashlib.sha256(content).hexdigest()
         file_id = f"FILE-{uuid4().hex}"
-        suffix = source.suffix.lower()
         relative = Path(category) / digest[:2] / f"{file_id}{suffix}"
         destination = self._root / relative
         destination.parent.mkdir(parents=True, exist_ok=True)
-        with source.open("rb") as reader, destination.open("xb") as writer:
+        with io.BytesIO(content) as reader, destination.open("xb") as writer:
             shutil.copyfileobj(reader, writer)
         return StoredFile(file_id=file_id, uri=relative.as_posix(), sha256=digest)
 

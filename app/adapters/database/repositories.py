@@ -7,7 +7,9 @@ from app.adapters.database.models import (
     AuditEventRow,
     EvidenceFileRow,
     ExportBatchRow,
+    FormFieldRow,
     FormRow,
+    RecognitionAttemptRow,
     RecordVersionRow,
 )
 from app.domain.models import (
@@ -17,6 +19,8 @@ from app.domain.models import (
     ExportBatch,
     ExportStatus,
     Form,
+    FormField,
+    RecognitionAttempt,
     RecordStatus,
     RecordVersion,
     ReviewStatus,
@@ -110,6 +114,17 @@ class SqlAlchemyFormRepository:
                 raise KeyError(f"Unknown form: {form_id}")
             form.review_status = status.value
 
+    def set_template(
+        self, form_id: str, template_id: str, template_version: str, status: ReviewStatus
+    ) -> None:
+        with Session(self._engine) as session, session.begin():
+            form = session.get(FormRow, form_id)
+            if form is None:
+                raise KeyError(f"Unknown form: {form_id}")
+            form.template_id = template_id
+            form.template_version = template_version
+            form.review_status = status.value
+
     def set_export_status(self, form_id: str, status: ExportStatus) -> None:
         with Session(self._engine) as session, session.begin():
             form = session.get(FormRow, form_id)
@@ -131,6 +146,82 @@ class SqlAlchemyFormRepository:
                     created_at=evidence.created_at,
                 )
             )
+
+    def add_form_field(self, field: FormField) -> None:
+        with Session(self._engine) as session, session.begin():
+            session.add(
+                FormFieldRow(
+                    field_id=field.field_id,
+                    form_id=field.form_id,
+                    field_name=field.field_name,
+                    source_region=field.source_region,
+                    current_value=field.current_value,
+                    current_value_source=(
+                        field.current_value_source.value if field.current_value_source else None
+                    ),
+                    current_record_version=field.current_record_version,
+                )
+            )
+
+    def add_recognition_attempt(self, attempt: RecognitionAttempt) -> None:
+        with Session(self._engine) as session, session.begin():
+            session.add(
+                RecognitionAttemptRow(
+                    attempt_id=attempt.attempt_id,
+                    field_id=attempt.field_id,
+                    engine=attempt.engine,
+                    model_version=attempt.model_version,
+                    candidate_value=attempt.candidate_value,
+                    confidence=attempt.confidence,
+                    created_at=attempt.created_at,
+                    crop_file_id=attempt.crop_file_id,
+                )
+            )
+
+    def list_recognition_attempts(self, field_id: str) -> list[RecognitionAttempt]:
+        statement = (
+            select(RecognitionAttemptRow)
+            .where(RecognitionAttemptRow.field_id == field_id)
+            .order_by(RecognitionAttemptRow.created_at, RecognitionAttemptRow.attempt_id)
+        )
+        with Session(self._engine) as session:
+            rows = session.scalars(statement).all()
+            return [
+                RecognitionAttempt(
+                    attempt_id=row.attempt_id,
+                    field_id=row.field_id,
+                    engine=row.engine,
+                    model_version=row.model_version,
+                    candidate_value=row.candidate_value,
+                    confidence=row.confidence,
+                    created_at=row.created_at,
+                    crop_file_id=row.crop_file_id,
+                )
+                for row in rows
+            ]
+
+    def list_recognition_attempts_for_form(self, form_id: str) -> list[RecognitionAttempt]:
+        statement = (
+            select(RecognitionAttemptRow)
+            .join(FormFieldRow, FormFieldRow.field_id == RecognitionAttemptRow.field_id)
+            .where(FormFieldRow.form_id == form_id)
+            .order_by(RecognitionAttemptRow.created_at, RecognitionAttemptRow.attempt_id)
+        )
+        with Session(self._engine) as session:
+            rows = session.scalars(statement).all()
+            return [
+                RecognitionAttempt(
+                    attempt_id=row.attempt_id,
+                    field_id=row.field_id,
+                    engine=row.engine,
+                    model_version=row.model_version,
+                    candidate_value=row.candidate_value,
+                    confidence=row.confidence,
+                    created_at=row.created_at,
+                    crop_file_id=row.crop_file_id,
+                )
+                for row in rows
+            ]
 
     def find_by_sha256(self, sha256: str) -> EvidenceFile | None:
         statement = select(EvidenceFileRow).where(EvidenceFileRow.sha256 == sha256)
