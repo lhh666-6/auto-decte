@@ -14,6 +14,8 @@
 
 最终前端是 React Feature Modules，由 Web Shell 和 Tauri Desktop Shell 承载并共享业务 Feature。业务状态不能分别存放在 React、Streamlit 或桌面壳中。
 
+已确认的审核工作台视觉基线见 [review-workbench-style.md](design/review-workbench-style.md)，React 实现不得偏离其“左图右表、异常优先、证据—字段联动”的核心规则。
+
 首个要真正实现的 Feature 是“人工审核工作台”：
 
 - 左侧：原始图片、缩放/旋转、字段坐标框、字段裁切预览；
