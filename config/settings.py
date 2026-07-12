@@ -16,6 +16,13 @@ class Settings(BaseSettings):
 
     data_root: Path = Path("data")
     ai_enabled: bool = False
+    task_max_workers: int = 2
+    task_queue_capacity: int = 32
+    review_lease_seconds: int = 300
+    api_host: str = "127.0.0.1"
+    api_port: int = 8000
+    local_default_user_id: str = "local-operator"
+    local_default_roles: tuple[str, ...] = ("OPERATOR",)
 
     @property
     def database_path(self) -> Path:

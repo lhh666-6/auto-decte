@@ -2,8 +2,6 @@
 
 from dataclasses import dataclass
 
-from sqlalchemy import create_engine
-
 from app.adapters.ai.disabled import DisabledAIReview
 from app.adapters.database.models import Base
 from app.adapters.database.repositories import SqlAlchemyFormRepository
@@ -17,6 +15,7 @@ from app.application.import_forms import ImportForms
 from app.application.query_forms import QueryForms
 from app.application.recognize_forms import RecognizeForms
 from app.application.review_forms import ReviewForms
+from app.infrastructure.database.sqlite import create_sqlite_engine
 from config.settings import Settings
 
 
@@ -35,7 +34,7 @@ class Services:
 
 def build_services(settings: Settings) -> Services:
     settings.database_path.parent.mkdir(parents=True, exist_ok=True)
-    engine = create_engine(f"sqlite:///{settings.database_path}")
+    engine = create_sqlite_engine(settings.database_path)
     Base.metadata.create_all(engine)
     repository = SqlAlchemyFormRepository(engine)
     storage = LocalEvidenceStorage(settings.evidence_root)
