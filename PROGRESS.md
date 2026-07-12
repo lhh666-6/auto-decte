@@ -160,3 +160,15 @@
 - 最新提交：`6e53917`
 - 已知问题：缺少源需求第 15 节列出的真实样张、金标准、主数据和企业模板
 - 下一位操作：提供验收输入后补充受控 golden 数据集与真实指标，不得用合成测试替代
+## Modular industrial architecture refactor (local branch only)
+
+- Status: tasks 1–4 complete; task 5 (persistent job runner) is next.
+- Working branch: `modular-architecture` in `.worktrees/modular-architecture`.
+- Remote policy: local commits only. Do not push or deploy before the architecture acceptance task.
+- Completed commits:
+  - `b845e1b` — module entry points, settings, SQLite WAL/foreign-key/busy-timeout configuration.
+  - `5e42263` — local identity provider and explicit role/permission policy.
+  - `897e537` — UnitOfWork plus transactional review facade; audit failure rolls back versions.
+  - `67ec488` — review leases, heartbeat/expiry, forced release reason, concurrency conflict and lease audit events.
+- Last verification: `60 passed`; `ruff check .` and `mypy app config` passed.
+- Handoff: implement Task 5 from `docs/superpowers/plans/2026-07-12-modular-industrial-architecture-implementation.md`, then update this section with commit and verification results.
