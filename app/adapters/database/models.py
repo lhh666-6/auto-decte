@@ -105,3 +105,13 @@ class ExportBatchRow(Base):
     exported_by: Mapped[str] = mapped_column(String, nullable=False)
     exported_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     supersedes_batch_id: Mapped[str | None] = mapped_column(String)
+
+
+class AIReviewRow(Base):
+    __tablename__ = "ai_reviews"
+
+    review_id: Mapped[str] = mapped_column(String, primary_key=True)
+    form_id: Mapped[str] = mapped_column(ForeignKey("forms.form_id"), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String, nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

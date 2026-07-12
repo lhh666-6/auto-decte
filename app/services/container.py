@@ -4,11 +4,14 @@ from dataclasses import dataclass
 
 from sqlalchemy import create_engine
 
+from app.adapters.ai.disabled import DisabledAIReview
 from app.adapters.database.models import Base
 from app.adapters.database.repositories import SqlAlchemyFormRepository
 from app.adapters.export.xlsx import XlsxExporter
 from app.adapters.recognition.opencv import OpenCvImagePipeline
 from app.adapters.storage.local import LocalEvidenceStorage
+from app.adapters.vector.local import LocalVectorIndex
+from app.application.ai_review_forms import AIReviewForms
 from app.application.export_forms import ExportForms
 from app.application.import_forms import ImportForms
 from app.application.query_forms import QueryForms
@@ -26,6 +29,8 @@ class Services:
     queries: QueryForms
     exports: ExportForms
     recognition: RecognizeForms
+    ai_reviews: AIReviewForms
+    vector_index: LocalVectorIndex
 
 
 def build_services(settings: Settings) -> Services:
@@ -44,4 +49,6 @@ def build_services(settings: Settings) -> Services:
         queries=queries,
         exports=ExportForms(repository, XlsxExporter(), queries),
         recognition=RecognizeForms(repository, repository, repository, storage, pipeline),
+        ai_reviews=AIReviewForms(repository, repository, DisabledAIReview()),
+        vector_index=LocalVectorIndex(),
     )

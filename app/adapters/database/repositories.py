@@ -4,6 +4,7 @@ from sqlalchemy import Engine, func, select
 from sqlalchemy.orm import Session
 
 from app.adapters.database.models import (
+    AIReviewRow,
     AuditEventRow,
     EvidenceFileRow,
     ExportBatchRow,
@@ -13,6 +14,8 @@ from app.adapters.database.models import (
     RecordVersionRow,
 )
 from app.domain.models import (
+    AIReviewRecord,
+    AIStatus,
     AuditEvent,
     EvidenceFile,
     EvidenceType,
@@ -367,6 +370,37 @@ class SqlAlchemyFormRepository:
                     exported_by=row.exported_by,
                     exported_at=row.exported_at,
                     supersedes_batch_id=row.supersedes_batch_id,
+                )
+                for row in rows
+            ]
+
+    def add_ai_review(self, review: AIReviewRecord) -> None:
+        with Session(self._engine) as session, session.begin():
+            session.add(
+                AIReviewRow(
+                    review_id=review.review_id,
+                    form_id=review.form_id,
+                    status=review.status.value,
+                    payload=review.payload,
+                    created_at=review.created_at,
+                )
+            )
+
+    def list_ai_reviews(self, form_id: str) -> list[AIReviewRecord]:
+        statement = (
+            select(AIReviewRow)
+            .where(AIReviewRow.form_id == form_id)
+            .order_by(AIReviewRow.created_at, AIReviewRow.review_id)
+        )
+        with Session(self._engine) as session:
+            rows = session.scalars(statement).all()
+            return [
+                AIReviewRecord(
+                    review_id=row.review_id,
+                    form_id=row.form_id,
+                    status=AIStatus(row.status),
+                    payload=row.payload,
+                    created_at=row.created_at,
                 )
                 for row in rows
             ]
