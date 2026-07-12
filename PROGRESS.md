@@ -114,7 +114,7 @@
   - 可选录音转写 Provider 和真实相似案例评估
 - 验证命令：`uv run python -m pytest -q`；`uv run python -m ruff check .`；`uv run python -m mypy app config`；Streamlit AppTest
 - 验证结果：`38 passed`；Ruff 全部通过；mypy 检查 38 个源文件无问题；六个 UI 标签页加载无异常
-- 最新提交：本次功能提交写入后补记
+- 最新提交：`db9b7c1`
 - 已知问题：本地向量索引为进程内 Demo 基线；外部 AI 默认关闭且未配置任何密钥
 - 下一位操作：开发者 A 审查安全边界；未取得企业授权前保持 `FORM_DEMO_AI_ENABLED=false`
 
