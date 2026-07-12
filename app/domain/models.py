@@ -143,3 +143,12 @@ class ExportBatch:
     exported_by: str
     exported_at: datetime = field(default_factory=utc_now)
     supersedes_batch_id: str | None = None
+
+
+@dataclass(slots=True)
+class AIReviewRecord:
+    review_id: str
+    form_id: str
+    status: AIStatus
+    payload: dict[str, Any]
+    created_at: datetime = field(default_factory=utc_now)

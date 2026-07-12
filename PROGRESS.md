@@ -95,8 +95,28 @@
 
 ## P5 AI 与向量
 
-- 状态：未开始
-- 负责人：开发者 B 主导、开发者 A 审查
+- 状态：Demo 功能已完成并推送前验证，待开发者 A 审查
+- 负责人：开发者 B 主导、开发者 A 审查（当前 Codex 会话代执行）
+- 分支：`phase-5-ai-vector`
+- 开始时间：2026-07-12
+- 完成时间：2026-07-12
+- 已完成：
+  - 默认关闭且不发起外部请求的 AI Adapter
+  - 严格结构化 AIReview/AISuggestion 合约
+  - 证据列表非空、置信度范围和强制人工确认校验
+  - 可注入 Provider，只接受严格 JSON 且校验 form_id
+  - AI 建议独立持久化，不覆盖 RecordVersion
+  - AI 建议审计事件与 AI 关闭端到端导出测试
+  - 本地字符/二元组余弦相似检索，只返回引用
+  - Streamlit AI 审查与相似异常检索页面
+- 未完成：
+  - 企业授权后的真实外部 AI API 配置与脱敏策略验收
+  - 可选录音转写 Provider 和真实相似案例评估
+- 验证命令：`uv run python -m pytest -q`；`uv run python -m ruff check .`；`uv run python -m mypy app config`；Streamlit AppTest
+- 验证结果：`38 passed`；Ruff 全部通过；mypy 检查 38 个源文件无问题；六个 UI 标签页加载无异常
+- 最新提交：本次功能提交写入后补记
+- 已知问题：本地向量索引为进程内 Demo 基线；外部 AI 默认关闭且未配置任何密钥
+- 下一位操作：开发者 A 审查安全边界；未取得企业授权前保持 `FORM_DEMO_AI_ENABLED=false`
 
 ## P6 联调验收
 
