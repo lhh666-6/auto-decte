@@ -16,6 +16,8 @@ dependencies = [
     "pydantic-settings>=2.4,<3",
     "sqlalchemy>=2.0,<3",
     "streamlit>=1.36,<2",
+    "fastapi>=0.115,<1",
+    "uvicorn>=0.30,<1",
 ]
 
 [project.optional-dependencies]
@@ -28,6 +30,9 @@ dev = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+filterwarnings = [
+    "ignore:Using `httpx` with `starlette.testclient` is deprecated:starlette.exceptions.StarletteDeprecationWarning",
+]
 
 [tool.ruff]
 target-version = "py311"
@@ -43,3 +48,8 @@ packages = ["app", "config"]
 
 [tool.setuptools.packages.find]
 include = ["app*", "config*"]
+
+[dependency-groups]
+dev = [
+    "httpx>=0.27,<1",
+]
