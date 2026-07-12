@@ -1,0 +1,23 @@
+"""Task persistence boundary."""
+
+from typing import Protocol
+
+from app.modules.tasks.models import Task, TaskEvent
+
+
+class TaskStore(Protocol):
+    def get(self, task_id: str) -> Task | None: ...
+
+    def find_idempotent(
+        self, actor_id: str, operation: str, resource_id: str, key: str
+    ) -> Task | None: ...
+
+    def create(self, task: Task) -> None: ...
+
+    def update(self, task: Task) -> None: ...
+
+    def append_event(self, event: TaskEvent) -> None: ...
+
+    def list_events(self, task_id: str) -> list[TaskEvent]: ...
+
+    def list_by_status(self, status: str) -> list[Task]: ...
