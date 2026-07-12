@@ -30,11 +30,6 @@ class ReviewLeaseService:
 
     def acquire(self, form_id: str, owner_id: str) -> ReviewLease:
         now = self._clock()
-        existing = self._repository.get(form_id)
-        if existing is not None and existing.expires_at > now:
-            raise LeaseHeldError(f"Form {form_id} is held by {existing.owner_id}")
-        if existing is not None:
-            self._repository.delete(form_id)
         lease = ReviewLease(
             form_id=form_id,
             owner_id=owner_id,
@@ -43,7 +38,10 @@ class ReviewLeaseService:
             expires_at=now + self._ttl,
             heartbeat_at=now,
         )
-        self._repository.save(lease)
+        if not self._repository.try_acquire(lease, now):
+            existing = self._repository.get(form_id)
+            holder = existing.owner_id if existing is not None else "another reviewer"
+            raise LeaseHeldError(f"Form {form_id} is held by {holder}")
         self._audit(form_id, "LEASE_ACQUIRE", owner_id, now)
         return lease
 

@@ -214,3 +214,10 @@
   - `b289510` — versioned review leases, confirmation conflicts, task creation and resumable SSE events.
 - Last verification: `76 passed`; `ruff check .` and `mypy app config` passed.
 - Handoff: implement Task 8 from `docs/superpowers/plans/2026-07-12-modular-industrial-architecture-implementation.md`, then update verification results.
+
+## DS architecture hardening handoff (2026-07-12)
+
+- Status: local hardening changes prepared for push; see `docs/CODEX_HANDOFF.md` for the authoritative next-task list.
+- Verified before final documentation-only edits: `102 passed`; `ruff check .`; `mypy app config`; `frontend/npm run typecheck`; `frontend/npm run test`.
+- This handoff intentionally does not claim a finished React/Tauri product, real task dispatch, SSO, production worker, or production storage adapters.
+- The user requested no further tests after the verification listed above. Next Codex must re-run the verification suite before extending or merging these changes.

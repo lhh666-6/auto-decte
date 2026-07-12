@@ -2,6 +2,7 @@
 
 import hashlib
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
 
 from sqlalchemy import Engine, text
@@ -101,9 +102,7 @@ class IntegrityChecker:
                             )
                         )
 
-            result = connection.execute(
-                text("SELECT COUNT(*) FROM tasks WHERE status = 'RUNNING'")
-            )
+            result = connection.execute(text("SELECT COUNT(*) FROM tasks WHERE status = 'RUNNING'"))
             running_tasks = result.scalar_one()
             if running_tasks:
                 issues.append(
@@ -115,9 +114,69 @@ class IntegrityChecker:
                     )
                 )
 
+            invalid_versions = connection.execute(
+                text(
+                    "SELECT f.form_id, f.current_record_version "
+                    "FROM forms AS f "
+                    "WHERE f.current_record_version > 0 "
+                    "AND NOT EXISTS ("
+                    "  SELECT 1 FROM record_versions AS r "
+                    "  WHERE r.form_id = f.form_id AND r.version = f.current_record_version"
+                    ")"
+                )
+            ).all()
+            for form_id, version in invalid_versions:
+                issues.append(
+                    IntegrityIssue(
+                        code="INVALID_VERSION_POINTER",
+                        severity="ERROR",
+                        message=f"Form {form_id} points to missing version {version}",
+                    )
+                )
+
+            expired_leases = connection.execute(
+                text("SELECT form_id, owner_id, expires_at FROM review_leases")
+            ).all()
+            now = datetime.now(UTC)
+            for form_id, owner_id, expires_at in expired_leases:
+                expiry = _as_utc(expires_at)
+                if expiry <= now:
+                    issues.append(
+                        IntegrityIssue(
+                            code="EXPIRED_REVIEW_LEASE",
+                            severity="WARNING",
+                            message=f"Review lease for {form_id} held by {owner_id} has expired",
+                        )
+                    )
+
+            orphaned_crops = connection.execute(
+                text(
+                    "SELECT r.attempt_id, r.crop_file_id FROM recognition_attempts AS r "
+                    "LEFT JOIN evidence_files AS e ON e.file_id = r.crop_file_id "
+                    "WHERE e.file_id IS NULL"
+                )
+            ).all()
+            for attempt_id, crop_file_id in orphaned_crops:
+                issues.append(
+                    IntegrityIssue(
+                        code="ORPHANED_RECOGNITION_CROP",
+                        severity="ERROR",
+                        message=(
+                            f"Recognition attempt {attempt_id} references missing crop "
+                            f"{crop_file_id}"
+                        ),
+                    )
+                )
+
         return IntegrityReport(
             issues=issues,
             total_forms=total_forms,
             total_evidence=total_evidence,
             total_exports=total_exports,
         )
+
+
+def _as_utc(value: datetime | str) -> datetime:
+    if isinstance(value, str):
+        value = datetime.fromisoformat(value)
+    return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)

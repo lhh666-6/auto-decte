@@ -1,3 +1,4 @@
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
@@ -86,3 +87,15 @@ def test_failed_task_can_be_retried_from_pending_state(tmp_path: Path) -> None:
 
     assert store.get(task.task_id).status is TaskStatus.PENDING  # type: ignore[union-attr]
     assert retried.status is TaskStatus.PENDING
+
+
+def test_store_allocates_unique_event_sequences_for_concurrent_writers(tmp_path: Path) -> None:
+    service, store = build_service(tmp_path)
+    task = service.submit(TaskCommand("FORM_RECOGNITION", "FORM-1", "operator-1", "key-1", {}))
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        futures = [executor.submit(store.append_next_event, task, "PROGRESS") for _ in range(2)]
+        for future in futures:
+            future.result()
+
+    assert [event.sequence for event in store.list_events(task.task_id)] == [1, 2, 3]

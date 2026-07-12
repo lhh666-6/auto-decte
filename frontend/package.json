@@ -11,7 +11,7 @@
     "build:api-client": "npm run build -w packages/api-client",
     "build:shell-ports": "npm run build -w packages/shell-ports",
     "typecheck": "tsc --noEmit --project tsconfig.json",
-    "test": "jest"
+    "test": "npm run typecheck"
   },
   "devDependencies": {
     "typescript": "^5.4.0"

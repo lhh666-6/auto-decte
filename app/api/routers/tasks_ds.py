@@ -1,5 +1,7 @@
 """Task inspection and resumable SSE event endpoints."""
 
+import asyncio
+from collections.abc import AsyncIterator
 from json import dumps
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
@@ -9,7 +11,7 @@ from app.api.dependencies_ds import get_current_actor, get_services
 from app.api.schemas.tasks_ds import TaskCreateRequest
 from app.modules.identity_access.models_ds import Permission
 from app.modules.identity_access.policy_ds import PermissionPolicy
-from app.modules.tasks.models_ds import IdempotencyConflict, TaskCommand, TaskEvent
+from app.modules.tasks.models_ds import IdempotencyConflict, TaskCommand, TaskEvent, TaskStatus
 from app.services.container import Services
 
 router = APIRouter(prefix="/api/v1/tasks", tags=["tasks"])
@@ -65,15 +67,65 @@ def task_events(
 ) -> StreamingResponse:
     _require_task_read(request, services)
     after = int(request.headers.get("Last-Event-ID", "0"))
-    events = [event for event in services.task_store.list_events(task_id) if event.sequence > after]
 
-    def stream() -> str:
-        return "".join(
-            f"id: {event.sequence}\nevent: {event.event_type}\ndata: {_event_payload(event)}\n\n"
-            for event in events
-        )
+    async def stream() -> AsyncIterator[str]:
+        last_sequence = after
+        terminal = {
+            TaskStatus.SUCCEEDED,
+            TaskStatus.FAILED,
+            TaskStatus.CANCELLED,
+            TaskStatus.INTERRUPTED,
+        }
+        while True:
+            events = [
+                event
+                for event in services.task_store.list_events(task_id)
+                if event.sequence > last_sequence
+            ]
+            for event in events:
+                last_sequence = event.sequence
+                yield (
+                    f"id: {event.sequence}\nevent: {event.event_type}\ndata: "
+                    f"{_event_payload(event)}\n\n"
+                )
+            try:
+                task = services.tasks.get(task_id)
+            except KeyError:
+                return
+            if task.status in terminal:
+                return
+            await asyncio.sleep(0.2)
 
-    return StreamingResponse(iter([stream()]), media_type="text/event-stream")
+    return StreamingResponse(
+        stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@router.get("/{task_id}")
+def task_status(
+    task_id: str,
+    request: Request,
+    services: Services = Depends(get_services),  # noqa: B008
+) -> dict[str, object]:
+    _require_task_read(request, services)
+    try:
+        task = services.tasks.get(task_id)
+    except KeyError as error:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "TASK_NOT_FOUND", "detail": f"Unknown task: {task_id}"},
+        ) from error
+    return {
+        "task_id": task.task_id,
+        "operation": task.operation,
+        "resource_id": task.resource_id,
+        "status": task.status.value,
+        "progress": task.progress,
+        "step": task.step,
+        "error": task.error,
+    }
 
 
 def _event_payload(event: TaskEvent) -> str:

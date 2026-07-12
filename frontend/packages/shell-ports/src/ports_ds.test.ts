@@ -55,6 +55,18 @@ const _desktopCameraPort: CameraPort = new DesktopCameraPort();
 const _desktopScannerPort: ScannerPort = new DesktopScannerPort();
 const _desktopAudioPort: AudioPort = new DesktopAudioPort();
 const _desktopNotificationPort: NotificationPort = new DesktopNotificationPort();
+void [
+  _webFilePort,
+  _webCameraPort,
+  _webScannerPort,
+  _webAudioPort,
+  _webNotificationPort,
+  _desktopFilePort,
+  _desktopCameraPort,
+  _desktopScannerPort,
+  _desktopAudioPort,
+  _desktopNotificationPort,
+];
 
 // ─── Type alias re-exports (structural) ──────────────────────────────────────
 // Ensures every type in ports_ds.ts is importable from index_ds.ts.
@@ -71,12 +83,14 @@ const _notifyOpts: NotificationOptions = {
   level: _level,
   timeoutMs: 5000,
 };
+void [_openOpts, _cameraOpts, _scanOpts, _audioOpts, _notifyOpts];
 
 // ─── Structural checks ───────────────────────────────────────────────────────
 
 // FileHandle read returns Promise<Uint8Array>
 const _fileHandle: FileHandle = {} as FileHandle;
 const _bytes: Promise<Uint8Array> = _fileHandle.read();
+void _bytes;
 
 // CameraCapture has dataUrl, width, height
 const _capture: CameraCapture = { dataUrl: "", width: 640, height: 480 };

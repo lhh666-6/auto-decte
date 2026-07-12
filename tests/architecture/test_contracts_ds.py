@@ -9,9 +9,7 @@ def test_domain_does_not_import_frameworks() -> None:
     for path in sorted(domain_source.rglob("*.py")):
         source = path.read_text(encoding="utf-8")
         for framework in ("fastapi", "sqlalchemy", "streamlit"):
-            assert framework not in source.lower(), (
-                f"{path} imports {framework}"
-            )
+            assert framework not in source.lower(), f"{path} imports {framework}"
 
 
 def test_api_routers_use_ds_suffix() -> None:
@@ -40,10 +38,13 @@ def test_all_module_dirs_have_init() -> None:
 
 
 def test_infrastructure_files_use_ds_suffix() -> None:
-    """All infrastructure source files (except __init__) should use _ds suffix."""
+    """DS-attributed infrastructure uses _ds; stable public entrypoints are explicit."""
     infra_dir = Path("app/infrastructure")
+    stable_entrypoints = {infra_dir / "database" / "migrations.py"}
     for path in sorted(infra_dir.rglob("*.py")):
         if path.name == "__init__.py":
+            continue
+        if path in stable_entrypoints:
             continue
         if path.name == "__init__ds.py":
             continue

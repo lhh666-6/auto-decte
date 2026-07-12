@@ -1,6 +1,7 @@
 """SQLite task store with append-only progress events."""
 
 from datetime import UTC, datetime
+from threading import Lock
 from uuid import uuid4
 
 from sqlalchemy import Engine, func, select
@@ -13,6 +14,7 @@ from app.modules.tasks.models_ds import Task, TaskEvent, TaskStatus
 class SqliteTaskStore:
     def __init__(self, engine: Engine) -> None:
         self._engine = engine
+        self._event_lock = Lock()
 
     def get(self, task_id: str) -> Task | None:
         with Session(self._engine) as session:
@@ -61,6 +63,46 @@ class SqliteTaskStore:
                     created_at=event.created_at,
                 )
             )
+
+    def append_next_event(
+        self,
+        task: Task,
+        event_type: str,
+        detail: dict[str, object] | None = None,
+    ) -> TaskEvent:
+        """Allocate and append an event while serialising local task writers."""
+        with self._event_lock, Session(self._engine) as session, session.begin():
+            sequence = (
+                session.scalar(
+                    select(func.max(TaskEventRow.sequence)).where(
+                        TaskEventRow.task_id == task.task_id
+                    )
+                )
+                or 0
+            ) + 1
+            event = TaskEvent(
+                event_id=f"TASK-EVENT-{uuid4().hex}",
+                task_id=task.task_id,
+                sequence=sequence,
+                event_type=event_type,
+                progress=task.progress,
+                step=task.step,
+                detail=detail,
+                created_at=datetime.now(UTC),
+            )
+            session.add(
+                TaskEventRow(
+                    event_id=event.event_id,
+                    task_id=event.task_id,
+                    sequence=event.sequence,
+                    event_type=event.event_type,
+                    progress=event.progress,
+                    step=event.step,
+                    detail=event.detail,
+                    created_at=event.created_at,
+                )
+            )
+            return event
 
     def list_events(self, task_id: str) -> list[TaskEvent]:
         statement = (

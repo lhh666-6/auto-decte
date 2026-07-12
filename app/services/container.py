@@ -17,6 +17,7 @@ from app.application.import_forms import ImportForms
 from app.application.query_forms import QueryForms
 from app.application.recognize_forms import RecognizeForms
 from app.application.review_forms import ReviewForms
+from app.infrastructure.database.migrations import verify_database_revision
 from app.infrastructure.database.sqlite_ds import create_sqlite_engine
 from app.infrastructure.database.uow_ds import SqlAlchemyUnitOfWork
 from app.infrastructure.tasks.sqlite_store_ds import SqliteTaskStore
@@ -48,7 +49,10 @@ class Services:
 def build_services(settings: Settings) -> Services:
     settings.database_path.parent.mkdir(parents=True, exist_ok=True)
     engine = create_sqlite_engine(settings.database_path)
-    Base.metadata.create_all(engine)
+    if settings.auto_create_schema:
+        Base.metadata.create_all(engine)
+    else:
+        verify_database_revision(engine)
     repository = SqlAlchemyFormRepository(engine)
     storage = LocalEvidenceStorage(settings.evidence_root)
     queries = QueryForms(repository)

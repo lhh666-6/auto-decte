@@ -210,20 +210,16 @@ export class WebAudioPort implements AudioPort {
 // ─── Web Notification Port ───────────────────────────────────────────────────
 
 export class WebNotificationPort implements NotificationPort {
-  private permission: NotificationPermission | null = null;
-
   private async ensurePermission(): Promise<boolean> {
     if (!("Notification" in window)) return false;
 
     if (Notification.permission === "granted") {
-      this.permission = "granted";
       return true;
     }
 
     if (Notification.permission === "denied") return false;
 
     const result = await Notification.requestPermission();
-    this.permission = result;
     return result === "granted";
   }
 

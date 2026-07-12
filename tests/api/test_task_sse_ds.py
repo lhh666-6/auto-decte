@@ -15,6 +15,7 @@ def test_task_events_resume_after_last_event_id(tmp_path: Path) -> None:
     )
     services.tasks.start(task.task_id)
     services.tasks.report(task.task_id, 50, "recognizing")
+    services.tasks.succeed(task.task_id)
     client = TestClient(create_app(services))
 
     response = client.get(
@@ -24,4 +25,5 @@ def test_task_events_resume_after_last_event_id(tmp_path: Path) -> None:
 
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/event-stream")
+    assert response.headers["cache-control"] == "no-cache"
     assert "id: 3" in response.text

@@ -18,15 +18,9 @@ from app.infrastructure.backup.integrity_ds import IntegrityChecker
 def main() -> int:
     parser = argparse.ArgumentParser(description="Verify industrial form demo data integrity")
     parser.add_argument("--json", action="store_true", help="Output JSON report")
-    parser.add_argument(
-        "--db", default="data/database/demo.db", help="Path to SQLite database"
-    )
-    parser.add_argument(
-        "--evidence", default="data/evidence", help="Path to evidence files"
-    )
-    parser.add_argument(
-        "--exports", default="data/exports", help="Path to export files"
-    )
+    parser.add_argument("--db", default="data/database/demo.db", help="Path to SQLite database")
+    parser.add_argument("--evidence", default="data/evidence", help="Path to evidence files")
+    parser.add_argument("--exports", default="data/exports", help="Path to export files")
     args = parser.parse_args()
 
     db_path = Path(args.db)
@@ -42,16 +36,27 @@ def main() -> int:
     report = checker.run()
 
     if args.json:
-        print(json.dumps({
-            "exit_code": report.exit_code,
-            "issues": [
-                {"code": i.code, "severity": i.severity, "message": i.message, "detail": i.detail}
-                for i in report.issues
-            ],
-            "total_forms": report.total_forms,
-            "total_evidence": report.total_evidence,
-            "total_exports": report.total_exports,
-        }, ensure_ascii=False, indent=2))
+        print(
+            json.dumps(
+                {
+                    "exit_code": report.exit_code,
+                    "issues": [
+                        {
+                            "code": i.code,
+                            "severity": i.severity,
+                            "message": i.message,
+                            "detail": i.detail,
+                        }
+                        for i in report.issues
+                    ],
+                    "total_forms": report.total_forms,
+                    "total_evidence": report.total_evidence,
+                    "total_exports": report.total_exports,
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
     else:
         if report.issues:
             print(f"\nFound {len(report.issues)} issue(s):")

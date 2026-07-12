@@ -15,6 +15,9 @@ class Settings(BaseSettings):
     )
 
     data_root: Path = Path("data")
+    environment: str = "development"
+    auto_create_schema: bool = True
+    allow_header_identity: bool = False
     ai_enabled: bool = False
     task_max_workers: int = 2
     task_queue_capacity: int = 32

@@ -82,4 +82,4 @@ class TaskService:
         return task
 
     def _append(self, task: Task, event_type: str) -> None:
-        self._store.append_event(self._store.next_event(task, event_type))
+        self._store.append_next_event(task, event_type)

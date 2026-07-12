@@ -8,7 +8,7 @@ from config.settings import Settings
 
 
 def build_client(tmp_path: Path) -> tuple[TestClient, Services]:
-    services = build_services(Settings(data_root=tmp_path))
+    services = build_services(Settings(data_root=tmp_path, allow_header_identity=True))
     image = tmp_path / "scan.png"
     image.write_bytes(b"image")
     services.imports.import_image(image, "FORM-1", "T1", "1", "operator-a")
@@ -90,3 +90,7 @@ def test_task_creation_returns_accepted_urls_and_is_idempotent(tmp_path: Path) -
     assert first.status_code == 202
     assert first.json()["task_id"] == second.json()["task_id"]
     assert first.json()["events_url"].endswith("/events")
+
+    status_response = client.get(first.json()["status_url"], headers=headers)
+    assert status_response.status_code == 200
+    assert status_response.json()["status"] == "PENDING"

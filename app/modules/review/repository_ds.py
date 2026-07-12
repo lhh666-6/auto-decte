@@ -1,8 +1,11 @@
 """Persistence adapter for review leases."""
 
 from datetime import UTC, datetime
+from typing import Any, cast
 
 from sqlalchemy import Engine
+from sqlalchemy.dialects.sqlite import insert
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.orm import Session
 
 from app.adapters.database.models import ReviewLeaseRow
@@ -32,6 +35,28 @@ class SqlAlchemyReviewLeaseRepository:
                     forced_release_reason=lease.forced_release_reason,
                 )
             )
+
+    def try_acquire(self, lease: ReviewLease, now: datetime) -> bool:
+        """Atomically acquire a lease if no live owner currently holds the form."""
+        values = {
+            "form_id": lease.form_id,
+            "owner_id": lease.owner_id,
+            "lease_token": lease.lease_token,
+            "acquired_at": lease.acquired_at,
+            "expires_at": lease.expires_at,
+            "heartbeat_at": lease.heartbeat_at,
+            "forced_release_by": lease.forced_release_by,
+            "forced_release_reason": lease.forced_release_reason,
+        }
+        statement = insert(ReviewLeaseRow).values(**values)
+        statement = statement.on_conflict_do_update(
+            index_elements=[ReviewLeaseRow.form_id],
+            set_=values,
+            where=ReviewLeaseRow.expires_at <= now,
+        )
+        with Session(self._engine) as session, session.begin():
+            result = cast(CursorResult[Any], session.execute(statement))
+            return result.rowcount == 1
 
     def delete(self, form_id: str) -> None:
         with Session(self._engine) as session, session.begin():

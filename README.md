@@ -15,7 +15,7 @@ uv run streamlit run app/ui/main.py
 复制 `.env.example` 为 `.env` 后可修改本地数据目录。不要将真实表单、员工数据、
 录音、数据库、导出文件或密钥提交到 GitHub。
 
-协作状态和接力操作见 [PROGRESS.md](PROGRESS.md)。
+协作状态和接力操作见 [PROGRESS.md](PROGRESS.md)。模块化架构、React/Web + Tauri 目标界面、当前已验证能力和队友 Codex 的任务清单见 [docs/CODEX_HANDOFF.md](docs/CODEX_HANDOFF.md)。
 
 ## 当前功能
 

@@ -10,7 +10,7 @@ from app.infrastructure.database.sqlite_ds import create_sqlite_engine
 from app.infrastructure.database.uow_ds import SqlAlchemyUnitOfWork
 from app.modules.review.facade_ds import ConfirmReviewCommand, ReviewFacade
 from app.modules.review.lease_service_ds import LeaseHeldError, ReviewLeaseService
-from app.modules.review.models_ds import ReviewVersionConflict
+from app.modules.review.models_ds import ReviewLease, ReviewVersionConflict
 from app.modules.review.repository_ds import SqlAlchemyReviewLeaseRepository
 
 
@@ -123,3 +123,16 @@ def test_confirm_rejects_stale_version_with_conflict_context(tmp_path) -> None:
         facade.confirm(command)
     assert error.value.submitted_version == 0
     assert error.value.current_version == 1
+
+
+def test_lease_repository_only_acquires_once_until_expiry(tmp_path) -> None:
+    engine = create_sqlite_engine(tmp_path / "demo.db")
+    Base.metadata.create_all(engine)
+    repository = SqlAlchemyReviewLeaseRepository(engine)
+    now = datetime(2026, 7, 12, tzinfo=UTC)
+    first = ReviewLease("FORM-1", "reviewer-a", "token-a", now, now + timedelta(minutes=1), now)
+    second = ReviewLease("FORM-1", "reviewer-b", "token-b", now, now + timedelta(minutes=1), now)
+
+    assert repository.try_acquire(first, now) is True
+    assert repository.try_acquire(second, now) is False
+    assert repository.try_acquire(second, now + timedelta(minutes=2)) is True

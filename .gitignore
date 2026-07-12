@@ -7,5 +7,7 @@ __pycache__/
 .ruff_cache/
 *.py[cod]
 *.egg-info/
+frontend/node_modules/
+frontend/**/dist/
 data/
 *.xlsx

@@ -12,6 +12,11 @@ def get_services(request: Request) -> Services:
 
 
 def get_current_actor(request: Request, services: Services) -> Actor:
+    if not services.settings.allow_header_identity:
+        return LocalIdentityProvider(
+            services.settings.local_default_user_id,
+            services.settings.local_default_roles,
+        ).current_actor()
     roles = tuple(
         role.strip() for role in request.headers.get("X-Roles", "").split(",") if role.strip()
     )
