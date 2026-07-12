@@ -89,7 +89,7 @@
   - 根据真实表单冻结三套模板坐标和定位点
 - 验证命令：`uv run python -m pytest -q`；`uv run python -m ruff check .`；`uv run python -m mypy app config`；Streamlit AppTest
 - 验证结果：`39 passed`；Ruff 全部通过；mypy 检查 37 个源文件无问题；六个 UI 标签页加载无异常
-- 最新提交：本次功能提交写入后补记
+- 最新提交：`85eed55`
 - 已知问题：当前数字识别为轻量合成字体基线，未达到真实生产样张准确率声明条件
 - 下一位操作：提供三类模板和 30–50 张脱敏样张，在本分支补充 golden fixtures 与准确率报告
 
