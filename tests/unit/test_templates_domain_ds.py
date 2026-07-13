@@ -83,6 +83,15 @@ def test_draft_version_can_replace_then_remove_a_field() -> None:
             page,
         )
     )
+    other_field = FieldDefinition(
+        "overtime_hours",
+        "Overtime hours",
+        "decimal",
+        "digit_boxes",
+        Rect(0.4, 0.1, 0.1, 0.1),
+        page,
+    )
+    version.add_field(other_field)
 
     replacement = FieldDefinition(
         "hours",
@@ -93,10 +102,34 @@ def test_draft_version_can_replace_then_remove_a_field() -> None:
         page,
     )
     version.replace_field("hours", replacement)
+
+    assert version.fields == [replacement, other_field]
+    assert version.fields[0].display_name == "Hours worked"
+    assert version.fields[0].region == Rect(0.2, 0.1, 0.1, 0.1)
     version.remove_field("hours")
+    assert version.fields == [other_field]
+    version.remove_field("overtime_hours")
 
     assert version.fields == []
     assert version.status is TemplateStatus.DRAFT
+
+
+def test_draft_version_rejects_unknown_field_replacement_and_removal() -> None:
+    page = PageSpec.a4_portrait()
+    version = TemplateVersion.draft("TPL-1", "PAYROLL_HOURLY", 1, page)
+    replacement = FieldDefinition(
+        "hours",
+        "Hours worked",
+        "decimal",
+        "digit_boxes",
+        Rect(0.2, 0.1, 0.1, 0.1),
+        page,
+    )
+
+    with pytest.raises(KeyError, match="Unknown field: hours"):
+        version.replace_field("hours", replacement)
+    with pytest.raises(KeyError, match="Unknown field: hours"):
+        version.remove_field("hours")
 
 
 def test_published_version_cannot_be_mutated() -> None:
