@@ -1,10 +1,11 @@
 """Authorized template draft, publication and printable-artifact endpoints."""
 
+from json import JSONDecodeError
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import FileResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
 from app.api.dependencies_ds import get_current_actor, get_services
 from app.application.template_versions_ds import PreflightReport
@@ -34,7 +35,7 @@ class RegionRequest(BaseModel):
     height: float = Field(gt=0, le=1)
 
 
-class AddFieldRequest(BaseModel):
+class FieldRequest(BaseModel):
     field_key: str
     display_name: str
     data_type: str
@@ -58,6 +59,13 @@ def _require(actor: Actor, permission: Permission) -> None:
         ) from error
 
 
+async def _field_request(request: Request) -> FieldRequest:
+    try:
+        return FieldRequest.model_validate(await request.json())
+    except (JSONDecodeError, ValidationError) as error:
+        raise _invalid_field(error) from error
+
+
 @router.post("/templates", status_code=status.HTTP_201_CREATED)
 def create_template(
     body: CreateTemplateRequest,
@@ -73,32 +81,18 @@ def create_template(
 @router.post("/template-versions/{version_id}/fields")
 def add_field(
     version_id: str,
-    body: AddFieldRequest,
     request: Request,
+    body: FieldRequest = Depends(_field_request),  # noqa: B008
     services: Services = Depends(get_services),  # noqa: B008
 ) -> dict[str, object]:
     _require(_actor(request, services), Permission.TEMPLATE_CREATE_VERSION)
-    version = services.templates.get(version_id)
-    region = Rect(body.region.x, body.region.y, body.region.width, body.region.height)
     try:
-        updated = services.templates.add_field(
-            version_id,
-            FieldDefinition(
-                body.field_key,
-                body.display_name,
-                body.data_type,
-                body.input_type,
-                region,
-                version.page,
-                body.recognition_engine,
-                body.minimum_prefill_confidence,
-            ),
-        )
+        version = services.templates.get(version_id)
+        updated = services.templates.add_field(version_id, _field_definition(body, version.page))
+    except KeyError as error:
+        raise _version_not_found(error) from error
     except ValueError as error:
-        raise HTTPException(
-            status_code=422,
-            detail={"code": "INVALID_FIELD", "detail": str(error)},
-        ) from error
+        raise _invalid_field(error) from error
     return _version_payload(updated, ())
 
 
@@ -109,8 +103,11 @@ def preflight(
     services: Services = Depends(get_services),  # noqa: B008
 ) -> dict[str, object]:
     _require(_actor(request, services), Permission.TEMPLATE_CREATE_VERSION)
-    report = services.templates.preflight(version_id)
-    version = services.templates.get(version_id)
+    try:
+        report = services.templates.preflight(version_id)
+        version = services.templates.get(version_id)
+    except KeyError as error:
+        raise _version_not_found(error) from error
     return _preflight_payload(report, version)
 
 
@@ -123,6 +120,8 @@ def publish(
     _require(_actor(request, services), Permission.TEMPLATE_CREATE_VERSION)
     try:
         version = services.templates.publish(version_id)
+    except KeyError as error:
+        raise _version_not_found(error) from error
     except ValueError as error:
         raise HTTPException(
             status_code=409,
@@ -132,6 +131,94 @@ def publish(
     for artifact in artifacts:
         services.template_repository.add_artifact(artifact)
     return _version_payload(version, artifacts)
+
+
+@router.get("/templates")
+def list_templates(
+    request: Request,
+    services: Services = Depends(get_services),  # noqa: B008
+) -> list[dict[str, object]]:
+    _require(_actor(request, services), Permission.TEMPLATE_READ)
+    versions = services.templates.list_templates()
+    summaries: list[dict[str, object]] = []
+    for template_key in sorted({version.template_key for version in versions}):
+        candidates = [version for version in versions if version.template_key == template_key]
+        published = [version for version in candidates if version.status.value == "PUBLISHED"]
+        selected = max(published or candidates, key=lambda item: (item.version, item.version_id))
+        summaries.append(_library_item_payload(selected))
+    return summaries
+
+
+@router.get("/template-versions/{version_id}")
+def get_template_version(
+    version_id: str,
+    request: Request,
+    services: Services = Depends(get_services),  # noqa: B008
+) -> dict[str, object]:
+    _require(_actor(request, services), Permission.TEMPLATE_READ)
+    try:
+        version = services.templates.get(version_id)
+    except KeyError as error:
+        raise _version_not_found(error) from error
+    return _version_payload(version, services.template_repository.list_artifacts(version_id))
+
+
+@router.post("/template-versions/{version_id}/clone", status_code=status.HTTP_201_CREATED)
+def clone_template_version(
+    version_id: str,
+    request: Request,
+    services: Services = Depends(get_services),  # noqa: B008
+) -> dict[str, object]:
+    _require(_actor(request, services), Permission.TEMPLATE_CREATE_VERSION)
+    try:
+        version = services.templates.clone(version_id)
+    except KeyError as error:
+        raise _version_not_found(error) from error
+    except ValueError as error:
+        raise _invalid_lifecycle(error) from error
+    return _version_payload(version, ())
+
+
+@router.patch("/template-versions/{version_id}/fields/{field_key}")
+def replace_field(
+    version_id: str,
+    field_key: str,
+    request: Request,
+    body: FieldRequest = Depends(_field_request),  # noqa: B008
+    services: Services = Depends(get_services),  # noqa: B008
+) -> dict[str, object]:
+    _require(_actor(request, services), Permission.TEMPLATE_CREATE_VERSION)
+    try:
+        version = services.templates.get(version_id)
+        updated = services.templates.replace_field(
+            version_id, field_key, _field_definition(body, version.page)
+        )
+    except KeyError as error:
+        raise _version_not_found(error) from error
+    except ValueError as error:
+        if "cannot be mutated" in str(error):
+            raise _invalid_lifecycle(error) from error
+        raise _invalid_field(error) from error
+    return _version_payload(updated, ())
+
+
+@router.delete("/template-versions/{version_id}/fields/{field_key}")
+def delete_field(
+    version_id: str,
+    field_key: str,
+    request: Request,
+    services: Services = Depends(get_services),  # noqa: B008
+) -> dict[str, object]:
+    _require(_actor(request, services), Permission.TEMPLATE_CREATE_VERSION)
+    try:
+        updated = services.templates.remove_field(version_id, field_key)
+    except KeyError as error:
+        raise _version_not_found(error) from error
+    except ValueError as error:
+        if "cannot be mutated" in str(error):
+            raise _invalid_lifecycle(error) from error
+        raise _invalid_field(error) from error
+    return _version_payload(updated, ())
 
 
 @router.get("/template-artifacts/{artifact_id}/content")
@@ -154,6 +241,40 @@ def _page_spec(page_size: str) -> PageSpec:
     if page_size == "A5":
         return PageSpec.a5_portrait()
     raise HTTPException(status_code=422, detail={"code": "INVALID_PAGE_SIZE"})
+
+
+def _field_definition(body: FieldRequest, page: PageSpec) -> FieldDefinition:
+    return FieldDefinition(
+        body.field_key,
+        body.display_name,
+        body.data_type,
+        body.input_type,
+        Rect(body.region.x, body.region.y, body.region.width, body.region.height),
+        page,
+        body.recognition_engine,
+        body.minimum_prefill_confidence,
+    )
+
+
+def _version_not_found(error: KeyError) -> HTTPException:
+    return HTTPException(
+        status_code=404,
+        detail={"code": "TEMPLATE_VERSION_NOT_FOUND", "detail": str(error)},
+    )
+
+
+def _invalid_lifecycle(error: ValueError) -> HTTPException:
+    return HTTPException(
+        status_code=409,
+        detail={"code": "INVALID_LIFECYCLE", "detail": str(error)},
+    )
+
+
+def _invalid_field(error: ValueError | ValidationError) -> HTTPException:
+    return HTTPException(
+        status_code=422,
+        detail={"code": "INVALID_FIELD", "detail": str(error)},
+    )
 
 
 def _safe_artifact_path(artifact: TemplateArtifact, evidence_root: Path) -> Path:
@@ -181,11 +302,22 @@ def _version_payload(
         "template_key": version.template_key,
         "version": version.version,
         "status": version.status.value,
+        "parent_version_id": version.parent_version_id,
+        "page": _page_payload(version.page),
         "fields": [
             {
                 "field_key": field.field_key,
+                "display_name": field.display_name,
+                "data_type": field.data_type,
+                "input_type": field.input_type,
                 "recognition_engine": field.recognition_engine,
                 "minimum_prefill_confidence": field.minimum_prefill_confidence,
+                "region": {
+                    "x": field.region.x,
+                    "y": field.region.y,
+                    "width": field.region.width,
+                    "height": field.region.height,
+                },
             }
             for field in version.fields
         ],
@@ -199,4 +331,29 @@ def _version_payload(
             }
             for artifact in artifacts
         ],
+    }
+
+
+def _library_item_payload(version: TemplateVersion) -> dict[str, object]:
+    return {
+        "template_key": version.template_key,
+        "current_published_version": (
+            version.version if version.status.value == "PUBLISHED" else None
+        ),
+        "version": version.version,
+        "status": version.status.value,
+        "page": _page_payload(version.page),
+        "field_count": len(version.fields),
+    }
+
+
+def _page_payload(page: PageSpec) -> dict[str, object]:
+    return {
+        "size": page.size,
+        "orientation": page.orientation,
+        "width_mm": page.width_mm,
+        "height_mm": page.height_mm,
+        "canonical_dpi": page.canonical_dpi,
+        "canonical_width_px": page.canonical_width_px,
+        "canonical_height_px": page.canonical_height_px,
     }
