@@ -73,6 +73,8 @@ class FieldDefinition:
     input_type: str
     region: Rect
     page: PageSpec
+    recognition_engine: str = "manual"
+    minimum_prefill_confidence: float = 1.0
 
     def __post_init__(self) -> None:
         if not self.field_key or not re.fullmatch(r"[a-z][a-z0-9_]*", self.field_key):
@@ -81,6 +83,10 @@ class FieldDefinition:
             raise ValueError("display_name is required")
         if not self.region.is_inside():
             raise ValueError("field region must be inside canonical canvas")
+        if not self.recognition_engine.strip():
+            raise ValueError("recognition_engine is required")
+        if not 0 <= self.minimum_prefill_confidence <= 1:
+            raise ValueError("minimum_prefill_confidence must be between 0 and 1")
 
 
 @dataclass(slots=True)

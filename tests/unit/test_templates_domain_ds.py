@@ -43,6 +43,33 @@ def test_invalid_template_key_and_out_of_canvas_field_are_rejected() -> None:
         )
 
 
+def test_field_definition_declares_immutable_recognition_and_prefill_policy() -> None:
+    page = PageSpec.a4_portrait()
+    field = FieldDefinition(
+        "total_quantity",
+        "Total",
+        "integer",
+        "digit_boxes",
+        Rect(0.1, 0.2, 0.2, 0.1),
+        page,
+        recognition_engine="digit_template",
+        minimum_prefill_confidence=0.97,
+    )
+
+    assert field.recognition_engine == "digit_template"
+    assert field.minimum_prefill_confidence == 0.97
+    with pytest.raises(ValueError, match="minimum_prefill_confidence"):
+        FieldDefinition(
+            "checked",
+            "Checked",
+            "boolean",
+            "checkbox",
+            Rect(0.1, 0.2, 0.2, 0.1),
+            page,
+            minimum_prefill_confidence=1.1,
+        )
+
+
 def test_published_version_cannot_be_mutated() -> None:
     version = TemplateVersion.draft("TPL-1", "PAYROLL_HOURLY", 1, PageSpec.a4_portrait())
     with pytest.raises(ValueError, match="preflight"):

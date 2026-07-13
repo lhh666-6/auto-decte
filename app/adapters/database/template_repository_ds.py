@@ -204,6 +204,8 @@ def _field_to_dict(field: FieldDefinition) -> dict[str, object]:
         "display_name": field.display_name,
         "data_type": field.data_type,
         "input_type": field.input_type,
+        "recognition_engine": field.recognition_engine,
+        "minimum_prefill_confidence": field.minimum_prefill_confidence,
         "region": {
             "x": field.region.x,
             "y": field.region.y,
@@ -229,6 +231,8 @@ def _field_from_dict(field_key: str, value: dict[str, object], page: PageSpec) -
             height=float(region["height"]),
         ),
         page=page,
+        recognition_engine=str(value.get("recognition_engine", "manual")),
+        minimum_prefill_confidence=_as_float(value.get("minimum_prefill_confidence", 1.0)),
     )
 
 
@@ -236,3 +240,9 @@ def _as_int(value: object) -> int:
     if isinstance(value, int):
         return value
     raise ValueError("template page dimension must be an integer")
+
+
+def _as_float(value: object) -> float:
+    if isinstance(value, (int, float)):
+        return float(value)
+    raise ValueError("template confidence must be numeric")
