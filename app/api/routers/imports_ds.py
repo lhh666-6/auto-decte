@@ -1,7 +1,6 @@
 """Controlled binary image import endpoint."""
 
 from hashlib import sha256
-from uuid import uuid4
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 
@@ -36,13 +35,14 @@ async def import_image(
     content = await request.body()
     if not content or len(content) > _MAX_IMAGE_BYTES:
         raise HTTPException(status_code=413, detail={"code": "INVALID_IMAGE_SIZE"})
-    form_id = f"FORM-{uuid4().hex}"
+    content_digest = sha256(content).hexdigest()
+    form_id = f"FORM-{content_digest[:24]}"
     command = TaskCommand(
         "FORM_IMPORT",
         form_id,
         actor.actor_id,
         idempotency_key,
-        {"sha256": sha256(content).hexdigest(), "content_type": request.headers["content-type"]},
+        {"sha256": content_digest, "content_type": request.headers["content-type"]},
     )
     try:
         task = services.tasks.submit(command)
