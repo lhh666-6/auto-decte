@@ -8,18 +8,55 @@ export interface TemplateArtifact {
   download_url: string;
 }
 
+export interface TemplateRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface TemplateField {
+  field_key: string;
+  display_name: string;
+  data_type: string;
+  input_type: string;
+  recognition_engine: string;
+  minimum_prefill_confidence: number;
+  region: TemplateRect;
+}
+
+export interface TemplatePage {
+  size: string;
+  orientation: string;
+  width_mm: number;
+  height_mm: number;
+  canonical_dpi: number;
+  canonical_width_px: number;
+  canonical_height_px: number;
+}
+
 export interface TemplateVersion {
   version_id: string;
-  template_key?: string;
-  version?: number;
+  template_key: string;
+  version: number;
   status: string;
-  fields: Array<{
-    field_key: string;
-    recognition_engine: string;
-    minimum_prefill_confidence: number;
-  }>;
+  parent_version_id: string | null;
+  page: TemplatePage;
+  fields: TemplateField[];
   artifacts: TemplateArtifact[];
 }
+
+export interface TemplateLibraryItem {
+  template_key: string;
+  version_id: string;
+  current_published_version: number | null;
+  version: number;
+  status: string;
+  page: TemplatePage;
+  field_count: number;
+}
+
+export type TemplateFieldInput = TemplateField;
 
 export interface PreflightReport {
   ok: boolean;
@@ -28,6 +65,10 @@ export interface PreflightReport {
 }
 
 type Fetcher = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
+type RequestOptions = {
+  method: "GET" | "POST" | "PATCH" | "DELETE";
+  body?: unknown;
+};
 
 export class TemplateApi {
   constructor(
@@ -36,35 +77,64 @@ export class TemplateApi {
   ) {}
 
   createDraft(templateKey: string, pageSize: "A4" | "A5"): Promise<TemplateVersion> {
-    return this.request("/templates", { template_key: templateKey, page_size: pageSize });
+    return this.request("/templates", { method: "POST", body: { template_key: templateKey, page_size: pageSize } });
   }
 
-  addField(versionId: string, field: {
-    field_key: string; display_name: string; data_type: string; input_type: string;
-    recognition_engine: string; minimum_prefill_confidence: number;
-    region: { x: number; y: number; width: number; height: number };
-  }): Promise<TemplateVersion> {
-    return this.request(`/template-versions/${encodeURIComponent(versionId)}/fields`, field);
+  listTemplates(): Promise<TemplateLibraryItem[]> {
+    return this.request("/templates", { method: "GET" });
+  }
+
+  getVersion(versionId: string): Promise<TemplateVersion> {
+    return this.request(`/template-versions/${encodeURIComponent(versionId)}`, { method: "GET" });
+  }
+
+  clone(versionId: string): Promise<TemplateVersion> {
+    return this.request(`/template-versions/${encodeURIComponent(versionId)}/clone`, { method: "POST" });
+  }
+
+  addField(versionId: string, field: TemplateFieldInput): Promise<TemplateVersion> {
+    return this.request(`/template-versions/${encodeURIComponent(versionId)}/fields`, { method: "POST", body: field });
+  }
+
+  replaceField(versionId: string, fieldKey: string, field: TemplateFieldInput): Promise<TemplateVersion> {
+    return this.request(
+      `/template-versions/${encodeURIComponent(versionId)}/fields/${encodeURIComponent(fieldKey)}`,
+      { method: "PATCH", body: field },
+    );
+  }
+
+  deleteField(versionId: string, fieldKey: string): Promise<TemplateVersion> {
+    return this.request(
+      `/template-versions/${encodeURIComponent(versionId)}/fields/${encodeURIComponent(fieldKey)}`,
+      { method: "DELETE" },
+    );
   }
 
   preflight(versionId: string): Promise<PreflightReport> {
-    return this.request(`/template-versions/${encodeURIComponent(versionId)}/preflight`);
+    return this.request(`/template-versions/${encodeURIComponent(versionId)}/preflight`, { method: "POST" });
   }
 
   publish(versionId: string): Promise<TemplateVersion> {
-    return this.request(`/template-versions/${encodeURIComponent(versionId)}/publish`);
+    return this.request(`/template-versions/${encodeURIComponent(versionId)}/publish`, { method: "POST" });
   }
 
-  private async request<T>(path: string, body?: unknown): Promise<T> {
-    const fetcher = this.fetcher;
-    const response = await fetcher(`${this.baseUrl}${path}`, {
-      method: "POST",
-      headers: body === undefined ? {} : { "Content-Type": "application/json" },
-      body: body === undefined ? undefined : JSON.stringify(body),
+  private async request<T>(path: string, options: RequestOptions): Promise<T> {
+    const headers: Record<string, string> = options.body === undefined ? {} : { "Content-Type": "application/json" };
+    const response = await this.fetcher(`${this.baseUrl}${path}`, {
+      method: options.method,
+      headers,
+      ...(options.body === undefined ? {} : { body: JSON.stringify(options.body) }),
     });
+    if (response.status === 204) {
+      return undefined as T;
+    }
     if (!response.ok) {
       const problem = await response.json().catch(() => ({})) as { code?: string; detail?: string };
-      throw new ApiRequestError(response.status, problem.code ?? "REQUEST_FAILED", problem.detail ?? "请求失败");
+      throw new ApiRequestError(
+        response.status,
+        problem.code ?? "REQUEST_FAILED",
+        problem.detail ?? `Request failed with status ${response.status}`,
+      );
     }
     return response.json() as Promise<T>;
   }
