@@ -92,6 +92,27 @@ class OpenCvImagePipeline:
         transform = cv2.getPerspectiveTransform(source, target)
         return cast(Image, cv2.warpPerspective(image, transform, (width, height)))
 
+    def correct_template_perspective(self, image: Image, *, width: int, height: int) -> Image:
+        """Map a photographed template back to its canonical canvas via ArUco IDs 10--13."""
+        self._require_image(image)
+        dictionary = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50)
+        corners, ids, _ = cv2.aruco.ArucoDetector(dictionary).detectMarkers(image)
+        if ids is None:
+            raise ValueError("all directional corner markers are required")
+        observed = {
+            int(marker_id): np.asarray(marker_corners, dtype=np.float32)
+            .reshape(4, 2)
+            .mean(axis=0)
+            for marker_corners, marker_id in zip(corners, ids.flatten(), strict=True)
+            if int(marker_id) in {10, 11, 12, 13}
+        }
+        if set(observed) != {10, 11, 12, 13}:
+            raise ValueError("all directional corner markers are required")
+        source = np.asarray([observed[marker_id] for marker_id in (10, 11, 12, 13)])
+        target = self._canonical_marker_centres(width, height)
+        transform = cv2.getPerspectiveTransform(source.astype(np.float32), target)
+        return cast(Image, cv2.warpPerspective(image, transform, (width, height)))
+
     def crop_fields(self, image: Image, regions: list[FieldRegion]) -> dict[str, Image]:
         self._require_image(image)
         image_height, image_width = image.shape[:2]
@@ -115,6 +136,21 @@ class OpenCvImagePipeline:
     @staticmethod
     def _gray(image: Image) -> Image:
         return image if image.ndim == 2 else cast(Image, cv2.cvtColor(image, cv2.COLOR_BGR2GRAY))
+
+    @staticmethod
+    def _canonical_marker_centres(width: int, height: int) -> NDArray[np.float32]:
+        marker_size = max(96, min(width, height) // 28)
+        margin = max(24, marker_size // 5)
+        half = marker_size / 2
+        return np.asarray(
+            [
+                [margin + half, margin + half],
+                [width - margin - half, margin + half],
+                [width - margin - half, height - margin - half],
+                [margin + half, height - margin - half],
+            ],
+            dtype=np.float32,
+        )
 
     @staticmethod
     def _require_image(image: Image) -> None:
