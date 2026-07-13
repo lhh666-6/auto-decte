@@ -10,8 +10,10 @@
   "scripts": {
     "build:api-client": "npm run build -w packages/api-client",
     "build:shell-ports": "npm run build -w packages/shell-ports",
-    "typecheck": "tsc --noEmit --project tsconfig.json",
-    "test": "npm run typecheck"
+    "dev:web": "npm run dev -w @form-detection/web",
+    "build:web": "npm run build -w @form-detection/web",
+    "typecheck": "npm run build:api-client && npm run build:shell-ports && tsc --noEmit --project tsconfig.json",
+    "test": "npm run typecheck && npm run test -w @form-detection/web"
   },
   "devDependencies": {
     "typescript": "^5.4.0"

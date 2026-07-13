@@ -12,6 +12,18 @@ uv run python -m ruff check .
 uv run streamlit run app/ui/main.py
 ```
 
+React 审核工作台（Web Shell）可与 API 同时运行：
+
+```powershell
+uv run python -m uvicorn app.api.main:create_app --factory --host 127.0.0.1 --port 8000
+cd frontend
+npm install
+npm run dev:web
+```
+
+浏览器打开 `http://127.0.0.1:5173`，输入已有表单编号。Web 开发服务器会将 `/api`
+代理到本地 8000 端口；生产身份认证完成前，不要在浏览器请求中传递 `X-Roles`。
+
 复制 `.env.example` 为 `.env` 后可修改本地数据目录。不要将真实表单、员工数据、
 录音、数据库、导出文件或密钥提交到 GitHub。
 

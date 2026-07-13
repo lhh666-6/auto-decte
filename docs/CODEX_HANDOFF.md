@@ -146,3 +146,14 @@ uv run python -m pytest -q
 最新验证：`107 passed`，Ruff 通过，mypy 检查 111 个源文件通过。未实现的规则结果、队列/分类/模板/主数据/导出 API 仍不得在前端伪称已完成。
 
 下一步为 React/Vite 审核工作台。严格遵守 [审核工作台视觉规范](design/review-workbench-style.md)：左图右表、字段—坐标双向联动、异常优先；业务 Feature 只能使用 API Client 和 Shell Ports，不能读取本地文件路径、数据库或直接调用 Tauri API。
+
+## 2026-07-13：React Web 审核工作台第一阶段
+
+`frontend/apps/web` 已不再是 README 骨架，而是可运行的 React/Vite Web Shell：
+
+- 左侧原图画布叠加字段框，右侧舒适密度的可编辑电子表格；点击字段或图片框会保持同一选中状态；
+- 通过 `ReviewWorkbenchApi` 调用版本化 API，包含详情、历史、证据、审核租约与确认；
+- Web 通知经 `@form-detection/shell-ports` 处理；没有 Feature 直接读取数据库、本地证据路径或 Tauri API；
+- 根 `npm run test`（TypeScript + Vitest 3 项）和 `npm run build:web` 均已通过，并在本地浏览器用隔离演示数据完成了加载、字段框、异常状态和审核锁的可视化验收。
+
+仍未完成：真实队列/规则/统计图表、草稿与退回/作废、任务进度、模板/主数据页面、Tauri v2 壳和生产认证。下一阶段应先补相关 API，再把当前 Web Shell 的审核组件抽到 `frontend/features/review-workbench/`，保持 Web 与 Desktop 可共用。

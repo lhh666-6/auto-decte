@@ -1,0 +1,30 @@
+{
+  "name": "@form-detection/web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "predev": "npm run build -w @form-detection/api-client && npm run build -w @form-detection/shell-ports",
+    "prebuild": "npm run build -w @form-detection/api-client && npm run build -w @form-detection/shell-ports",
+    "pretypecheck": "npm run build -w @form-detection/api-client && npm run build -w @form-detection/shell-ports",
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@form-detection/api-client": "file:../../packages/api-client",
+    "@form-detection/shell-ports": "file:../../packages/shell-ports",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@types/node": "^22.10.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "typescript": "^5.4.0",
+    "vite": "^5.4.10",
+    "vitest": "^2.1.5"
+  }
+}

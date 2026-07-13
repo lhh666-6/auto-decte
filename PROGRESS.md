@@ -235,3 +235,17 @@
 - 验证结果：`107 passed`；`uv run python -m ruff check .` 通过；`uv run python -m mypy app config` 检查 111 个源文件通过。
 - 未完成：规则结果、队列/分类/模板/主数据/导出 API；真实任务 Handler；React/Vite 审核工作台；Tauri 壳；生产认证与存储/Worker。
 - 下一位操作：以 `docs/design/review-workbench-style.md` 为唯一视觉基线，在 `frontend/` 创建 React/Vite 应用；只通过 API Client 与 Shell Ports 调用后端和 Web/Desktop 能力，不直接访问数据库、本地证据路径或 Tauri API。
+
+## React Web 审核工作台（2026-07-13）
+
+- 状态：Web Shell 第一阶段已完成并已验证；桌面 Tauri 壳尚未开始。
+- 分支：`modular-architecture`。
+- 已完成：
+  - 新增 `frontend/apps/web` 的 React + TypeScript + Vite 应用，并保留 Web/Tauri 共享 Feature 的边界。
+  - 审核台遵循 `docs/design/review-workbench-style.md`：深海蓝导航、左图右表、字段与图片框联动、低置信度异常优先、底部详情抽屉。
+  - `@form-detection/api-client` 新增审核工作台 DTO 与 API Client；浏览器 `fetch` 使用无绑定调用，避免原生 `fetch` 的 `Illegal invocation`。
+  - 审核锁获取/续租/释放和确认请求均经 API Client；Web 通知只经 Shell Port 调用。
+  - 本地浏览器验收：加载隔离演示表单、显示原图与 4 个字段框、编辑表格、低置信候选、获取与释放审核锁。
+- 验证结果：前端根 `npm run test`（TypeScript + Vitest 3 项）通过；`npm run build:web`（Vite 生产构建）通过。
+- 未完成：真实队列/规则/统计图表、草稿保存、退回/作废、任务进度、模板与主数据页面、Tauri v2 壳，以及生产认证。
+- 下一位操作：先补齐工作台规则/队列 API，再在 `frontend/features/review-workbench` 抽取可复用组件；不得让 React 状态替代审核事实、审计事件或租约。
