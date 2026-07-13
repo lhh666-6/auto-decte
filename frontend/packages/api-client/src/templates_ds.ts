@@ -13,7 +13,11 @@ export interface TemplateVersion {
   template_key?: string;
   version?: number;
   status: string;
-  fields: string[];
+  fields: Array<{
+    field_key: string;
+    recognition_engine: string;
+    minimum_prefill_confidence: number;
+  }>;
   artifacts: TemplateArtifact[];
 }
 
@@ -37,6 +41,7 @@ export class TemplateApi {
 
   addField(versionId: string, field: {
     field_key: string; display_name: string; data_type: string; input_type: string;
+    recognition_engine: string; minimum_prefill_confidence: number;
     region: { x: number; y: number; width: number; height: number };
   }): Promise<TemplateVersion> {
     return this.request(`/template-versions/${encodeURIComponent(versionId)}/fields`, field);
