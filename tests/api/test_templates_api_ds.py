@@ -161,3 +161,38 @@ def test_template_field_payload_validation_uses_invalid_field_problem_code(tmp_p
 
     assert response.status_code == 422
     assert response.json()["code"] == "INVALID_FIELD"
+
+
+def test_template_field_routes_declare_openapi_request_bodies(tmp_path: Path) -> None:
+    schema = _client(tmp_path).app.openapi()
+
+    fields_path = "/api/v1/template-versions/{version_id}/fields"
+    field_path = "/api/v1/template-versions/{version_id}/fields/{field_key}"
+    assert "requestBody" in schema["paths"][fields_path]["post"]
+    assert "requestBody" in schema["paths"][field_path]["patch"]
+
+
+def test_template_field_routes_return_field_not_found_for_unknown_fields(tmp_path: Path) -> None:
+    client = _client(tmp_path)
+    created = client.post(
+        "/api/v1/templates",
+        headers=_headers(),
+        json={"template_key": "PAYROLL_HOURLY", "page_size": "A4"},
+    )
+    version_id = created.json()["version_id"]
+    missing_field = _field()
+    missing_field["field_key"] = "missing_field"
+
+    patched = client.patch(
+        f"/api/v1/template-versions/{version_id}/fields/missing_field",
+        headers=_headers(),
+        json=missing_field,
+    )
+    deleted = client.delete(
+        f"/api/v1/template-versions/{version_id}/fields/missing_field", headers=_headers()
+    )
+
+    assert patched.status_code == 404
+    assert patched.json()["code"] == "FIELD_NOT_FOUND"
+    assert deleted.status_code == 404
+    assert deleted.json()["code"] == "FIELD_NOT_FOUND"

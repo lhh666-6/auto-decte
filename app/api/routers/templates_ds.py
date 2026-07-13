@@ -1,11 +1,10 @@
 """Authorized template draft, publication and printable-artifact endpoints."""
 
-from json import JSONDecodeError
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import FileResponse
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel
 
 from app.api.dependencies_ds import get_current_actor, get_services
 from app.application.template_versions_ds import PreflightReport
@@ -29,10 +28,10 @@ class CreateTemplateRequest(BaseModel):
 
 
 class RegionRequest(BaseModel):
-    x: float = Field(ge=0, lt=1)
-    y: float = Field(ge=0, lt=1)
-    width: float = Field(gt=0, le=1)
-    height: float = Field(gt=0, le=1)
+    x: float
+    y: float
+    width: float
+    height: float
 
 
 class FieldRequest(BaseModel):
@@ -42,7 +41,7 @@ class FieldRequest(BaseModel):
     input_type: str
     region: RegionRequest
     recognition_engine: str = "manual"
-    minimum_prefill_confidence: float = Field(default=1.0, ge=0, le=1)
+    minimum_prefill_confidence: float = 1.0
 
 
 def _actor(request: Request, services: Services) -> Actor:
@@ -57,13 +56,6 @@ def _require(actor: Actor, permission: Permission) -> None:
             status_code=403,
             detail={"code": "PERMISSION_DENIED", "detail": str(error)},
         ) from error
-
-
-async def _field_request(request: Request) -> FieldRequest:
-    try:
-        return FieldRequest.model_validate(await request.json())
-    except (JSONDecodeError, ValidationError) as error:
-        raise _invalid_field(error) from error
 
 
 @router.post("/templates", status_code=status.HTTP_201_CREATED)
@@ -81,8 +73,8 @@ def create_template(
 @router.post("/template-versions/{version_id}/fields")
 def add_field(
     version_id: str,
+    body: FieldRequest,
     request: Request,
-    body: FieldRequest = Depends(_field_request),  # noqa: B008
     services: Services = Depends(get_services),  # noqa: B008
 ) -> dict[str, object]:
     _require(_actor(request, services), Permission.TEMPLATE_CREATE_VERSION)
@@ -183,18 +175,21 @@ def clone_template_version(
 def replace_field(
     version_id: str,
     field_key: str,
+    body: FieldRequest,
     request: Request,
-    body: FieldRequest = Depends(_field_request),  # noqa: B008
     services: Services = Depends(get_services),  # noqa: B008
 ) -> dict[str, object]:
     _require(_actor(request, services), Permission.TEMPLATE_CREATE_VERSION)
     try:
         version = services.templates.get(version_id)
+    except KeyError as error:
+        raise _version_not_found(error) from error
+    try:
         updated = services.templates.replace_field(
             version_id, field_key, _field_definition(body, version.page)
         )
     except KeyError as error:
-        raise _version_not_found(error) from error
+        raise _field_not_found(error) from error
     except ValueError as error:
         if "cannot be mutated" in str(error):
             raise _invalid_lifecycle(error) from error
@@ -211,9 +206,13 @@ def delete_field(
 ) -> dict[str, object]:
     _require(_actor(request, services), Permission.TEMPLATE_CREATE_VERSION)
     try:
-        updated = services.templates.remove_field(version_id, field_key)
+        services.templates.get(version_id)
     except KeyError as error:
         raise _version_not_found(error) from error
+    try:
+        updated = services.templates.remove_field(version_id, field_key)
+    except KeyError as error:
+        raise _field_not_found(error) from error
     except ValueError as error:
         if "cannot be mutated" in str(error):
             raise _invalid_lifecycle(error) from error
@@ -263,6 +262,13 @@ def _version_not_found(error: KeyError) -> HTTPException:
     )
 
 
+def _field_not_found(error: KeyError) -> HTTPException:
+    return HTTPException(
+        status_code=404,
+        detail={"code": "FIELD_NOT_FOUND", "detail": str(error)},
+    )
+
+
 def _invalid_lifecycle(error: ValueError) -> HTTPException:
     return HTTPException(
         status_code=409,
@@ -270,7 +276,7 @@ def _invalid_lifecycle(error: ValueError) -> HTTPException:
     )
 
 
-def _invalid_field(error: ValueError | ValidationError) -> HTTPException:
+def _invalid_field(error: ValueError) -> HTTPException:
     return HTTPException(
         status_code=422,
         detail={"code": "INVALID_FIELD", "detail": str(error)},
