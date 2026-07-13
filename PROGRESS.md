@@ -249,3 +249,17 @@
 - 验证结果：前端根 `npm run test`（TypeScript + Vitest 3 项）通过；`npm run build:web`（Vite 生产构建）通过。
 - 未完成：真实队列/规则/统计图表、草稿保存、退回/作废、任务进度、模板与主数据页面、Tauri v2 壳，以及生产认证。
 - 下一位操作：先补齐工作台规则/队列 API，再在 `frontend/features/review-workbench` 抽取可复用组件；不得让 React 状态替代审核事实、审计事件或租约。
+
+## 模板驱动纸质表单闭环：Phase A（2026-07-13）
+
+- 状态：进行中；模板身份、版本、打印与 Web 设计器已完成，真实图片导入/识别/审核队列/导出仍未完成。
+- 已完成并推送至 `modular-architecture`：
+  - 模板版本、字段、打印产物三张独立表与 Alembic `002` 迁移；不改写历史 `forms` 数据。
+  - `IFD|template_key|version|checksum` 模板二维码、可选 `SHEET|batch|sequence|checksum` 纸张实例码、A4/A5 标准画布和 10/11/12/13 四角标记。
+  - 草稿—预检—发布—克隆生命周期；字段不能覆盖模板二维码安全区，发布后不可改写。
+  - 300 DPI PNG/PDF 打印产物及受控下载 API；响应不返回内部 URI 或绝对路径。
+  - 模板 API 与 React Template Studio；审核工作台侧栏“模板与字段”已不再是死按钮。
+  - 企业历史工资表已映射为四类种子模板，见 `docs/design/legacy-payroll-template-inventory.md`；原文件未改写。
+- 本阶段验证：模板领域/仓储/迁移/预检/渲染/API 定向测试通过；前端 `npm run test`、`npm run build:web` 通过。
+- 明确未完成：受控图片上传、FORM_IMPORT Handler、QR 解码与人工分类回退、ArUco 透视校正、RecognitionAttempt、自动预填、真实审核队列/草稿/退回/作废、模板化 XLSX 导出、ZIP 模板包导入及 Tauri 壳。
+- 下一位操作：实现白名单 `FORM_IMPORT` Handler 与 `/api/v1/imports`，上传只接受受控二进制内容和 `Idempotency-Key`，不得接受客户端本地路径或任意任务 operation。
