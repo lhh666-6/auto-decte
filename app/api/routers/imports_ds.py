@@ -2,6 +2,8 @@
 
 from hashlib import sha256
 
+import cv2
+import numpy as np
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 
 from app.api.dependencies_ds import get_current_actor, get_services
@@ -35,6 +37,9 @@ async def import_image(
     content = await request.body()
     if not content or len(content) > _MAX_IMAGE_BYTES:
         raise HTTPException(status_code=413, detail={"code": "INVALID_IMAGE_SIZE"})
+    image = cv2.imdecode(np.frombuffer(content, dtype=np.uint8), cv2.IMREAD_COLOR)
+    if image is None:
+        raise HTTPException(status_code=422, detail={"code": "INVALID_IMAGE_CONTENT"})
     content_digest = sha256(content).hexdigest()
     form_id = f"FORM-{content_digest[:24]}"
     command = TaskCommand(
@@ -55,7 +60,9 @@ async def import_image(
             services.imports.import_image_bytes(
                 content, suffix, form_id, "UNKNOWN", "0", actor.actor_id
             )
-            services.tasks.report(task.task_id, 75, "await_template_classification")
+            services.tasks.report(task.task_id, 60, "classify_template_qr")
+            services.recognition.classify_image(form_id, image)
+            services.tasks.report(task.task_id, 75, "await_recognition_or_review")
             task = services.tasks.succeed(task.task_id)
         except DuplicateEvidenceError as error:
             task = services.tasks.fail(task.task_id, str(error))

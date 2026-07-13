@@ -34,3 +34,13 @@ The manual fallback must not be presented as automatic recognition.
   requires it to be `PUBLISHED`.
 - Invalid payloads, tampered checksums, missing versions and unpublished versions all go
   to `NEEDS_CLASSIFICATION`; no legacy `template:version` fallback remains.
+
+## Controlled import QR update
+
+- `FORM_IMPORT` now decodes the submitted bytes as an image before evidence storage;
+  a matching MIME type alone is not accepted as proof of image content.
+- After original evidence is persisted, the handler reads the QR and performs the
+  published-version validation above. A valid, published IFD QR auto-binds the form;
+  missing or invalid QR values leave it in `NEEDS_CLASSIFICATION`.
+- Field correction and OCR/OMR are still separate future task stages. The current task
+  stops after evidence persistence and safe template classification.
