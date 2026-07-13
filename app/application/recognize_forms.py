@@ -131,7 +131,7 @@ class RecognizeForms:
         *,
         width: int,
         height: int,
-    ) -> EvidenceFile:
+    ) -> tuple[EvidenceFile, NDArray[Any]]:
         """Persist a derived canonical canvas without overwriting the original evidence."""
         self._require_form(form_id)
         corrected = self._pipeline.correct_template_perspective(image, width=width, height=height)
@@ -157,7 +157,7 @@ class RecognizeForms:
                 evidence_ids=(evidence.file_id,),
             )
         )
-        return evidence
+        return evidence, corrected
 
     def record_template_field_crops(
         self, form_id: str, canonical_image: NDArray[Any], template: TemplateVersion

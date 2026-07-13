@@ -70,11 +70,16 @@ async def import_image(
                     )
                     if template is not None:
                         try:
-                            services.recognition.correct_and_record_template_canvas(
-                                form_id,
-                                image,
-                                width=template.page.canonical_width_px,
-                                height=template.page.canonical_height_px,
+                            _, canonical_image = (
+                                services.recognition.correct_and_record_template_canvas(
+                                    form_id,
+                                    image,
+                                    width=template.page.canonical_width_px,
+                                    height=template.page.canonical_height_px,
+                                )
+                            )
+                            services.recognition.record_template_field_crops(
+                                form_id, canonical_image, template
                             )
                         except ValueError:
                             services.tasks.report(
