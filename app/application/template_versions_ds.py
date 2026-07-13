@@ -75,6 +75,16 @@ class TemplateVersions:
             )
             for field in version.fields
             if _overlaps(field.region, _TEMPLATE_QR_SAFE_ZONE)
+        ) + tuple(
+            PreflightIssue(
+                code="RECOGNITION_ENGINE_MISMATCH",
+                detail=(
+                    f"Field {field.field_key} uses {field.recognition_engine} with "
+                    f"{field.input_type}/{field.data_type}."
+                ),
+            )
+            for field in version.fields
+            if not _recognition_configuration_is_valid(field)
         )
         if issues:
             version.mark_preflight_failed()
@@ -108,3 +118,13 @@ def _overlaps(left: Rect, right: Rect) -> bool:
         and left.y < right.y + right.height
         and left.y + left.height > right.y
     )
+
+
+def _recognition_configuration_is_valid(field: FieldDefinition) -> bool:
+    if field.recognition_engine == "manual":
+        return True
+    if field.recognition_engine == "digit_template":
+        return field.input_type == "digit_boxes" and field.data_type in {"integer", "decimal"}
+    if field.recognition_engine == "omr":
+        return field.input_type == "checkbox" and field.data_type == "boolean"
+    return False

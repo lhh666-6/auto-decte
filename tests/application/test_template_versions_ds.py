@@ -69,3 +69,24 @@ def test_preflight_then_publish_and_clone_preserves_immutable_parent() -> None:
     assert clone.version == 2
     assert clone.parent_version_id == published.version_id
     assert [field.field_key for field in clone.fields] == ["worker_name"]
+
+
+def test_preflight_rejects_incompatible_recognition_engine_and_field_shape() -> None:
+    service = TemplateVersions(InMemoryTemplateRepository())
+    draft = service.create_draft("PAYROLL_HOURLY", PageSpec.a4_portrait())
+    service.add_field(
+        draft.version_id,
+        FieldDefinition(
+            "worker_name",
+            "Name",
+            "text",
+            "text_box",
+            Rect(0.1, 0.2, 0.2, 0.05),
+            draft.page,
+            recognition_engine="digit_template",
+        ),
+    )
+
+    report = service.preflight(draft.version_id)
+
+    assert {issue.code for issue in report.issues} == {"RECOGNITION_ENGINE_MISMATCH"}
