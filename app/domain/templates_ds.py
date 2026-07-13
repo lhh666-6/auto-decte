@@ -126,6 +126,26 @@ class TemplateVersion:
             raise ValueError("published template versions cannot be mutated")
 
 
+@dataclass(frozen=True, slots=True)
+class TemplateArtifact:
+    """A generated printable artifact whose storage URI stays server-side."""
+
+    artifact_id: str
+    version_id: str
+    kind: str
+    download_name: str
+    internal_uri: str
+    sha256: str
+
+    def __post_init__(self) -> None:
+        if not self.artifact_id or not self.version_id:
+            raise ValueError("artifact_id and version_id are required")
+        if not re.fullmatch(r"[A-Za-z0-9._-]+", self.download_name):
+            raise ValueError("download_name must be a safe file name")
+        if not re.fullmatch(r"[0-9a-f]{64}", self.sha256):
+            raise ValueError("sha256 must be a lowercase hexadecimal digest")
+
+
 def build_template_payload(template_key: str, version: int) -> str:
     """Build the small QR payload that binds a paper to its template version."""
     _validate_template_key(template_key)

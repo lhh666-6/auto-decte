@@ -19,6 +19,15 @@ def test_alembic_upgrade_creates_task_and_review_lease_tables(tmp_path: Path) ->
     assert {"tasks", "task_events", "review_leases"} <= tables
 
 
+def test_alembic_upgrade_creates_template_version_tables(tmp_path: Path) -> None:
+    database_path = tmp_path / "template-schema.db"
+
+    upgrade_database(database_path)
+
+    tables = set(inspect(create_engine(f"sqlite:///{database_path}")).get_table_names())
+    assert {"template_versions", "template_fields", "template_artifacts"} <= tables
+
+
 def test_production_mode_requires_current_alembic_revision(tmp_path: Path) -> None:
     database_path = tmp_path / "database" / "demo.db"
     upgrade_database(database_path)

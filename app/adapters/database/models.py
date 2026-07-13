@@ -24,6 +24,44 @@ class FormRow(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
+class TemplateVersionRow(Base):
+    __tablename__ = "template_versions"
+    __table_args__ = (UniqueConstraint("template_key", "version"),)
+
+    version_id: Mapped[str] = mapped_column(String, primary_key=True)
+    template_key: Mapped[str] = mapped_column(String, nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String, nullable=False)
+    page: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    parent_version_id: Mapped[str | None] = mapped_column(String)
+
+
+class TemplateFieldRow(Base):
+    __tablename__ = "template_fields"
+    __table_args__ = (UniqueConstraint("version_id", "field_key"),)
+
+    field_id: Mapped[str] = mapped_column(String, primary_key=True)
+    version_id: Mapped[str] = mapped_column(
+        ForeignKey("template_versions.version_id"), nullable=False, index=True
+    )
+    field_key: Mapped[str] = mapped_column(String, nullable=False)
+    position: Mapped[int] = mapped_column(Integer, nullable=False)
+    definition: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+
+
+class TemplateArtifactRow(Base):
+    __tablename__ = "template_artifacts"
+
+    artifact_id: Mapped[str] = mapped_column(String, primary_key=True)
+    version_id: Mapped[str] = mapped_column(
+        ForeignKey("template_versions.version_id"), nullable=False, index=True
+    )
+    kind: Mapped[str] = mapped_column(String, nullable=False)
+    download_name: Mapped[str] = mapped_column(String, nullable=False)
+    internal_uri: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+    sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+
+
 class RecordVersionRow(Base):
     __tablename__ = "record_versions"
     __table_args__ = (UniqueConstraint("form_id", "version"),)
