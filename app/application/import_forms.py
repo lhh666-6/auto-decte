@@ -1,6 +1,7 @@
 """Form image and conditional audio import use cases."""
 
 from dataclasses import dataclass
+from hashlib import sha256
 from pathlib import Path
 from uuid import uuid4
 
@@ -60,6 +61,43 @@ class ImportForms:
         if self._forms.get_form(form_id) is not None:
             raise DuplicateEvidenceError(f"Form already imported: {form_id}")
         stored = self._storage.store_path(source, "images")
+        item = EvidenceFile(
+            file_id=stored.file_id,
+            form_id=form_id,
+            type=EvidenceType.ORIGINAL_IMAGE,
+            uri=stored.uri,
+            sha256=stored.sha256,
+        )
+        self._forms.add_form(Form(form_id, template_id, template_version))
+        self._evidence.add_evidence(item)
+        self._audits.add_audit_event(
+            AuditEvent(
+                event_id=f"EVENT-{uuid4().hex}",
+                form_id=form_id,
+                event_type="IMPORT",
+                actor_id=actor_id,
+                after={"file_id": item.file_id, "sha256": item.sha256},
+                evidence_ids=(item.file_id,),
+            )
+        )
+        return item
+
+    def import_image_bytes(
+        self,
+        content: bytes,
+        suffix: str,
+        form_id: str,
+        template_id: str,
+        template_version: str,
+        actor_id: str,
+    ) -> EvidenceFile:
+        """Persist a controlled upload without accepting a client file path."""
+        digest = sha256(content).hexdigest()
+        if self._evidence.find_by_sha256(digest) is not None:
+            raise DuplicateEvidenceError(f"Evidence already imported: {digest}")
+        if self._forms.get_form(form_id) is not None:
+            raise DuplicateEvidenceError(f"Form already imported: {form_id}")
+        stored = self._storage.store_bytes(content, suffix, "images")
         item = EvidenceFile(
             file_id=stored.file_id,
             form_id=form_id,
