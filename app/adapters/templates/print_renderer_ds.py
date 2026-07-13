@@ -109,23 +109,19 @@ class TemplatePrintRenderer:
 
     @staticmethod
     def _draw_corner_markers(image: Image.Image) -> None:
-        draw = ImageDraw.Draw(image)
         width, height = image.size
-        marker_size = max(64, min(width, height) // 28)
+        marker_size = max(96, min(width, height) // 28)
+        margin = max(24, marker_size // 5)
         locations = (
-            (10, 0, 0),
-            (11, width - marker_size, 0),
-            (12, width - marker_size, height - marker_size),
-            (13, 0, height - marker_size),
+            (10, margin, margin),
+            (11, width - marker_size - margin, margin),
+            (12, width - marker_size - margin, height - marker_size - margin),
+            (13, margin, height - marker_size - margin),
         )
+        dictionary = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50)
         for marker_id, left, top in locations:
-            draw.rectangle((left, top, left + marker_size, top + marker_size), fill="black")
-            inset = marker_size // 4
-            draw.rectangle(
-                (left + inset, top + inset, left + marker_size - inset, top + marker_size - inset),
-                fill="white",
-            )
-            draw.text((left + 4, top + 4), str(marker_id), fill="white")
+            marker = cv2.aruco.generateImageMarker(dictionary, marker_id, marker_size)
+            image.paste(Image.fromarray(marker, mode="L").convert("RGB"), (left, top))
 
     @staticmethod
     def _artifact(version_id: str, kind: str, path: Path) -> TemplateArtifact:
