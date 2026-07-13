@@ -11,10 +11,12 @@ import { WebNotificationPort } from "@form-detection/shell-ports";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { buildConfirmValues } from "./review-model";
+import { TemplateStudio } from "./TemplateStudio_ds";
 
 const notificationPort = new WebNotificationPort();
 
 type MobilePane = "evidence" | "fields";
+type Feature = "review" | "templates";
 
 function stringValue(value: unknown): string {
   return value === null || value === undefined ? "" : String(value);
@@ -36,6 +38,7 @@ export function App() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [mobilePane, setMobilePane] = useState<MobilePane>("evidence");
+  const [feature, setFeature] = useState<Feature>("review");
 
   const selectedField = detail?.fields.find((field) => field.field_id === selectedFieldId) ?? null;
   const originalEvidence = detail?.evidence.find((item) => item.type === "ORIGINAL_IMAGE") ?? null;
@@ -144,6 +147,8 @@ export function App() {
     setEdits((current) => ({ ...current, [fieldId]: candidate.candidate_value }));
   }
 
+  if (feature === "templates") return <TemplateStudio onBack={() => setFeature("review")} />;
+
   return (
     <div className="app-shell">
       <header className="topbar">
@@ -162,7 +167,7 @@ export function App() {
         <div className="sidebar-divider" />
         <nav className="secondary-nav">
           <button type="button">数据管理</button>
-          <button type="button">模板与字段</button>
+          <button type="button" onClick={() => setFeature("templates")}>模板与字段</button>
           <button type="button">员工 / 工单</button>
           <button type="button">产品 / 工序</button>
         </nav>
