@@ -170,6 +170,24 @@ def build_template_payload(template_key: str, version: int) -> str:
     return f"IFD|{template_key}|{version}|{checksum}"
 
 
+def parse_template_payload(payload: str) -> tuple[str, int] | None:
+    """Validate a scanned template QR payload without guessing an identity."""
+    parts = payload.split("|")
+    if len(parts) != 4 or parts[0] != "IFD":
+        return None
+    _, template_key, raw_version, checksum = parts
+    try:
+        _validate_template_key(template_key)
+        version = int(raw_version)
+    except ValueError:
+        return None
+    if version < 1 or raw_version != str(version):
+        return None
+    if checksum != _checksum(f"{template_key}|{version}"):
+        return None
+    return template_key, version
+
+
 def build_sheet_payload(print_batch: str, sequence: int) -> str:
     """Build the optional non-business paper-instance QR payload."""
     if not _BATCH_KEY.fullmatch(print_batch):

@@ -25,3 +25,12 @@ Branch: `modular-architecture`
 - ArUco-based perspective correction, field crops, and OCR/OMR candidates.
 
 The manual fallback must not be presented as automatic recognition.
+
+## QR identity validation update
+
+- The recognition service now accepts only `IFD|template_key|version|checksum` payloads
+  with a valid checksum.
+- Automatic binding additionally resolves the exact version from template persistence and
+  requires it to be `PUBLISHED`.
+- Invalid payloads, tampered checksums, missing versions and unpublished versions all go
+  to `NEEDS_CLASSIFICATION`; no legacy `template:version` fallback remains.

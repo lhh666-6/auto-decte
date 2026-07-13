@@ -19,6 +19,7 @@ from app.domain.models import (
     RecognitionAttempt,
     ReviewStatus,
 )
+from app.domain.templates_ds import TemplateStatus, TemplateVersion, parse_template_payload
 
 
 class RecognitionRepository(Protocol):
@@ -26,6 +27,14 @@ class RecognitionRepository(Protocol):
     def set_template(
         self, form_id: str, template_id: str, template_version: str, status: ReviewStatus
     ) -> None: ...
+
+
+class TemplateVersionResolver(Protocol):
+    """Resolve the exact immutable template version declared by a QR code."""
+
+    def get_version_by_key_version(
+        self, template_key: str, version: int
+    ) -> TemplateVersion | None: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,6 +52,7 @@ class RecognizeForms:
         audits: AuditRepository,
         storage: LocalEvidenceStorage,
         pipeline: OpenCvImagePipeline,
+        template_versions: TemplateVersionResolver | None = None,
     ) -> None:
         self._forms = forms
         self._evidence = evidence
@@ -50,6 +60,7 @@ class RecognizeForms:
         self._recognition: RecognitionRepository = forms  # type: ignore[assignment]
         self._storage = storage
         self._pipeline = pipeline
+        self._template_versions = template_versions
 
     def assess_quality(self, image: NDArray[Any]) -> QualityAssessment:
         return self._pipeline.assess_quality(image)
@@ -57,15 +68,26 @@ class RecognizeForms:
     def classify_image(self, form_id: str, image: NDArray[Any]) -> ClassificationResult:
         form = self._require_form(form_id)
         reference = self._pipeline.read_template_qr(image)
-        if reference:
-            template_id, separator, version = reference.partition(":")
+        identity = parse_template_payload(reference) if reference else None
+        template = (
+            self._template_versions.get_version_by_key_version(*identity)
+            if identity is not None and self._template_versions is not None
+            else None
+        )
+        if (
+            identity is not None
+            and template is not None
+            and template.status is TemplateStatus.PUBLISHED
+        ):
+            template_id, version_number = identity
+            version = str(version_number)
             self._recognition.set_template(
                 form_id,
                 template_id,
-                version if separator else "1",
+                version,
                 ReviewStatus.CLASSIFIED,
             )
-            self._audit_classification(form, template_id, version if separator else "1", "QR")
+            self._audit_classification(form, template_id, version, "QR")
             return ClassificationResult(reference, "QR", 1.0)
         self._forms.set_review_status(form_id, ReviewStatus.NEEDS_CLASSIFICATION)
         return ClassificationResult(None, "NONE", 0.0)

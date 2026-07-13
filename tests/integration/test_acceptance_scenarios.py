@@ -7,6 +7,7 @@ from sqlalchemy import create_engine
 from app.adapters.ai.disabled import DisabledAIReview
 from app.adapters.database.models import Base
 from app.adapters.database.repositories import SqlAlchemyFormRepository
+from app.adapters.database.template_repository_ds import SqlAlchemyTemplateRepository
 from app.adapters.export.xlsx import XlsxExporter
 from app.adapters.recognition.digits import DigitRecognizer
 from app.adapters.recognition.opencv import OpenCvImagePipeline
@@ -19,23 +20,37 @@ from app.application.recognize_forms import RecognizeForms
 from app.application.review_forms import ReviewForms
 from app.domain.models import AIStatus, ExportStatus, FormField, ReviewStatus
 from app.domain.rules import RuleContext, validate
+from app.domain.templates_ds import PageSpec, TemplateVersion, build_template_payload
 
 
 def test_combined_demo_flow_preserves_human_fact_and_reverse_trace(tmp_path: Path) -> None:
     engine = create_engine(f"sqlite:///{tmp_path / 'demo.db'}")
     Base.metadata.create_all(engine)
     repository = SqlAlchemyFormRepository(engine)
+    template_repository = SqlAlchemyTemplateRepository(engine)
     storage = LocalEvidenceStorage(tmp_path / "evidence")
     imports = ImportForms(repository, repository, repository, storage)
-    recognition = RecognizeForms(repository, repository, repository, storage, OpenCvImagePipeline())
+    recognition = RecognizeForms(
+        repository,
+        repository,
+        repository,
+        storage,
+        OpenCvImagePipeline(),
+        template_repository,
+    )
     queries = QueryForms(repository)
     image_path = tmp_path / "form.png"
     image_path.write_bytes(b"immutable-original")
     original = imports.import_image(image_path, "FORM-0001", "UNKNOWN", "1", "operator")
 
-    qr = cv2.QRCodeEncoder_create().encode("OUTPUT:1")
+    qr_payload = build_template_payload("OUTPUT", 1)
+    template = TemplateVersion.draft("TPL-OUTPUT", "OUTPUT", 1, PageSpec.a4_portrait())
+    template.mark_ready_to_publish()
+    template.publish()
+    template_repository.add_version(template)
+    qr = cv2.QRCodeEncoder_create().encode(qr_payload)
     classification = recognition.classify_image("FORM-0001", qr)
-    assert classification.template_reference == "OUTPUT:1"
+    assert classification.template_reference == qr_payload
     assert repository.get_form("FORM-0001").review_status is ReviewStatus.CLASSIFIED  # type: ignore[union-attr]
 
     repository.add_form_field(

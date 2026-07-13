@@ -10,11 +10,18 @@ from app.domain.templates_ds import (
     TemplateVersion,
     build_sheet_payload,
     build_template_payload,
+    parse_template_payload,
 )
 
 
 def test_template_payload_is_deterministic_and_checksums_key_and_version() -> None:
     assert build_template_payload("PAYROLL_HOURLY", 3) == "IFD|PAYROLL_HOURLY|3|2312"
+
+
+def test_template_payload_parser_rejects_tampering_and_returns_exact_identity() -> None:
+    assert parse_template_payload("IFD|PAYROLL_HOURLY|3|2312") == ("PAYROLL_HOURLY", 3)
+    assert parse_template_payload("IFD|PAYROLL_HOURLY|3|FFFF") is None
+    assert parse_template_payload("PAYROLL_HOURLY:3") is None
 
 
 def test_sheet_payload_has_zero_padded_sequence_and_checksum() -> None:
