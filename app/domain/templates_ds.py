@@ -124,6 +124,33 @@ class TemplateVersion:
         self.fields.append(definition)
         self.status = TemplateStatus.DRAFT
 
+    def replace_field(self, field_key: str, replacement: FieldDefinition) -> None:
+        self._require_editable()
+        if replacement.field_key != field_key:
+            raise ValueError("replacement field_key must not change")
+        if replacement.page != self.page:
+            raise ValueError("field page must match template page")
+
+        for index, definition in enumerate(self.fields):
+            if definition.field_key == field_key:
+                self.fields[index] = replacement
+                self.status = TemplateStatus.DRAFT
+                return
+        raise KeyError(f"Unknown field: {field_key}")
+
+    def remove_field(self, field_key: str) -> None:
+        self._require_editable()
+        found_index: int | None = None
+        for index, definition in enumerate(self.fields):
+            if definition.field_key == field_key:
+                found_index = index
+                break
+        if found_index is None:
+            raise KeyError(f"Unknown field: {field_key}")
+
+        del self.fields[found_index]
+        self.status = TemplateStatus.DRAFT
+
     def mark_preflight_failed(self) -> None:
         self._require_editable()
         self.status = TemplateStatus.PREFLIGHT_FAILED

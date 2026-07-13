@@ -70,14 +70,56 @@ def test_field_definition_declares_immutable_recognition_and_prefill_policy() ->
         )
 
 
+def test_draft_version_can_replace_then_remove_a_field() -> None:
+    page = PageSpec.a4_portrait()
+    version = TemplateVersion.draft("TPL-1", "PAYROLL_HOURLY", 1, page)
+    version.add_field(
+        FieldDefinition(
+            "hours",
+            "Hours",
+            "decimal",
+            "digit_boxes",
+            Rect(0.1, 0.1, 0.1, 0.1),
+            page,
+        )
+    )
+
+    replacement = FieldDefinition(
+        "hours",
+        "Hours worked",
+        "decimal",
+        "digit_boxes",
+        Rect(0.2, 0.1, 0.1, 0.1),
+        page,
+    )
+    version.replace_field("hours", replacement)
+    version.remove_field("hours")
+
+    assert version.fields == []
+    assert version.status is TemplateStatus.DRAFT
+
+
 def test_published_version_cannot_be_mutated() -> None:
     version = TemplateVersion.draft("TPL-1", "PAYROLL_HOURLY", 1, PageSpec.a4_portrait())
+    field = FieldDefinition(
+        "hours",
+        "Hours",
+        "decimal",
+        "digit_boxes",
+        Rect(0.1, 0.1, 0.1, 0.1),
+        version.page,
+    )
+    version.add_field(field)
     with pytest.raises(ValueError, match="preflight"):
         version.publish()
     version.mark_ready_to_publish()
     version.publish()
 
     assert version.status is TemplateStatus.PUBLISHED
+    with pytest.raises(ValueError, match="published"):
+        version.replace_field("hours", field)
+    with pytest.raises(ValueError, match="published"):
+        version.remove_field("hours")
     with pytest.raises(ValueError, match="published"):
         version.add_field(
             FieldDefinition(
