@@ -82,6 +82,19 @@ class SqlAlchemyTemplateRepository:
                 parent_version_id=row.parent_version_id,
             )
 
+    def get_version_by_key_version(
+        self, template_key: str, version: int
+    ) -> TemplateVersion | None:
+        """Resolve the immutable version referenced by a paper-form QR or operator."""
+        with self._read_session() as session:
+            version_id = session.scalar(
+                select(TemplateVersionRow.version_id).where(
+                    TemplateVersionRow.template_key == template_key,
+                    TemplateVersionRow.version == version,
+                )
+            )
+        return self.get_version(version_id) if version_id is not None else None
+
     def replace_version(self, version: TemplateVersion) -> None:
         with self._transaction() as session:
             row = session.get(TemplateVersionRow, version.version_id)
