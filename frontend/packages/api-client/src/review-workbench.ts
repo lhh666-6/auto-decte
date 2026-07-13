@@ -100,6 +100,10 @@ export class ReviewWorkbenchApi {
     return this.request(`/forms/${encodeURIComponent(formId)}`);
   }
 
+  getQueue(queueKey: "classification" | "review" | "exceptions" | "exportable"): Promise<FormSummary[]> {
+    return this.request(`/forms/queue/${queueKey}`);
+  }
+
   getHistory(formId: string): Promise<ReviewHistory> {
     return this.request(`/forms/${encodeURIComponent(formId)}/review-history`);
   }

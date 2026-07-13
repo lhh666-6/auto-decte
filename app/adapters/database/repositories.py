@@ -90,6 +90,29 @@ class SqlAlchemyFormRepository:
                 created_at=row.created_at,
             )
 
+    def list_forms(
+        self,
+        *,
+        review_statuses: tuple[ReviewStatus, ...] = (),
+        export_statuses: tuple[ExportStatus, ...] = (),
+    ) -> list[Form]:
+        """List forms even when they do not yet have a confirmed record version.
+
+        Queue views must include newly imported forms.  ``search_current`` is
+        deliberately unsuitable here because it joins the current record
+        version and therefore omits forms that are waiting for first review.
+        """
+        statement = select(FormRow)
+        if review_statuses:
+            values = [item.value for item in review_statuses]
+            statement = statement.where(FormRow.review_status.in_(values))
+        if export_statuses:
+            values = [item.value for item in export_statuses]
+            statement = statement.where(FormRow.export_status.in_(values))
+        statement = statement.order_by(FormRow.created_at, FormRow.form_id)
+        with self._read_session() as session:
+            return [self._to_form(row) for row in session.scalars(statement).all()]
+
     def add_record_version(self, version: RecordVersion) -> None:
         with self._transaction() as session:
             form = session.get(FormRow, version.form_id)

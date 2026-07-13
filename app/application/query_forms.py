@@ -49,6 +49,12 @@ class FormWorkbench:
 
 class QueryRepository(Protocol):
     def get_form(self, form_id: str) -> Form | None: ...
+    def list_forms(
+        self,
+        *,
+        review_statuses: tuple[ReviewStatus, ...] = (),
+        export_statuses: tuple[ExportStatus, ...] = (),
+    ) -> list[Form]: ...
     def list_record_versions(self, form_id: str) -> list[RecordVersion]: ...
     def list_form_fields(self, form_id: str) -> list[FormField]: ...
     def list_evidence(self, form_id: str) -> list[EvidenceFile]: ...
@@ -78,6 +84,17 @@ class QueryForms:
             export_status=filters.export_status,
         )
         return [SearchResult(form, record) for form, record in rows]
+
+    def list_forms(
+        self,
+        *,
+        review_statuses: tuple[ReviewStatus, ...] = (),
+        export_statuses: tuple[ExportStatus, ...] = (),
+    ) -> list[Form]:
+        return self._repository.list_forms(
+            review_statuses=review_statuses,
+            export_statuses=export_statuses,
+        )
 
     def trace(self, form_id: str) -> FormTrace:
         form = self._repository.get_form(form_id)

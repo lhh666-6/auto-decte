@@ -17,7 +17,7 @@ from app.api.schemas.workbench import (
     WorkbenchDetailResponse,
 )
 from app.application.query_forms import FormWorkbench
-from app.domain.models import EvidenceFile, EvidenceType, RecordVersion
+from app.domain.models import EvidenceFile, EvidenceType, ExportStatus, RecordVersion, ReviewStatus
 from app.modules.identity_access.models_ds import Actor, Permission
 from app.modules.identity_access.policy_ds import PermissionPolicy
 from app.services.container import Services
@@ -60,6 +60,58 @@ def _record_response(record: RecordVersion) -> RecordVersionResponse:
         confirmed_by=record.confirmed_by,
         created_at=record.created_at,
     )
+
+
+_QUEUE_FILTERS: dict[str, tuple[tuple[ReviewStatus, ...], tuple[ExportStatus, ...]]] = {
+    "classification": ((ReviewStatus.NEEDS_CLASSIFICATION,), ()),
+    "review": (
+        (
+            ReviewStatus.IMPORTED,
+            ReviewStatus.CLASSIFIED,
+            ReviewStatus.RECOGNIZED,
+            ReviewStatus.NEEDS_REVIEW,
+        ),
+        (),
+    ),
+    "exceptions": ((ReviewStatus.RECAPTURE_REQUIRED,), ()),
+    "exportable": (
+        (ReviewStatus.CONFIRMED, ReviewStatus.CORRECTED),
+        (ExportStatus.NOT_EXPORTED, ExportStatus.REEXPORT_REQUIRED),
+    ),
+}
+
+
+@router.get("/queue/{queue_key}", response_model=list[FormSummaryResponse])
+def get_queue(
+    queue_key: str,
+    request: Request,
+    services: Services = Depends(get_services),  # noqa: B008
+) -> list[FormSummaryResponse]:
+    """Return a real queue, including forms without a record version yet."""
+    actor = _actor(request, services)
+    _require(actor, Permission.FORM_READ)
+    filters = _QUEUE_FILTERS.get(queue_key)
+    if filters is None:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "QUEUE_NOT_FOUND", "detail": f"Unknown queue: {queue_key}"},
+        )
+    forms = services.queries.list_forms(
+        review_statuses=filters[0], export_statuses=filters[1]
+    )
+    return [
+        FormSummaryResponse(
+            form_id=form.form_id,
+            template_id=form.template_id,
+            template_version=form.template_version,
+            coordinate_version=form.coordinate_version,
+            review_status=form.review_status.value,
+            export_status=form.export_status.value,
+            current_record_version=form.current_record_version,
+            created_at=form.created_at,
+        )
+        for form in forms
+    ]
 
 
 @router.get("/{form_id}", response_model=WorkbenchDetailResponse)

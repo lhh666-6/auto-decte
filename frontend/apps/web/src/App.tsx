@@ -16,7 +16,15 @@ import { TemplateStudio } from "./TemplateStudio_ds";
 const notificationPort = new WebNotificationPort();
 
 type MobilePane = "evidence" | "fields";
-type Feature = "review" | "templates";
+type Feature = "review" | "templates" | "master-data";
+type QueueKey = "classification" | "review" | "exceptions" | "exportable";
+
+const QUEUES: Array<{ key: QueueKey; label: string; warning?: boolean }> = [
+  { key: "classification", label: "待分类" },
+  { key: "review", label: "待复核" },
+  { key: "exceptions", label: "规则异常", warning: true },
+  { key: "exportable", label: "可导出" },
+];
 
 function stringValue(value: unknown): string {
   return value === null || value === undefined ? "" : String(value);
@@ -40,6 +48,10 @@ export function App() {
   const [uploading, setUploading] = useState(false);
   const [mobilePane, setMobilePane] = useState<MobilePane>("evidence");
   const [feature, setFeature] = useState<Feature>("review");
+  const [selectedQueue, setSelectedQueue] = useState<QueueKey>("review");
+  const [queueForms, setQueueForms] = useState<Record<QueueKey, WorkbenchDetail["form"][]>>({
+    classification: [], review: [], exceptions: [], exportable: [],
+  });
 
   const selectedField = detail?.fields.find((field) => field.field_id === selectedFieldId) ?? null;
   const originalEvidence = detail?.evidence.find((item) => item.type === "ORIGINAL_IMAGE") ?? null;
@@ -66,6 +78,7 @@ export function App() {
       setEdits({});
       setSelectedFieldId(loadedDetail.fields[0]?.field_id ?? null);
       setLease(null);
+      void refreshQueues();
     } catch (cause) {
       setDetail(null);
       setHistory(null);
@@ -74,6 +87,29 @@ export function App() {
       setLoading(false);
     }
   }, [api, formIdInput]);
+
+  const refreshQueues = useCallback(async () => {
+    try {
+      const results = await Promise.all(QUEUES.map(async ({ key }) => [key, await api.getQueue(key)] as const));
+      setQueueForms(Object.fromEntries(results) as Record<QueueKey, WorkbenchDetail["form"][]>);
+    } catch (cause) {
+      setError(toMessage(cause));
+    }
+  }, [api]);
+
+  useEffect(() => {
+    void refreshQueues();
+  }, [refreshQueues]);
+
+  function chooseQueue(queueKey: QueueKey) {
+    setFeature("review");
+    setSelectedQueue(queueKey);
+  }
+
+  function openQueueForm(formId: string) {
+    setFormIdInput(formId);
+    window.setTimeout(() => void loadWorkbench(), 0);
+  }
 
   useEffect(() => {
     if (!detail || !lease) return undefined;
@@ -170,6 +206,7 @@ export function App() {
       setEdits({});
       setSelectedFieldId(loadedDetail.fields[0]?.field_id ?? null);
       setLease(null);
+      void refreshQueues();
     } catch (cause) {
       setError(toMessage(cause));
     } finally {
@@ -187,6 +224,7 @@ export function App() {
   }
 
   if (feature === "templates") return <TemplateStudio onBack={() => setFeature("review")} />;
+  if (feature === "master-data") return <MasterDataNotice onBack={() => setFeature("review")} />;
 
   return (
     <div className="app-shell">
@@ -198,17 +236,26 @@ export function App() {
       <aside className="queue-sidebar" aria-label="工作队列">
         <div className="queue-title">审核队列</div>
         <nav>
-          <QueueItem label="待分类" count="—" />
-          <QueueItem label="待复核" count="—" active />
-          <QueueItem label="规则异常" count={detail ? String(warningCount) : "—"} warning />
-          <QueueItem label="可导出" count="—" />
+          {QUEUES.map((queue) => (
+            <QueueItem
+              key={queue.key}
+              label={queue.label}
+              count={String(queueForms[queue.key].length)}
+              active={selectedQueue === queue.key}
+              warning={queue.warning}
+              onClick={() => chooseQueue(queue.key)}
+            />
+          ))}
         </nav>
         <div className="sidebar-divider" />
         <nav className="secondary-nav">
-          <button type="button">数据管理</button>
+          <button type="button" onClick={() => {
+            setFeature("review");
+            window.setTimeout(() => document.getElementById("image-import")?.click(), 0);
+          }}>数据管理</button>
           <button type="button" onClick={() => setFeature("templates")}>模板与字段</button>
-          <button type="button">员工 / 工单</button>
-          <button type="button">产品 / 工序</button>
+          <button type="button" onClick={() => setFeature("master-data")}>员工 / 工单</button>
+          <button type="button" onClick={() => setFeature("master-data")}>产品 / 工序</button>
         </nav>
       </aside>
 
@@ -232,6 +279,7 @@ export function App() {
             <label className="button button-primary import-image-button">
               {uploading ? "正在导入…" : "导入图片"}
               <input
+                id="image-import"
                 type="file"
                 accept="image/png,image/jpeg,image/tiff"
                 disabled={uploading}
@@ -254,6 +302,22 @@ export function App() {
         </section>
 
         {error && <div className="error-banner" role="alert">{error}</div>}
+
+        <section className="queue-panel" aria-label="当前审核队列">
+          <div>
+            <span className="eyebrow">当前队列</span>
+            <strong>{QUEUES.find((queue) => queue.key === selectedQueue)?.label}</strong>
+          </div>
+          <div className="queue-form-list">
+            {queueForms[selectedQueue].length === 0 ? (
+              <span className="muted">当前没有表单</span>
+            ) : queueForms[selectedQueue].map((form) => (
+              <button key={form.form_id} type="button" onClick={() => openQueueForm(form.form_id)}>
+                <strong>{form.form_id}</strong><span>{form.template_id} · {form.review_status}</span>
+              </button>
+            ))}
+          </div>
+        </section>
 
         <div className="mobile-pane-switch" role="tablist" aria-label="审核面板">
           <button type="button" className={mobilePane === "evidence" ? "active" : ""} onClick={() => setMobilePane("evidence")}>图片</button>
@@ -320,8 +384,22 @@ export function App() {
   );
 }
 
-function QueueItem({ label, count, active = false, warning = false }: { label: string; count: string; active?: boolean; warning?: boolean }) {
-  return <button type="button" className={`queue-item ${active ? "active" : ""} ${warning ? "warning" : ""}`}><span>{label}</span><span>{count}</span></button>;
+function QueueItem({ label, count, active = false, warning = false, onClick }: { label: string; count: string; active?: boolean; warning?: boolean; onClick: () => void }) {
+  return <button type="button" onClick={onClick} className={`queue-item ${active ? "active" : ""} ${warning ? "warning" : ""}`}><span>{label}</span><span>{count}</span></button>;
+}
+
+function MasterDataNotice({ onBack }: { onBack: () => void }) {
+  return (
+    <main className="master-data-notice">
+      <button type="button" className="text-button" onClick={onBack}>← 返回审核工作台</button>
+      <section>
+        <span className="eyebrow">主数据中心</span>
+        <h1>员工、工单、产品与工序</h1>
+        <p>当前代码只提供主数据规则校验，没有持久化表和编辑 API。这里不再显示无法保存的伪表单。</p>
+        <p>下一步会先补主数据的 SQLite 迁移、权限接口与编辑页面，再把模板字段的下拉选项接入这些数据。</p>
+      </section>
+    </main>
+  );
 }
 
 function EvidenceCanvas({
