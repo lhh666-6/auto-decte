@@ -15,7 +15,13 @@ from app.application.query_forms import QueryForms
 from app.application.recognize_forms import RecognizeForms
 from app.application.review_forms import ReviewForms
 from app.domain.models import FormField, ReviewStatus
-from app.domain.templates_ds import PageSpec, TemplateVersion, build_template_payload
+from app.domain.templates_ds import (
+    FieldDefinition,
+    PageSpec,
+    Rect,
+    TemplateVersion,
+    build_template_payload,
+)
 
 
 def build(tmp_path: Path):  # type: ignore[no-untyped-def]
@@ -138,3 +144,29 @@ def test_valid_ifd_qr_binds_the_exact_template_key_and_version(tmp_path: Path) -
     restored = repository.get_form("FORM-0001")
     assert restored is not None
     assert (restored.template_id, restored.template_version) == ("PAYROLL_HOURLY", "3")
+
+
+def test_canonical_canvas_yields_immutable_template_field_crop_evidence(tmp_path: Path) -> None:
+    imports, recognizer, repository, _ = build(tmp_path)
+    image = tmp_path / "scan.png"
+    image.write_bytes(b"image")
+    imports.import_image(image, "FORM-0001", "PAYROLL_HOURLY", "1", "operator")
+    page = PageSpec.a5_portrait()
+    template = TemplateVersion.draft("TPL-1", "PAYROLL_HOURLY", 1, page)
+    template.add_field(
+        FieldDefinition(
+            "total_quantity",
+            "Total",
+            "integer",
+            "digit_boxes",
+            Rect(0.1, 0.2, 0.2, 0.1),
+            page,
+        )
+    )
+    canvas = np.full((page.canonical_height_px, page.canonical_width_px), 255, dtype=np.uint8)
+    crops = recognizer.record_template_field_crops("FORM-0001", canvas, template)
+
+    assert set(crops) == {"total_quantity"}
+    assert crops["total_quantity"].type.value == "FIELD_CROP"
+    assert crops["total_quantity"].related_field_id == "TPL-1:total_quantity"
+    assert len(repository.list_evidence("FORM-0001")) == 2

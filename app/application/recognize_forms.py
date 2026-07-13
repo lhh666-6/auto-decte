@@ -8,7 +8,7 @@ import cv2
 from numpy.typing import NDArray
 
 from app.adapters.recognition.candidate import RecognitionCandidate
-from app.adapters.recognition.opencv import OpenCvImagePipeline, QualityAssessment
+from app.adapters.recognition.opencv import FieldRegion, OpenCvImagePipeline, QualityAssessment
 from app.adapters.storage.local import LocalEvidenceStorage
 from app.application.ports import AuditRepository, EvidenceRepository, FormRepository
 from app.domain.models import (
@@ -153,6 +153,54 @@ class RecognizeForms:
             )
         )
         return evidence
+
+    def record_template_field_crops(
+        self, form_id: str, canonical_image: NDArray[Any], template: TemplateVersion
+    ) -> dict[str, EvidenceFile]:
+        """Create immutable crop evidence using the published template's normalized regions."""
+        self._require_form(form_id)
+        page = template.page
+        regions = [
+            FieldRegion(
+                field.field_key,
+                int(field.region.x * page.canonical_width_px),
+                int(field.region.y * page.canonical_height_px),
+                int(field.region.width * page.canonical_width_px),
+                int(field.region.height * page.canonical_height_px),
+            )
+            for field in template.fields
+        ]
+        encoded_crops = self._pipeline.crop_fields(canonical_image, regions)
+        evidence_by_key: dict[str, EvidenceFile] = {}
+        for field_key, crop in encoded_crops.items():
+            encoded, buffer = cv2.imencode(".png", crop)
+            if not encoded:
+                raise ValueError(f"Field crop could not be encoded: {field_key}")
+            stored = self._storage.store_bytes(buffer.tobytes(), ".png", "field-crops")
+            evidence = EvidenceFile(
+                file_id=stored.file_id,
+                form_id=form_id,
+                related_field_id=f"{template.version_id}:{field_key}",
+                type=EvidenceType.FIELD_CROP,
+                uri=stored.uri,
+                sha256=stored.sha256,
+            )
+            self._evidence.add_evidence(evidence)
+            evidence_by_key[field_key] = evidence
+        self._audits.add_audit_event(
+            AuditEvent(
+                event_id=f"EVENT-{uuid4().hex}",
+                form_id=form_id,
+                event_type="CROP_FIELDS",
+                actor_id="system",
+                after={
+                    "template_version_id": template.version_id,
+                    "field_keys": list(evidence_by_key),
+                },
+                evidence_ids=tuple(item.file_id for item in evidence_by_key.values()),
+            )
+        )
+        return evidence_by_key
 
     def record_candidate(
         self,
