@@ -29,8 +29,12 @@ describe("template studio canvas model", () => {
     expect(resizeRect(original, 0.3, 0.05, QR_SAFE_ZONE)).toBe(original);
   });
 
-  it("permits edits only for draft versions", () => {
+  it("permits every mutable template lifecycle status", () => {
     expect(canEdit("DRAFT")).toBe(true);
+    expect(canEdit("PREFLIGHT_FAILED")).toBe(true);
+    expect(canEdit("READY_TO_PUBLISH")).toBe(true);
     expect(canEdit("PUBLISHED")).toBe(false);
+    expect(canEdit("DEPRECATED")).toBe(false);
+    expect(canEdit("RETIRED")).toBe(false);
   });
 });

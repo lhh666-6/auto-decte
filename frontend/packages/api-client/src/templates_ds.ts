@@ -120,7 +120,8 @@ export class TemplateApi {
 
   private async request<T>(path: string, options: RequestOptions): Promise<T> {
     const headers: Record<string, string> = options.body === undefined ? {} : { "Content-Type": "application/json" };
-    const response = await this.fetcher(`${this.baseUrl}${path}`, {
+    const fetcher = this.fetcher;
+    const response = await fetcher(`${this.baseUrl}${path}`, {
       method: options.method,
       headers,
       ...(options.body === undefined ? {} : { body: JSON.stringify(options.body) }),

@@ -42,7 +42,7 @@ export function resizeRect(
 }
 
 export function canEdit(status: string): boolean {
-  return status === "DRAFT";
+  return status === "DRAFT" || status === "PREFLIGHT_FAILED" || status === "READY_TO_PUBLISH";
 }
 
 function normalizeRect(rect: TemplateRect): TemplateRect {
