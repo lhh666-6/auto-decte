@@ -133,3 +133,16 @@ uv run python -m pytest -q
 - 已执行并通过：Python `pytest` 102 项、`ruff check .`、`mypy app config`；前端 `npm run typecheck` 与 `npm run test`。
 - 本文件、README、进度记录和 Git 忽略规则之后仅为文档/协作整理；按当前用户要求，未再执行额外测试。
 - 未完成而必须由下一位 Codex 验收：真实任务 Handler 入队、React 审核工作台、Tauri 应用、真实 SSO、生产 Worker、PostgreSQL/NAS/S3/Qdrant Adapter、真实样表准确率与性能基线。
+
+## 2026-07-13：审核工作台 API 第一阶段
+
+此阶段已在 `modular-architecture` 分支实现并验证，作为 React 审核页面的唯一数据入口：
+
+- `GET /api/v1/forms/{form_id}` 返回表单、字段坐标、当前值、OCR/OMR 候选、当前记录和不含服务器路径的证据 URL；
+- `GET /api/v1/forms/{form_id}/evidence/{file_id}` 依表单归属及图片/音频权限受控读取证据；
+- `GET /api/v1/forms/{form_id}/review-history` 返回版本和审计事件；
+- 租约现有 acquire/confirm 之外，新增 heartbeat、本人 release 与管理员 force-release。
+
+最新验证：`107 passed`，Ruff 通过，mypy 检查 111 个源文件通过。未实现的规则结果、队列/分类/模板/主数据/导出 API 仍不得在前端伪称已完成。
+
+下一步为 React/Vite 审核工作台。严格遵守 [审核工作台视觉规范](design/review-workbench-style.md)：左图右表、字段—坐标双向联动、异常优先；业务 Feature 只能使用 API Client 和 Shell Ports，不能读取本地文件路径、数据库或直接调用 Tauri API。

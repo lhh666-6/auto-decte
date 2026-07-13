@@ -30,6 +30,7 @@ from app.domain.models import (
     RecordStatus,
     RecordVersion,
     ReviewStatus,
+    ValueSource,
 )
 
 
@@ -189,6 +190,31 @@ class SqlAlchemyFormRepository:
                     current_record_version=field.current_record_version,
                 )
             )
+
+    def list_form_fields(self, form_id: str) -> list[FormField]:
+        statement = (
+            select(FormFieldRow)
+            .where(FormFieldRow.form_id == form_id)
+            .order_by(FormFieldRow.field_name, FormFieldRow.field_id)
+        )
+        with self._read_session() as session:
+            rows = session.scalars(statement).all()
+            return [
+                FormField(
+                    field_id=row.field_id,
+                    form_id=row.form_id,
+                    field_name=row.field_name,
+                    source_region=row.source_region,
+                    current_value=row.current_value,
+                    current_value_source=(
+                        ValueSource(row.current_value_source)
+                        if row.current_value_source is not None
+                        else None
+                    ),
+                    current_record_version=row.current_record_version,
+                )
+                for row in rows
+            ]
 
     def add_recognition_attempt(self, attempt: RecognitionAttempt) -> None:
         with self._transaction() as session:

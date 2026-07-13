@@ -1,9 +1,14 @@
 """Review lease and confirmation endpoints."""
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response, status
 
 from app.api.dependencies_ds import get_current_actor, get_services
-from app.api.schemas.review_ds import ConfirmRequest, LeaseResponse
+from app.api.schemas.review_ds import (
+    ConfirmRequest,
+    ForceReleaseRequest,
+    LeaseResponse,
+    LeaseTokenRequest,
+)
 from app.modules.identity_access.models_ds import Actor, Permission
 from app.modules.identity_access.policy_ds import PermissionPolicy
 from app.modules.review.facade_ds import ConfirmReviewCommand
@@ -42,6 +47,50 @@ def acquire_lease(
         lease_token=lease.lease_token,
         expires_at=lease.expires_at.isoformat(),
     )
+
+
+@router.post("/{form_id}/review-lease/heartbeat", response_model=LeaseResponse)
+def heartbeat_lease(
+    form_id: str,
+    body: LeaseTokenRequest,
+    request: Request,
+    services: Services = Depends(get_services),  # noqa: B008
+) -> LeaseResponse:
+    actor = _actor(request, services)
+    _require(actor, Permission.REVIEW_ACQUIRE)
+    lease = services.review_leases.heartbeat(form_id, actor.actor_id, body.lease_token)
+    return LeaseResponse(
+        form_id=lease.form_id,
+        owner_id=lease.owner_id,
+        lease_token=lease.lease_token,
+        expires_at=lease.expires_at.isoformat(),
+    )
+
+
+@router.delete("/{form_id}/review-lease", status_code=status.HTTP_204_NO_CONTENT)
+def release_lease(
+    form_id: str,
+    body: LeaseTokenRequest,
+    request: Request,
+    services: Services = Depends(get_services),  # noqa: B008
+) -> Response:
+    actor = _actor(request, services)
+    _require(actor, Permission.REVIEW_ACQUIRE)
+    services.review_leases.release(form_id, actor.actor_id, body.lease_token)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/{form_id}/review-lease/force-release", status_code=status.HTTP_204_NO_CONTENT)
+def force_release_lease(
+    form_id: str,
+    body: ForceReleaseRequest,
+    request: Request,
+    services: Services = Depends(get_services),  # noqa: B008
+) -> Response:
+    actor = _actor(request, services)
+    _require(actor, Permission.REVIEW_FORCE_RELEASE)
+    services.review_leases.force_release(form_id, actor.actor_id, body.reason)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post("/{form_id}/confirm")

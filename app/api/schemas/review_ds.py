@@ -16,3 +16,11 @@ class LeaseResponse(BaseModel):
     owner_id: str
     lease_token: str
     expires_at: str
+
+
+class LeaseTokenRequest(BaseModel):
+    lease_token: str = Field(min_length=1)
+
+
+class ForceReleaseRequest(BaseModel):
+    reason: str = Field(min_length=1)

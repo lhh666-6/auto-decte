@@ -8,6 +8,7 @@ from app.domain.models import (
     EvidenceFile,
     ExportStatus,
     Form,
+    FormField,
     RecognitionAttempt,
     RecordVersion,
     ReviewStatus,
@@ -38,9 +39,18 @@ class FormTrace:
     attempts: tuple[RecognitionAttempt, ...]
 
 
+@dataclass(frozen=True, slots=True)
+class FormWorkbench:
+    """Read model consumed by the human review workbench."""
+
+    trace: FormTrace
+    fields: tuple[FormField, ...]
+
+
 class QueryRepository(Protocol):
     def get_form(self, form_id: str) -> Form | None: ...
     def list_record_versions(self, form_id: str) -> list[RecordVersion]: ...
+    def list_form_fields(self, form_id: str) -> list[FormField]: ...
     def list_evidence(self, form_id: str) -> list[EvidenceFile]: ...
     def list_audit_events(self, form_id: str) -> list[AuditEvent]: ...
     def list_recognition_attempts_for_form(self, form_id: str) -> list[RecognitionAttempt]: ...
@@ -79,4 +89,11 @@ class QueryForms:
             evidence=tuple(self._repository.list_evidence(form_id)),
             audits=tuple(self._repository.list_audit_events(form_id)),
             attempts=tuple(self._repository.list_recognition_attempts_for_form(form_id)),
+        )
+
+    def workbench(self, form_id: str) -> FormWorkbench:
+        trace = self.trace(form_id)
+        return FormWorkbench(
+            trace=trace,
+            fields=tuple(self._repository.list_form_fields(form_id)),
         )

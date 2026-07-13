@@ -1,0 +1,133 @@
+from pathlib import Path
+
+from fastapi.testclient import TestClient
+
+from app.api.main import create_app
+from app.domain.models import FormField, RecognitionAttempt
+from app.services.container import Services, build_services
+from config.settings import Settings
+
+
+def build_client(tmp_path: Path) -> tuple[TestClient, Services]:
+    services = build_services(Settings(data_root=tmp_path, allow_header_identity=True))
+    image = tmp_path / "scan.png"
+    image.write_bytes(b"source-image")
+    services.imports.import_image(image, "FORM-1", "T1", "1", "operator-a")
+    services.repository.add_form_field(
+        FormField(
+            field_id="FIELD-1",
+            form_id="FORM-1",
+            field_name="total_quantity",
+            source_region={"x": 10, "y": 20, "width": 80, "height": 30},
+            current_value=8,
+        )
+    )
+    evidence = services.repository.list_evidence("FORM-1")[0]
+    services.repository.add_recognition_attempt(
+        RecognitionAttempt(
+            attempt_id="ATTEMPT-1",
+            field_id="FIELD-1",
+            engine="digits",
+            model_version="1",
+            candidate_value=8,
+            confidence=0.91,
+            crop_file_id=evidence.file_id,
+        )
+    )
+    return TestClient(create_app(services), raise_server_exceptions=False), services
+
+
+def reviewer_headers() -> dict[str, str]:
+    return {"X-Actor-ID": "reviewer-a", "X-Roles": "REVIEWER"}
+
+
+def test_form_workbench_detail_exposes_fields_candidates_and_safe_evidence_url(
+    tmp_path: Path,
+) -> None:
+    client, _ = build_client(tmp_path)
+
+    response = client.get("/api/v1/forms/FORM-1", headers=reviewer_headers())
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["form"]["form_id"] == "FORM-1"
+    assert payload["fields"] == [
+        {
+            "field_id": "FIELD-1",
+            "field_name": "total_quantity",
+            "source_region": {"x": 10, "y": 20, "width": 80, "height": 30},
+            "current_value": 8,
+            "current_value_source": None,
+            "current_record_version": 0,
+            "candidates": [
+                {
+                    "attempt_id": "ATTEMPT-1",
+                    "candidate_value": 8,
+                    "confidence": 0.91,
+                    "engine": "digits",
+                    "model_version": "1",
+                    "crop_file_id": payload["evidence"][0]["file_id"],
+                }
+            ],
+        }
+    ]
+    assert payload["evidence"][0]["download_url"].endswith(
+        f"/evidence/{payload['evidence'][0]['file_id']}"
+    )
+    assert "uri" not in payload["evidence"][0]
+
+
+def test_reviewer_reads_form_evidence_through_controlled_endpoint(tmp_path: Path) -> None:
+    client, services = build_client(tmp_path)
+    file_id = services.repository.list_evidence("FORM-1")[0].file_id
+
+    response = client.get(f"/api/v1/forms/FORM-1/evidence/{file_id}", headers=reviewer_headers())
+
+    assert response.status_code == 200
+    assert response.content == b"source-image"
+
+
+def test_reviewer_reads_review_history_without_evidence_paths(tmp_path: Path) -> None:
+    client, _ = build_client(tmp_path)
+
+    response = client.get("/api/v1/forms/FORM-1/review-history", headers=reviewer_headers())
+
+    assert response.status_code == 200
+    assert response.json()["versions"] == []
+    assert response.json()["audits"][0]["event_type"] == "IMPORT"
+    assert "uri" not in response.json()["audits"][0]
+
+
+def test_reviewer_heartbeats_then_releases_own_review_lease(tmp_path: Path) -> None:
+    client, _ = build_client(tmp_path)
+    headers = reviewer_headers()
+    lease = client.post("/api/v1/forms/FORM-1/review-lease", headers=headers).json()
+
+    heartbeat = client.post(
+        "/api/v1/forms/FORM-1/review-lease/heartbeat",
+        headers=headers,
+        json={"lease_token": lease["lease_token"]},
+    )
+    released = client.request(
+        "DELETE",
+        "/api/v1/forms/FORM-1/review-lease",
+        headers=headers,
+        json={"lease_token": lease["lease_token"]},
+    )
+
+    assert heartbeat.status_code == 200
+    assert heartbeat.json()["lease_token"] == lease["lease_token"]
+    assert released.status_code == 204
+
+
+def test_admin_force_releases_a_held_review_lease(tmp_path: Path) -> None:
+    client, _ = build_client(tmp_path)
+    client.post("/api/v1/forms/FORM-1/review-lease", headers=reviewer_headers())
+
+    response = client.post(
+        "/api/v1/forms/FORM-1/review-lease/force-release",
+        headers={"X-Actor-ID": "admin-a", "X-Roles": "ADMIN"},
+        json={"reason": "shift handover"},
+    )
+
+    assert response.status_code == 204

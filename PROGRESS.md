@@ -221,3 +221,17 @@
 - Verified before final documentation-only edits: `102 passed`; `ruff check .`; `mypy app config`; `frontend/npm run typecheck`; `frontend/npm run test`.
 - This handoff intentionally does not claim a finished React/Tauri product, real task dispatch, SSO, production worker, or production storage adapters.
 - The user requested no further tests after the verification listed above. Next Codex must re-run the verification suite before extending or merging these changes.
+
+## 审核工作台 API（2026-07-13）
+
+- 状态：第一阶段已完成并已验证；React 审核界面尚未开始。
+- 分支：`modular-architecture`。
+- 已完成：
+  - `GET /api/v1/forms/{form_id}`：返回表单摘要、字段坐标、当前值、识别候选、当前记录和受控证据 URL。
+  - `GET /api/v1/forms/{form_id}/evidence/{file_id}`：按表单归属与图片/音频权限读取证据；DTO 不返回本地 `uri` 或绝对路径。
+  - `GET /api/v1/forms/{form_id}/review-history`：返回版本与审计元数据。
+  - 审核租约新增 heartbeat、本人释放和管理员强制释放接口。
+  - `QueryForms.workbench()` 作为工作台读模型；路由只消费 DTO，不直接读取 SQLAlchemy Row。
+- 验证结果：`107 passed`；`uv run python -m ruff check .` 通过；`uv run python -m mypy app config` 检查 111 个源文件通过。
+- 未完成：规则结果、队列/分类/模板/主数据/导出 API；真实任务 Handler；React/Vite 审核工作台；Tauri 壳；生产认证与存储/Worker。
+- 下一位操作：以 `docs/design/review-workbench-style.md` 为唯一视觉基线，在 `frontend/` 创建 React/Vite 应用；只通过 API Client 与 Shell Ports 调用后端和 Web/Desktop 能力，不直接访问数据库、本地证据路径或 Tauri API。
