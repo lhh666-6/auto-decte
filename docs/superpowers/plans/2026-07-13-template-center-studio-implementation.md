@@ -10,6 +10,22 @@
 
 ---
 
+## Execution status (2026-07-13 handoff)
+
+| Task | Status | Commits / next action |
+|---|---|---|
+| 1. Domain field mutation | Complete | `0cf97fb`, `363a512` |
+| 2. Library use cases | Complete | `1f46d23` |
+| 3. Template API | Complete | `4b7ba00`, `30dd99c`, `498540b` |
+| 4. TypeScript client/canvas model | Complete | `33afddb`, `a8a07f2`, `569ccb4` |
+| 5. Library and read-only preview | Complete | `fb99363`, `556e67f`, `2207158` |
+| 6. Editable canvas and inspector | Not started | Execute Task 6 below; interrupted worker left no changes |
+| 7. Full validation/handoff | Not started | Run after Task 6 and the seed-template decision |
+
+The detailed checkboxes below are the original execution recipe and were intentionally not mechanically rewritten. Use this table as the authoritative completion marker.
+
+---
+
 ## File structure
 
 | Path | Responsibility |

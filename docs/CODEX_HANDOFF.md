@@ -1,159 +1,247 @@
-# Codex 协作交接与下一步实施清单
+# Codex 跨账户协作交接
 
-最后更新：2026-07-12  
-工作分支：`modular-architecture`  
-远程仓库：`git@github.com:lhh666-6/auto-decte.git`
+最后更新：2026-07-13
 
-## 产品目标与不可改变的原则
+仓库：`git@github.com:lhh666-6/auto-decte.git`
 
-这是 Windows 本地优先的工业表单采集系统。稳定业务闭环已经存在：图片/音频证据、SHA-256 去重、人工确认和更正、版本与审计、识别候选、规则校验、查询追溯、XLSX 导出，以及默认关闭的 AI 和本地相似检索。
+工作分支：`modular-architecture`
 
-后续架构必须是**模块化单体的增量演进**，不得重写稳定链路。当前 SQLite、本地文件和进程内任务是唯一事实源；未来 PostgreSQL、NAS/S3、Worker 队列和 Qdrant 只能通过 Port/Adapter 替换。
+交接前功能基线提交：`443fcfb`（交接文档提交请以远程分支最新 `git log -1` 为准）
+工作目录：`D:\半自动表单检测系统\.worktrees\modular-architecture`
 
-## 目标界面与前端边界
-
-最终前端是 React Feature Modules，由 Web Shell 和 Tauri Desktop Shell 承载并共享业务 Feature。业务状态不能分别存放在 React、Streamlit 或桌面壳中。
-
-已确认的审核工作台视觉基线见 [review-workbench-style.md](design/review-workbench-style.md)，React 实现不得偏离其“左图右表、异常优先、证据—字段联动”的核心规则。
-
-首个要真正实现的 Feature 是“人工审核工作台”：
-
-- 左侧：原始图片、缩放/旋转、字段坐标框、字段裁切预览；
-- 右侧：可编辑电子表格、字段分类、规则错误和 OCR/OMR 候选；
-- 下方：审核锁、版本历史、审计事件、任务进度和关联统计；
-- 字段、图片区域、电子表格和图表必须联动；
-- Web 使用浏览器 File/Camera/Audio 能力，Desktop 通过 Tauri IPC 实现相同 Shell Port。
-
-目前 `frontend/` 仅包含 Shell Port、API Client 类型和 Feature README；**没有 React 应用、没有 Tauri Rust 工程，Desktop Port 也是 stub**。不要把它报告为已完成的 React/Tauri 产品界面。
-
-## 当前已完成并已验证的能力
-
-Python 验证基线当前达到 102 项测试通过，Ruff 与 mypy 均通过；前端 TypeScript 的 `npm run typecheck` 与 `npm run test` 也通过。模块化分支已经具备：
-
-- SQLite WAL、外键、忙等待；
-- 本地身份/角色/权限模型；
-- ReviewLease、审核版本冲突和 UnitOfWork；
-- 持久化 Task、事件、幂等、重试、恢复和进程内 Runner；
-- FastAPI、Problem Details、请求 ID、健康检查、审核与任务 API；
-- Alembic 基线、备份/完整性组件、可观测性组件和前端契约骨架。
-
-本轮本地收口的高风险修复：
-
-- 恢复稳定的 `app.api.main:create_app` 兼容入口；
-- 增加任务状态 URL；
-- Alembic 支持显式数据库路径，生产模式验证 revision 而非自动建表；
-- 备份恢复到独立 staging 目录，并校验 hash；
-- 完整性检查增加无效版本指针、过期租约、孤立裁切；
-- 默认不信任 `X-Roles` 请求头，测试才显式开启；
-- 任务事件分配与写入在同一临界区，审核锁使用 SQLite 条件 upsert；
-- SSE 使用持续轮询流、终态关闭和无缓存响应头。
-
-## 队友 Codex 的任务清单
-
-按以下顺序实施。每项完成后更新 `PROGRESS.md` 和本文件，提交前运行测试。
-
-### A. 当前修复的验证与提交
-
-```powershell
-uv run python -m pytest -q
-uv run python -m ruff check .
-uv run python -m mypy app config
-uv run python -c "from app.api.main import create_app; print(create_app().openapi()['openapi'])"
-```
-
-修复失败后提交“DS 架构收口”改动。不得混入 `data/`、`.runtime/`、缓存、真实证据或导出文件。
-
-### B. 任务 API 与 SSE 的真实业务接入
-
-当前 `POST /api/v1/tasks` 可以创建任务、状态 URL 可查询、SSE 可续传，但还未把业务操作映射到真实导入/识别/导出 Handler。
-
-- 建立受限 `TaskHandlerRegistry`，只允许白名单 operation；
-- 将导入、识别、导出入口改为创建持久化任务并注册真实 Handler；
-- 执行中用 `TaskContext.report()` 写进度，取消时安全退出；
-- 增加状态、取消、重试、失败详情测试；
-- 不能把客户端传入的任意 operation 或本地路径直接交给 Runner。
-
-### C. 审核工作台所需 API
-
-补齐 React 审核工作台接口：
-
-- `GET /api/v1/forms/{form_id}`：表单详情、版本、字段、规则结果；
-- 基于 `file_id` 的受控证据读取 URL，绝不泄露本机绝对路径；
-- 字段裁切/识别候选、审核历史、租约 heartbeat/release/force-release；
-- 查询、导出、模板、主数据 API；
-- DTO 不能返回 SQLAlchemy Row、Repository 或服务器文件路径；
-- 写入接口统一支持权限、`Idempotency-Key` 和版本前置条件。
-
-### D. 迁移、备份和恢复演练
-
-- 生产配置必须 `auto_create_schema=false`；
-- RestorePlan 始终先恢复到 staging，完整性通过后才允许人工切换；
-- 备份 manifest 只保存相对路径和哈希；
-- 补无效 Export 关联、孤立字段、任务恢复状态、manifest 自检；
-- 文档中提到的 `/api/v1/admin/backup` 尚无路由，未实现前必须标为计划项。
-
-### E. 可观测性与权限
-
-- 将 `JsonLogFormatter` 接入 FastAPI 中间件、任务 Runner 和业务 Facade；
-- 日志固定带 request ID、actor、module、operation、form/task ID、耗时和错误码；
-- 实现敏感字段掩码，不记录原图路径、凭据、表单值或录音内容；
-- `LocalErrorTracker` 通过 ErrorTracker Port 注入，保留 Sentry/OpenTelemetry 替换点；
-- `allow_header_identity` 只用于测试/本地演示；生产替换为可信认证 Adapter。
-
-### F. React / Tauri 实施
-
-- 修复 `frontend` 工具链：根 `npm test` 当前指向未安装的 Jest；改为可重复 workspace 测试并提交 lockfile；
-- 建立 React + TypeScript + Vite Web App，先做审核工作台与任务队列；
-- 增加 Tauri v2 工程，但 Feature 只能调用 `shell-ports`，不能直接 import Tauri API；
-- 为 Web/Desktop 的 File/Camera/Scanner/Audio/Notification Port 写行为测试；
-- Streamlit 保留为诊断/过渡界面，改为显式导航，避免 `app/ui/pages/` 自动发现空白页。
-
-## 风险与协作注意事项
-
-- `_ds` 是 DS 贡献标识，不应成为外部部署契约。公共入口保持稳定名称，例如 `app.api.main`；不要让 README、uvicorn 命令或第三方集成依赖作者后缀。
-- 审核锁与事件序列在本地并发已加强；未来多进程/多机器时使用数据库条件写入、PostgreSQL 事务或队列协调，不能依赖 Python 进程内锁。
-- AI、向量、音频转写保持可选；关闭它们时核心导入、审核、查询与导出必须可用。
-- 真实样表、员工数据、音频、SQLite 数据库、导出文件、密钥和 `.env` 绝不提交 Git。
-- 不使用 `git reset --hard` 或 `git checkout --` 覆盖他人改动；拉取前先 `git status`，保持小而清晰的提交。
-
-## 推荐协作流程
+## 队友开始前必须执行
 
 ```powershell
 git fetch origin
 git switch modular-architecture
 git pull --ff-only origin modular-architecture
-uv sync --extra dev
-uv run python -m pytest -q
+git status --short
 ```
 
-每个任务使用独立分支，例如 `feature/task-handler-registry`、`feature/review-workbench-api`、`feature/react-review-workbench`、`feature/tauri-shell`。提交说明必须写清实现内容、验证命令、测试结果、已知限制和下一位 Codex 的下一步；推送分支后用 PR 合并，不直接覆盖 `main`。
+预期 `git status --short` 无输出。不要在根目录 `main` 上开发，不要使用 `git reset --hard` 或覆盖其他人的提交。
 
-## 本次验证边界
+## 产品目标
 
-- 已执行并通过：Python `pytest` 102 项、`ruff check .`、`mypy app config`；前端 `npm run typecheck` 与 `npm run test`。
-- 本文件、README、进度记录和 Git 忽略规则之后仅为文档/协作整理；按当前用户要求，未再执行额外测试。
-- 未完成而必须由下一位 Codex 验收：真实任务 Handler 入队、React 审核工作台、Tauri 应用、真实 SSO、生产 Worker、PostgreSQL/NAS/S3/Qdrant Adapter、真实样表准确率与性能基线。
+系统目标是 Windows 本地优先的模板驱动纸质表单闭环：
 
-## 2026-07-13：审核工作台 API 第一阶段
+```text
+模板设计 → 不可变发布 → 打印 → 图片导入 → QR 分类
+→ ArUco 校正 → 字段裁切 → OCR/OMR 候选 → 人工审核
+→ 版本/审计 → XLSX 导出 → 更正后重导 → 全链路追溯
+```
 
-此阶段已在 `modular-architecture` 分支实现并验证，作为 React 审核页面的唯一数据入口：
+前端采用同一套 React Feature，Web 与未来 Tauri 桌面壳共用。SQLite、本地证据、任务系统和识别实现必须经 Port/Adapter 隔离。
 
-- `GET /api/v1/forms/{form_id}` 返回表单、字段坐标、当前值、OCR/OMR 候选、当前记录和不含服务器路径的证据 URL；
-- `GET /api/v1/forms/{form_id}/evidence/{file_id}` 依表单归属及图片/音频权限受控读取证据；
-- `GET /api/v1/forms/{form_id}/review-history` 返回版本和审计事件；
-- 租约现有 acquire/confirm 之外，新增 heartbeat、本人 release 与管理员 force-release。
+权威需求与计划：
 
-最新验证：`107 passed`，Ruff 通过，mypy 检查 111 个源文件通过。未实现的规则结果、队列/分类/模板/主数据/导出 API 仍不得在前端伪称已完成。
+- `docs/superpowers/specs/2026-07-13-template-driven-paper-form-closed-loop-design.md`
+- `docs/superpowers/specs/2026-07-13-template-center-studio-design.md`
+- `docs/superpowers/plans/2026-07-13-template-center-studio-implementation.md`
+- `docs/design/review-workbench-style.md`
+- `PROGRESS.md`
 
-下一步为 React/Vite 审核工作台。严格遵守 [审核工作台视觉规范](design/review-workbench-style.md)：左图右表、字段—坐标双向联动、异常优先；业务 Feature 只能使用 API Client 和 Shell Ports，不能读取本地文件路径、数据库或直接调用 Tauri API。
+## 已完成并已推送
 
-## 2026-07-13：React Web 审核工作台第一阶段
+### 1. 稳定后端闭环基础
 
-`frontend/apps/web` 已不再是 README 骨架，而是可运行的 React/Vite Web Shell：
+- 图片证据导入、SHA-256 去重和不可变证据；
+- 人工确认/更正、RecordVersion、AuditEvent、乐观版本；
+- 图像质量、二维码分类、透视校正、数字模板与 OMR 基础能力；
+- 规则校验、查询追溯、XLSX 四工作表导出；
+- 默认关闭的 AI Adapter、本地相似检索；
+- SQLite UoW、审核 Lease、任务状态机、SSE、备份/完整性和 JSON 日志骨架。
 
-- 左侧原图画布叠加字段框，右侧舒适密度的可编辑电子表格；点击字段或图片框会保持同一选中状态；
-- 通过 `ReviewWorkbenchApi` 调用版本化 API，包含详情、历史、证据、审核租约与确认；
-- Web 通知经 `@form-detection/shell-ports` 处理；没有 Feature 直接读取数据库、本地证据路径或 Tauri API；
-- 根 `npm run test`（TypeScript + Vitest 3 项）和 `npm run build:web` 均已通过，并在本地浏览器用隔离演示数据完成了加载、字段框、异常状态和审核锁的可视化验收。
+### 2. React 审核工作台
 
-仍未完成：真实队列/规则/统计图表、草稿与退回/作废、任务进度、模板/主数据页面、Tauri v2 壳和生产认证。下一阶段应先补相关 API，再把当前 Web Shell 的审核组件抽到 `frontend/features/review-workbench/`，保持 Web 与 Desktop 可共用。
+- React/Vite Web Shell 已可运行，当前地址通常为 `http://127.0.0.1:5175/`；
+- 左图右表、字段框/表格选中联动、候选值、受控证据读取；
+- 审核锁获取/续租/释放及确认；
+- 受控图片导入；
+- 真实队列 API 与侧栏计数：待分类、待复核、规则异常、可导出；
+- 队列表单卡片可打开工作台；主数据入口不会再静默无响应。
+
+### 3. 模板识别后端
+
+- TemplateVersion 生命周期、A4/A5 标准坐标和不可变发布；
+- `IFD|template_key|version|checksum` QR；
+- `SHEET|batch|sequence|checksum` 实例码格式；
+- ArUco 10/11/12/13 打印标记和透视校正；
+- 标准画布、字段裁切证据、RecognitionAttempt、候选生成；
+- 字段识别引擎与自动预填阈值；
+- QR 失败进入 `NEEDS_CLASSIFICATION`，不静默猜模板；
+- 人工模板分配 API。
+
+### 4. 模板中心：Task 1–5 已完成
+
+完成提交范围：`0cf97fb` 至 `443fcfb`。
+
+- 草稿字段可替换/删除；发布、停用、退役版本不可修改；
+- 模板库稳定查询、版本详情、克隆调优和字段 PATCH/DELETE API；
+- 完整字段/页面/父版本/打印件 DTO，不返回内部 URI；
+- TypeScript TemplateApi 与画布几何模型；
+- QR 安全区碰撞拒绝、画布边界限制、可编辑生命周期判断；
+- 模板中心首先进入真实模板库，不再打开参数毛坯页；
+- 搜索、状态筛选、诚实空状态、创建空白草稿；
+- 发布模板只读预览；只有点击“基于此模板调优”才克隆草稿；
+- 模板库同时显示发布版本与活动草稿，草稿可恢复；
+- 恢复原有字段添加、预检、发布工作流；
+- 错误重试、无障碍提示、桌面/平板/手机响应式布局。
+
+最近验证：
+
+- 模板 API 定向测试：`7 passed`；
+- 前端状态/API 定向测试：`10 passed`；
+- 前端 `npm run typecheck` 与 `npm run build:web` 通过；
+- 全量 Python 套件此前仍有 2 个与本轮无关的 identity 默认值断言失败，尚未统一修复，禁止写成“全量全部通过”。
+
+## 当前明确未完成
+
+### A. 下一任务：真正的模板画布编辑器（最高优先级）
+
+计划中的 Task 6 尚未实现；中断时已停止子任务，工作树无半成品。
+
+需要创建：
+
+```text
+frontend/apps/web/src/TemplateCanvasEditor_ds.tsx
+frontend/apps/web/src/FieldInspector_ds.tsx
+```
+
+要求：
+
+- 画布显示真实 A4/A5 比例、字段框、QR 安全区和四角标记；
+- 点击字段高亮并打开右侧属性；
+- 拖动与缩放使用现有 `moveRect` / `resizeRect`；
+- 只在 pointer-up 时调用 `replaceField` 持久化；
+- 安全区冲突保留旧坐标并显示中文原因；
+- 属性编辑包含显示名、数据/输入类型、识别引擎、阈值和坐标；
+- 删除字段需要确认；新增字段、预检和发布必须继续可用；
+- `DRAFT`、`PREFLIGHT_FAILED`、`READY_TO_PUBLISH` 可编辑，发布终态只读；
+- 响应式和键盘可用。
+
+建议直接按计划文件 Task 6 执行，完成后做需求审查、代码质量审查、更新 `PROGRESS.md`、提交并推送。
+
+### B. 四个通用模板尚未作为安装数据真正落库
+
+文档已经定义四类模板：
+
+- `PAYROLL_HOURLY`
+- `PAYROLL_STANDARD_PIECE`
+- `PAYROLL_FIXED_PRODUCTION_GRID`
+- `PAYROLL_EQUIPMENT_PROCESS`
+
+但新安装数据库不会自动拥有四个已发布模板。需要实现幂等 seed/import 命令或安装初始化流程，并配置真实字段、坐标、规则、导出映射和打印预览。不得在 React 中伪造已发布卡片。
+
+### C. 模板包与打印批次未闭环
+
+- 安全 ZIP 模板包导入/导出；
+- manifest schema/hash/冲突检查和 ZIP Slip/压缩炸弹防护；
+- print_batch 与每张纸唯一 sheet_instance_id 的实际生成、存储和重复提交拦截；
+- 模板版本差异与效果对比。
+
+### D. 审核工作台仍有功能缺口
+
+- 保存草稿 API 与按钮；
+- 退回、作废、更正原因；
+- 原子 `confirm-and-claim-next`；
+- 上一张/下一张和稳定队列筛选快照；
+- 图片缩放、旋转、复位和字段裁切详情；
+- 规则结果/字段组错误的真实 API；
+- 导出后更正影响与 `REEXPORT_REQUIRED` UI；
+- 人工分类页面和模板选择交互；
+- 当前“规则异常”队列主要依赖现有状态，尚未接完整三阶段规则结果。
+
+### E. 主数据仍是只读骨架
+
+员工、工单、产品、工序没有 SQLite 持久化 CRUD/API/编辑页。当前入口只明确提示缺口。需要迁移、权限、审计、禁用/版本策略，并接入字段枚举和规则。
+
+### F. 导出中心尚未产品化
+
+- `export-map.json` 模板映射；
+- 导出预览和 `XLSX_EXPORT` 真实任务 Handler；
+- 公式注入防护验收；
+- 不可变导出批次、授权下载、重导关系和导出状态队列；
+- 数据表、统计图和筛选联动。
+
+### G. 任务/桌面/生产化
+
+- FORM_IMPORT、FORM_RECOGNITION、XLSX_EXPORT 尚未全部成为真实持久化 Handler；
+- Tauri v2 壳、File/Camera/Scanner/Audio Ports 和 Windows 安装包；
+- 可信企业认证、生产 Worker、PostgreSQL/NAS-S3/Qdrant Adapter；
+- 模板包签名、生产日志脱敏和正式升级/恢复演练。
+
+## 队友建议执行顺序
+
+1. 完成计划 Task 6：画布编辑器与字段属性检查器；
+2. 完成计划 Task 7：全量验证、浏览器生命周期验收和进度记录；
+3. 实现四个模板的幂等安装 seed，并用企业历史表格校准字段/坐标；
+4. 补审核草稿、退回/作废、人工分类和 `confirm-and-claim-next`；
+5. 实现主数据 CRUD；
+6. 实现模板化导出中心与重导闭环；
+7. 实现模板包、打印批次/纸张实例；
+8. 最后做 Tauri、真实设备和生产 Adapter。
+
+每个步骤都要：定向测试 → 需求审查 → 代码质量审查 → 更新 `PROGRESS.md` → 小提交 → 推送 `modular-architecture`。
+
+## 基本完成后的验收方案
+
+### 自动化门槛
+
+```powershell
+uv run python -m pytest -q
+uv run python -m ruff check .
+uv run python -m mypy app config
+Set-Location frontend
+npm run test
+npm run build:web
+```
+
+先处理或明确豁免当前 2 个 identity 默认值既有失败；正式验收报告不能含不解释的红项。
+
+### 浏览器功能验收
+
+至少连续完成：
+
+```text
+选择发布模板 → 只读预览 → 克隆调优 → 移动/缩放字段
+→ 预检 → 发布 → 打开打印件 → 上传打印/拍摄图片
+→ QR 分类 → 校正/裁切/候选 → 人工审核 → 确认
+→ 导出 XLSX → 更正 → 标记重导 → 追溯原图和模板版本
+```
+
+### 真实样本验收
+
+准备每类模板至少 10–15 张，总计至少 40–60 张，覆盖不同手机、距离、旋转、阴影、折痕、黑白打印、打印缩放、QR 污损、角标遮挡、越格数字、OMR 不清、重复拍摄和导出后更正。
+
+目标：
+
+- QR 成功样本模板分类正确率 ≥99%；
+- QR 失败 100% 进入待分类，静默猜错 0 次；
+- 透视校正和字段覆盖率 ≥98%；
+- 自动预填字段精确率 ≥99%；
+- 阻断规则自动放行 0 次；
+- 模板发布、人工分类、确认和导出审计率 100%；
+- 连续审核 30 张无流程中断；
+- 任一 XLSX 值能追溯到记录版本、字段、模板版本和原始证据。
+
+## 本地运行
+
+```powershell
+# 后端
+uv run python -m uvicorn app.api.main:create_app --factory --host 127.0.0.1 --port 8000
+
+# 前端（另一个终端）
+Set-Location frontend
+npm run dev:web
+```
+
+当前机器最近使用前端 `http://127.0.0.1:5175/`，后端 `http://127.0.0.1:8000/`。
+
+## 协作注意事项
+
+- `_ds` 是贡献来源标识，不是外部部署契约；保持 `app.api.main` 等公共入口稳定；
+- 不提交 `.env`、SQLite、真实图片/录音、导出文件、`.runtime`、缓存和企业敏感数据；
+- React Feature 只能通过 API Client/Shell Ports，不得直连数据库、本地路径或 Tauri API；
+- 发布模板不可编辑，调优必须克隆新版本；
+- AI、向量和音频关闭后核心流程仍必须运行；
+- 不要把局部定向测试写成“整个系统已验证”。
