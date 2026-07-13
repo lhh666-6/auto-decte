@@ -3,7 +3,17 @@
  */
 export type { ProblemDetails } from "./problem_ds.js";
 export { isProblemDetails } from "./problem_ds.js";
-export { TemplateApi, type PreflightReport, type TemplateArtifact, type TemplateVersion } from "./templates_ds.js";
+export {
+  TemplateApi,
+  type PreflightReport,
+  type TemplateArtifact,
+  type TemplateField,
+  type TemplateFieldInput,
+  type TemplateLibraryItem,
+  type TemplatePage,
+  type TemplateRect,
+  type TemplateVersion,
+} from "./templates_ds.js";
 export {
   ApiRequestError,
   ReviewWorkbenchApi,

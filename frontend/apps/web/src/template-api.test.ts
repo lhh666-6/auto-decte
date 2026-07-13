@@ -1,8 +1,23 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, expectTypeOf, it, vi } from "vitest";
 
-import { TemplateApi, type TemplateField } from "../../../packages/api-client/src/templates_ds";
+import type {
+  TemplateField,
+  TemplateFieldInput,
+  TemplateLibraryItem,
+  TemplatePage,
+  TemplateRect,
+} from "@form-detection/api-client";
+import { TemplateApi } from "../../../packages/api-client/src/templates_ds";
 
 describe("TemplateApi", () => {
+  it("re-exports the template contracts from the package entry point", () => {
+    expectTypeOf<TemplateField>().toEqualTypeOf<TemplateField>();
+    expectTypeOf<TemplateFieldInput>().toEqualTypeOf<TemplateFieldInput>();
+    expectTypeOf<TemplateLibraryItem>().toEqualTypeOf<TemplateLibraryItem>();
+    expectTypeOf<TemplatePage>().toEqualTypeOf<TemplatePage>();
+    expectTypeOf<TemplateRect>().toEqualTypeOf<TemplateRect>();
+  });
+
   it("creates a template draft through the versioned api", async () => {
     const fetcher = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ version_id: "TPL-1", status: "DRAFT", fields: [], artifacts: [] }), {

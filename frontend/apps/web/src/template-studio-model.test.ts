@@ -8,9 +8,10 @@ describe("template studio canvas model", () => {
       .toEqual({ x: 0.15, y: 0.23, width: 0.2, height: 0.05 });
   });
 
-  it("clamps a dragged field inside the printable page", () => {
-    expect(moveRect({ x: 0.74, y: 0.10, width: 0.20, height: 0.05 }, 0.10, 0, QR_SAFE_ZONE))
-      .toEqual({ x: 0.60, y: 0.10, width: 0.20, height: 0.05 });
+  it("keeps an already protected rectangle exactly unchanged when moved", () => {
+    const original = { x: 0.74, y: 0.10, width: 0.20, height: 0.05 };
+
+    expect(moveRect(original, 0.10, 0, QR_SAFE_ZONE)).toBe(original);
   });
 
   it("keeps the original rectangle when a move enters the QR safe zone", () => {

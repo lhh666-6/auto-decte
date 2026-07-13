@@ -23,15 +23,7 @@ export function moveRect(
     x: clamp(current.x + deltaX, 0, 1 - current.width),
     y: clamp(current.y + deltaY, 0, 1 - current.height),
   };
-  if (!isProtectedOverlap(candidate, protectedRect)) {
-    return candidate;
-  }
-  if (!isProtectedOverlap(rect, protectedRect)) {
-    return rect;
-  }
-  const zone = normalizeRect(protectedRect);
-  const beforeZone = { ...candidate, x: clamp(zone.x - candidate.width, 0, 1 - candidate.width) };
-  return isProtectedOverlap(beforeZone, protectedRect) ? rect : beforeZone;
+  return isProtectedOverlap(candidate, protectedRect) ? rect : candidate;
 }
 
 export function resizeRect(
