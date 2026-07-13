@@ -110,19 +110,34 @@ class TemplateVersion:
         return cls(version_id, template_key, version, page, parent_version_id=parent_version_id)
 
     def add_field(self, definition: FieldDefinition) -> None:
-        self._require_draft()
+        self._require_editable()
         if definition.page != self.page:
             raise ValueError("field page must match template page")
         if definition.field_key in {item.field_key for item in self.fields}:
             raise ValueError("field_key must be unique within a template version")
         self.fields.append(definition)
+        self.status = TemplateStatus.DRAFT
+
+    def mark_preflight_failed(self) -> None:
+        self._require_editable()
+        self.status = TemplateStatus.PREFLIGHT_FAILED
+
+    def mark_ready_to_publish(self) -> None:
+        self._require_editable()
+        self.status = TemplateStatus.READY_TO_PUBLISH
 
     def publish(self) -> None:
-        self._require_draft()
+        if self.status is not TemplateStatus.READY_TO_PUBLISH:
+            raise ValueError("template version must pass preflight before publication")
         self.status = TemplateStatus.PUBLISHED
 
-    def _require_draft(self) -> None:
-        if self.status is not TemplateStatus.DRAFT:
+    def _require_editable(self) -> None:
+        immutable_statuses = {
+            TemplateStatus.PUBLISHED,
+            TemplateStatus.DEPRECATED,
+            TemplateStatus.RETIRED,
+        }
+        if self.status in immutable_statuses:
             raise ValueError("published template versions cannot be mutated")
 
 

@@ -60,3 +60,9 @@ def test_repository_round_trips_fields_and_safe_artifact_metadata(tmp_path: Path
     artifact = repository.list_artifacts(version.version_id)[0]
     assert artifact.download_name == "PAYROLL_HOURLY-v1.pdf"
     assert artifact.sha256 == "a" * 64
+
+    loaded.mark_ready_to_publish()
+    repository.replace_version(loaded)
+
+    assert repository.get_version(version.version_id).status.value == "READY_TO_PUBLISH"  # type: ignore[union-attr]
+    assert repository.list_versions("PAYROLL_HOURLY")[0].version_id == version.version_id

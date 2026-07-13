@@ -3,7 +3,7 @@
 from collections.abc import Iterator
 from contextlib import contextmanager
 
-from sqlalchemy import Engine, select
+from sqlalchemy import Engine, delete, select
 from sqlalchemy.orm import Session
 
 from app.adapters.database.models import (
@@ -81,6 +81,39 @@ class SqlAlchemyTemplateRepository:
                 fields=[_field_from_dict(item.field_key, item.definition, page) for item in fields],
                 parent_version_id=row.parent_version_id,
             )
+
+    def replace_version(self, version: TemplateVersion) -> None:
+        with self._transaction() as session:
+            row = session.get(TemplateVersionRow, version.version_id)
+            if row is None:
+                raise KeyError(f"Unknown template version: {version.version_id}")
+            row.status = version.status.value
+            row.page = _page_to_dict(version.page)
+            row.parent_version_id = version.parent_version_id
+            session.execute(
+                delete(TemplateFieldRow).where(TemplateFieldRow.version_id == version.version_id)
+            )
+            session.flush()
+            for position, definition in enumerate(version.fields):
+                session.add(
+                    TemplateFieldRow(
+                        field_id=f"{version.version_id}:{definition.field_key}",
+                        version_id=version.version_id,
+                        field_key=definition.field_key,
+                        position=position,
+                        definition=_field_to_dict(definition),
+                    )
+                )
+
+    def list_versions(self, template_key: str) -> list[TemplateVersion]:
+        with self._read_session() as session:
+            ids = session.scalars(
+                select(TemplateVersionRow.version_id)
+                .where(TemplateVersionRow.template_key == template_key)
+                .order_by(TemplateVersionRow.version, TemplateVersionRow.version_id)
+            ).all()
+        versions = (self.get_version(version_id) for version_id in ids)
+        return [version for version in versions if version is not None]
 
     def add_artifact(self, artifact: TemplateArtifact) -> None:
         with self._transaction() as session:

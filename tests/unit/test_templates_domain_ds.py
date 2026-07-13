@@ -38,6 +38,9 @@ def test_invalid_template_key_and_out_of_canvas_field_are_rejected() -> None:
 
 def test_published_version_cannot_be_mutated() -> None:
     version = TemplateVersion.draft("TPL-1", "PAYROLL_HOURLY", 1, PageSpec.a4_portrait())
+    with pytest.raises(ValueError, match="preflight"):
+        version.publish()
+    version.mark_ready_to_publish()
     version.publish()
 
     assert version.status is TemplateStatus.PUBLISHED
