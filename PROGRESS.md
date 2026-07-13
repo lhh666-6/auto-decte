@@ -290,3 +290,12 @@
 - 验证：仓储与用例定向测试 `7 passed`；审查记录显示全量测试 `139 passed`，另有 2 个未改动 identity 默认值既有失败；Ruff 与 mypy 通过。
 - 提交：`1f46d23`。
 - 下一步：公开受权限保护的模板库、版本读取、克隆与字段编辑 API，并补 HTTP 契约测试。
+
+## 模板中心可视化设计器：Task 3（2026-07-13）
+
+- 状态：已完成，需求审查与代码质量复审均通过。
+- 已完成：模板库/版本详情/复制调优/草稿字段 PATCH 与 DELETE API；字段、页面、父版本、打印件元数据形成完整客户端契约，内部存储 URI 始终不返回。
+- 安全与错误：读写权限分离；缺失模板为 `TEMPLATE_VERSION_NOT_FOUND`，缺失字段为 `FIELD_NOT_FOUND`，发布版修改为 `INVALID_LIFECYCLE`；POST/PATCH 的 OpenAPI 请求体已验证存在。
+- 验证：模板 API 定向测试 `6 passed`，Ruff 与 mypy 定向通过。全量套件保留 2 个未改动 identity 默认值既有失败。
+- 提交：`4b7ba00`、`30dd99c`、`498540b`。
+- 下一步：扩展 TypeScript API Client 和纯画布几何模型，再实现模板库与只读预览页面。
