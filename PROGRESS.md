@@ -274,3 +274,11 @@
 - 本地验证：后端 `GET /health/ready`、`GET /api/v1/forms/queue/review` 返回 200；前端 `npm run typecheck` 通过；浏览器已确认四个真实计数和主数据入口页面可见。
 - 明确未完成：主数据 SQLite 迁移与 CRUD、保存草稿、退回/作废、确认并领取下一张的原子 API、规则异常真实规则来源、导出中心与 Tauri 壳。不要将前端的“当前没有表单”误解为队列功能未接通——它表示本地数据库当前没有匹配状态的数据。
 - 下一位操作：优先实现主数据的持久化模型、权限 API 与编辑页；随后实现草稿和 `confirm-and-claim-next` 事务，再把规则与导出状态接入队列。
+
+## 模板中心可视化设计器：Task 1（2026-07-13）
+
+- 状态：已完成并通过需求符合性与代码质量两轮审查。
+- 已完成：`TemplateVersion` 新增草稿字段替换与删除；替换必须保留字段键和页面规格，未知字段明确失败；所有已发布/停用/退役版本继续不可变。
+- 验证：`uv run pytest tests/unit/test_templates_domain_ds.py -q`，`8 passed`；Ruff 与 mypy 定向检查通过。
+- 提交：`0cf97fb`、`363a512`。
+- 下一步：补齐模板库查询、草稿字段 mutation 用例和 API 契约，再连接 React 模板库与只读预览。
