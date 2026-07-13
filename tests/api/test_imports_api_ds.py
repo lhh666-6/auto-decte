@@ -6,7 +6,13 @@ from fastapi.testclient import TestClient
 
 from app.api.main import create_app
 from app.domain.models import ReviewStatus
-from app.domain.templates_ds import PageSpec, TemplateVersion, build_template_payload
+from app.domain.templates_ds import (
+    FieldDefinition,
+    PageSpec,
+    Rect,
+    TemplateVersion,
+    build_template_payload,
+)
 from app.services.container import build_services
 from config.settings import Settings
 
@@ -116,3 +122,45 @@ def test_import_rejects_invalid_image_bytes_despite_png_content_type(
 
     assert response.status_code == 422
     assert response.json()["code"] == "INVALID_IMAGE_CONTENT"
+
+
+def test_generated_template_print_runs_the_full_correction_and_crop_path(tmp_path: Path) -> None:
+    services = build_services(Settings(data_root=tmp_path, allow_header_identity=True))
+    page = PageSpec.a4_portrait()
+    template = TemplateVersion.draft("TPL-1", "PAYROLL_HOURLY", 1, page)
+    template.add_field(
+        FieldDefinition(
+            "total_quantity",
+            "Total",
+            "integer",
+            "digit_boxes",
+            Rect(0.1, 0.2, 0.2, 0.05),
+            page,
+            recognition_engine="digit_template",
+        )
+    )
+    template.mark_ready_to_publish()
+    template.publish()
+    services.template_repository.add_version(template)
+    print_artifact = next(
+        item for item in services.template_renderer.render(template) if item.kind == "PRINT_PNG"
+    )
+    client = TestClient(create_app(services), raise_server_exceptions=False)
+
+    response = client.post(
+        "/api/v1/imports",
+        headers={
+            "X-Actor-ID": "operator-a",
+            "X-Roles": "OPERATOR",
+            "Idempotency-Key": "import-full-print",
+            "Content-Type": "image/png",
+        },
+        content=Path(print_artifact.internal_uri).read_bytes(),
+    )
+
+    assert response.status_code == 202
+    form_id = response.json()["form_id"]
+    evidence_types = {item.type for item in services.repository.list_evidence(form_id)}
+    assert {"ORIGINAL_IMAGE", "CORRECTED_IMAGE", "FIELD_CROP"} <= evidence_types
+    field = services.repository.list_form_fields(form_id)[0]
+    assert services.repository.list_recognition_attempts(field.field_id)
