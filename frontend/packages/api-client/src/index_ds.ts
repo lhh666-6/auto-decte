@@ -7,12 +7,15 @@ export {
   TemplateApi,
   type PreflightReport,
   type TemplateArtifact,
+  type TemplateDraftSummary,
   type TemplateField,
   type TemplateFieldInput,
   type TemplateLibraryItem,
   type TemplatePage,
   type TemplateRect,
+  type TemplateStatus,
   type TemplateVersion,
+  isEditableTemplateStatus,
 } from "./templates_ds.js";
 export {
   ApiRequestError,

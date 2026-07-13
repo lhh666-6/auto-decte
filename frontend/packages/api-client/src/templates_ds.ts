@@ -39,11 +39,32 @@ export interface TemplateVersion {
   version_id: string;
   template_key: string;
   version: number;
-  status: string;
+  status: TemplateStatus;
   parent_version_id: string | null;
   page: TemplatePage;
   fields: TemplateField[];
   artifacts: TemplateArtifact[];
+}
+
+export type TemplateStatus =
+  | "DRAFT"
+  | "PREFLIGHT_FAILED"
+  | "READY_TO_PUBLISH"
+  | "PUBLISHED"
+  | "DEPRECATED"
+  | "RETIRED";
+
+export type EditableTemplateStatus = "DRAFT" | "PREFLIGHT_FAILED" | "READY_TO_PUBLISH";
+
+export interface TemplateDraftSummary {
+  version_id: string;
+  version: number;
+  status: EditableTemplateStatus;
+  field_count: number;
+}
+
+export function isEditableTemplateStatus(status: string): status is EditableTemplateStatus {
+  return status === "DRAFT" || status === "PREFLIGHT_FAILED" || status === "READY_TO_PUBLISH";
 }
 
 export interface TemplateLibraryItem {
@@ -51,16 +72,17 @@ export interface TemplateLibraryItem {
   version_id: string;
   current_published_version: number | null;
   version: number;
-  status: string;
+  status: TemplateStatus;
   page: TemplatePage;
   field_count: number;
+  active_draft: TemplateDraftSummary | null;
 }
 
 export type TemplateFieldInput = TemplateField;
 
 export interface PreflightReport {
   ok: boolean;
-  status: string;
+  status: TemplateStatus;
   issues: Array<{ code: string; detail: string }>;
 }
 

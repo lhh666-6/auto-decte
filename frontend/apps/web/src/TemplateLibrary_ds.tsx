@@ -1,5 +1,5 @@
-import { type TemplateApi, type TemplateLibraryItem, type TemplatePage } from "@form-detection/api-client";
-import { useEffect, useMemo, useState } from "react";
+import { isEditableTemplateStatus, type TemplateApi, type TemplateLibraryItem, type TemplatePage } from "@form-detection/api-client";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 type Props = {
   api: TemplateApi;
@@ -9,7 +9,7 @@ type Props = {
   onCreateBlank: (templateKey: string, pageSize: "A4" | "A5") => Promise<void>;
 };
 
-type StatusFilter = "ALL" | "PUBLISHED" | "DRAFT";
+type StatusFilter = "ALL" | "PUBLISHED" | "EDITABLE";
 
 const templateNames: Record<string, { name: string; purpose: string }> = {
   PAYROLL_HOURLY: { name: "计时考核单", purpose: "适用于按工时统计的生产岗位" },
@@ -28,21 +28,28 @@ export function TemplateLibrary({ api, onBack, onSelectPublished, onOpenDraft, o
   const [templateKey, setTemplateKey] = useState("NEW_TEMPLATE");
   const [pageSize, setPageSize] = useState<"A4" | "A5">("A4");
 
-  useEffect(() => {
-    let active = true;
-    void api.listTemplates()
-      .then((items) => active && setTemplates(items))
-      .catch((cause: unknown) => active && setError(requestMessage(cause)))
-      .finally(() => active && setLoading(false));
-    return () => { active = false; };
+  const loadTemplates = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      setTemplates(await api.listTemplates());
+    } catch (cause) {
+      setError(requestMessage(cause));
+    } finally {
+      setLoading(false);
+    }
   }, [api]);
+
+  useEffect(() => { void loadTemplates(); }, [loadTemplates]);
 
   const visibleTemplates = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
     return templates.filter((item) => {
       const matchesQuery = !normalizedQuery || item.template_key.toLowerCase().includes(normalizedQuery)
         || display(item).name.toLowerCase().includes(normalizedQuery);
-      const matchesStatus = filter === "ALL" || item.status === filter;
+      const matchesStatus = filter === "ALL"
+        || (filter === "PUBLISHED" && item.status === "PUBLISHED")
+        || (filter === "EDITABLE" && (isEditableTemplateStatus(item.status) || Boolean(item.active_draft)));
       return matchesQuery && matchesStatus;
     });
   }, [filter, query, templates]);
@@ -65,13 +72,13 @@ export function TemplateLibrary({ api, onBack, onSelectPublished, onOpenDraft, o
       <div><span className="eyebrow">模板中心</span><h1>纸质表单模板库</h1><p>选择已发布版本查看打印内容；调优始终复制为新的草稿版本。</p></div>
       <button className="text-button" onClick={onBack}>返回审核工作台</button>
     </header>
-    {error && <div className="error-banner">{error}</div>}
+    {error && <div className="error-banner" role="alert"><span>{error}</span><button className="text-button" onClick={() => void loadTemplates()}>重试</button></div>}
     <section className="template-library-layout">
       <aside className="library-rail">
         <h2>模板库</h2>
         <label>搜索模板<input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="名称或模板键" /></label>
         <div className="filter-chips" aria-label="模板状态筛选">
-          {(["ALL", "PUBLISHED", "DRAFT"] as const).map((status) => <button key={status} className={filter === status ? "active" : ""} onClick={() => setFilter(status)}>{statusLabel(status)}</button>)}
+          {(["ALL", "PUBLISHED", "EDITABLE"] as const).map((status) => <button key={status} className={filter === status ? "active" : ""} onClick={() => setFilter(status)}>{statusLabel(status)}</button>)}
         </div>
         <div className="library-create">
           <h3>创建空白模板</h3>
@@ -83,7 +90,7 @@ export function TemplateLibrary({ api, onBack, onSelectPublished, onOpenDraft, o
       </aside>
       <section className="template-library-content" aria-live="polite">
         <div className="library-summary"><strong>{loading ? "正在加载模板库…" : `共 ${visibleTemplates.length} 个模板`}</strong><span>模板数据来自已保存的版本记录</span></div>
-        {!loading && visibleTemplates.length === 0 && <div className="library-empty"><h2>还没有可显示的模板</h2><p>创建空白模板后，草稿会在这里显示；系统不会虚构已发布版本。</p></div>}
+        {!loading && !error && visibleTemplates.length === 0 && <div className="library-empty"><h2>还没有可显示的模板</h2><p>创建空白模板后，草稿会在这里显示；系统不会虚构已发布版本。</p></div>}
         <div className="template-card-grid">
           {visibleTemplates.map((item) => <TemplateCard key={item.template_key} item={item} onSelectPublished={onSelectPublished} onOpenDraft={onOpenDraft} />)}
         </div>
@@ -99,7 +106,8 @@ function TemplateCard({ item, onSelectPublished, onOpenDraft }: { item: Template
     <div className="card-heading"><div><span className="eyebrow">{item.template_key}</span><h2>{name}</h2></div><span className={`status-pill ${published ? "success" : "warning"}`}>{published ? "已发布" : statusLabel(item.status)}</span></div>
     <p>{purpose}</p>
     <dl className="template-meta"><div><dt>页面</dt><dd>{pageLabel(item.page)}</dd></div><div><dt>当前发布版本</dt><dd>{item.current_published_version ? `V${item.current_published_version}` : "尚未发布"}</dd></div><div><dt>字段数</dt><dd>{item.field_count}</dd></div></dl>
-    <button className="button button-secondary" onClick={() => published ? onSelectPublished(item.version_id) : onOpenDraft(item.version_id)}>{published ? "查看只读预览" : "打开草稿（编辑器下一任务）"}</button>
+    {published ? <button className="button button-secondary" onClick={() => onSelectPublished(item.version_id)}>查看只读预览</button> : isEditableTemplateStatus(item.status) && <button className="button button-secondary" onClick={() => onOpenDraft(item.version_id)}>继续编辑草稿</button>}
+    {item.active_draft && isEditableTemplateStatus(item.active_draft.status) && <div className="draft-resume"><span>可恢复草稿 V{item.active_draft.version} · {item.active_draft.field_count} 个字段 · {statusLabel(item.active_draft.status)}</span><button className="text-button" onClick={() => onOpenDraft(item.active_draft!.version_id)}>继续编辑</button></div>}
   </article>;
 }
 
@@ -108,5 +116,5 @@ function display(item: TemplateLibraryItem): { name: string; purpose: string } {
 }
 
 function pageLabel(page: TemplatePage): string { return `${page.size} · ${page.orientation === "portrait" ? "纵向" : page.orientation}`; }
-function statusLabel(status: StatusFilter | string): string { return ({ ALL: "全部", PUBLISHED: "已发布", DRAFT: "草稿" } as Record<string, string>)[status] ?? status; }
+function statusLabel(status: StatusFilter | string): string { return ({ ALL: "全部", PUBLISHED: "已发布", EDITABLE: "可编辑草稿", DRAFT: "草稿", PREFLIGHT_FAILED: "预检失败", READY_TO_PUBLISH: "可发布" } as Record<string, string>)[status] ?? status; }
 function requestMessage(cause: unknown): string { return cause instanceof Error ? cause.message : "模板请求无法完成。"; }

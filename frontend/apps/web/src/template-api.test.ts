@@ -1,5 +1,6 @@
 import { describe, expect, expectTypeOf, it, vi } from "vitest";
 
+import { isEditableTemplateStatus } from "@form-detection/api-client";
 import type {
   TemplateField,
   TemplateFieldInput,
@@ -16,6 +17,13 @@ describe("TemplateApi", () => {
     expectTypeOf<TemplateLibraryItem>().toEqualTypeOf<TemplateLibraryItem>();
     expectTypeOf<TemplatePage>().toEqualTypeOf<TemplatePage>();
     expectTypeOf<TemplateRect>().toEqualTypeOf<TemplateRect>();
+  });
+
+  it("shares the editable template lifecycle predicate", () => {
+    expect(isEditableTemplateStatus("DRAFT")).toBe(true);
+    expect(isEditableTemplateStatus("PREFLIGHT_FAILED")).toBe(true);
+    expect(isEditableTemplateStatus("READY_TO_PUBLISH")).toBe(true);
+    expect(isEditableTemplateStatus("PUBLISHED")).toBe(false);
   });
 
   it("creates a template draft through the versioned api", async () => {

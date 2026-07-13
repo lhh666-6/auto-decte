@@ -1,5 +1,5 @@
 import { type TemplateApi, type TemplateVersion } from "@form-detection/api-client";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 type Props = {
   api: TemplateApi;
@@ -14,16 +14,19 @@ export function TemplatePreview({ api, versionId, onBack, onTune }: Props) {
   const [tuning, setTuning] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    let active = true;
+  const loadVersion = useCallback(async () => {
     setLoading(true);
     setError(null);
-    void api.getVersion(versionId)
-      .then((item) => active && setVersion(item))
-      .catch((cause: unknown) => active && setError(cause instanceof Error ? cause.message : "无法读取模板版本。"))
-      .finally(() => active && setLoading(false));
-    return () => { active = false; };
+    try {
+      setVersion(await api.getVersion(versionId));
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "无法读取模板版本。");
+    } finally {
+      setLoading(false);
+    }
   }, [api, versionId]);
+
+  useEffect(() => { void loadVersion(); }, [loadVersion]);
 
   async function tune() {
     setTuning(true);
@@ -38,7 +41,7 @@ export function TemplatePreview({ api, versionId, onBack, onTune }: Props) {
 
   return <main className="template-center template-preview-page">
     <header className="template-center-header"><div><button className="text-button" onClick={onBack}>返回模板库</button><span className="eyebrow">已发布版本 · 只读预览</span><h1>{version?.template_key ?? "模板预览"}</h1><p>已发布内容不可直接修改。调优会创建保留父版本关系的新草稿。</p></div>{version && <span className="status-pill success">已发布 V{version.version}</span>}</header>
-    {error && <div className="error-banner">{error}</div>}
+    {error && <div className="error-banner" role="alert"><span>{error}</span><button className="text-button" onClick={() => void loadVersion()}>重试</button></div>}
     {loading && <section className="preview-loading">正在载入只读版本…</section>}
     {version && <section className="template-preview-layout">
       <section className="preview-paper-stage" aria-label="纸张预览">

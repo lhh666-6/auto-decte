@@ -13,6 +13,7 @@ from app.domain.templates_ds import (
     PageSpec,
     Rect,
     TemplateArtifact,
+    TemplateStatus,
     TemplateVersion,
 )
 from app.modules.identity_access.models_ds import Actor, Permission
@@ -135,9 +136,18 @@ def list_templates(
     summaries: list[dict[str, object]] = []
     for template_key in sorted({version.template_key for version in versions}):
         candidates = [version for version in versions if version.template_key == template_key]
-        published = [version for version in candidates if version.status.value == "PUBLISHED"]
+        published = [version for version in candidates if version.status is TemplateStatus.PUBLISHED]
+        editable = [
+            version for version in candidates
+            if version.status in {
+                TemplateStatus.DRAFT,
+                TemplateStatus.PREFLIGHT_FAILED,
+                TemplateStatus.READY_TO_PUBLISH,
+            }
+        ]
         selected = max(published or candidates, key=lambda item: (item.version, item.version_id))
-        summaries.append(_library_item_payload(selected))
+        active_draft = max(editable, key=lambda item: (item.version, item.version_id), default=None)
+        summaries.append(_library_item_payload(selected, active_draft))
     return summaries
 
 
@@ -340,7 +350,9 @@ def _version_payload(
     }
 
 
-def _library_item_payload(version: TemplateVersion) -> dict[str, object]:
+def _library_item_payload(
+    version: TemplateVersion, active_draft: TemplateVersion | None = None
+) -> dict[str, object]:
     return {
         "template_key": version.template_key,
         "version_id": version.version_id,
@@ -351,6 +363,16 @@ def _library_item_payload(version: TemplateVersion) -> dict[str, object]:
         "status": version.status.value,
         "page": _page_payload(version.page),
         "field_count": len(version.fields),
+        "active_draft": (
+            {
+                "version_id": active_draft.version_id,
+                "version": active_draft.version,
+                "status": active_draft.status.value,
+                "field_count": len(active_draft.fields),
+            }
+            if active_draft is not None
+            else None
+        ),
     }
 
 
