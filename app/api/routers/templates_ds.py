@@ -337,6 +337,7 @@ def _version_payload(
 def _library_item_payload(version: TemplateVersion) -> dict[str, object]:
     return {
         "template_key": version.template_key,
+        "version_id": version.version_id,
         "current_published_version": (
             version.version if version.status.value == "PUBLISHED" else None
         ),

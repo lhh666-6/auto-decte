@@ -81,6 +81,7 @@ def test_admin_can_list_read_clone_patch_and_delete_template_draft(tmp_path: Pat
     detail = client.get(f"/api/v1/template-versions/{version_id}", headers=_headers())
     clone = client.post(f"/api/v1/template-versions/{version_id}/clone", headers=_headers())
     clone_id = clone.json()["version_id"]
+    clone_detail = client.get(f"/api/v1/template-versions/{clone_id}", headers=_headers())
     patched_field = _field("Employee name")
     patched_field["region"] = {"x": 0.15, "y": 0.2, "width": 0.2, "height": 0.05}
     patched_field["minimum_prefill_confidence"] = 0.95
@@ -95,6 +96,7 @@ def test_admin_can_list_read_clone_patch_and_delete_template_draft(tmp_path: Pat
 
     assert library.status_code == 200
     assert library.json()[0]["template_key"] == "PAYROLL_HOURLY"
+    assert library.json()[0]["version_id"] == version_id
     assert library.json()[0]["current_published_version"] == 1
     assert library.json()[0]["status"] == "PUBLISHED"
     assert library.json()[0]["page"]["size"] == "A4"
@@ -109,6 +111,11 @@ def test_admin_can_list_read_clone_patch_and_delete_template_draft(tmp_path: Pat
     assert clone.status_code == 201
     assert clone.json()["status"] == "DRAFT"
     assert clone.json()["parent_version_id"] == version_id
+    assert clone_detail.status_code == 200
+    assert clone_detail.json()["artifacts"] == []
+    assert {artifact["artifact_id"] for artifact in clone_detail.json()["artifacts"]}.isdisjoint(
+        {artifact["artifact_id"] for artifact in detail.json()["artifacts"]}
+    )
     assert patched.status_code == 200
     assert patched.json()["fields"] == [patched_field]
     assert deleted.status_code == 200
