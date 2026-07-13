@@ -9,6 +9,7 @@ from app.api.routers import health_ds as health
 from app.api.routers import identity_ds as identity
 from app.api.routers import review_ds as review
 from app.api.routers import tasks_ds as tasks
+from app.api.routers import templates_ds as templates
 from app.api.routers import workbench_ds as workbench
 from app.services.container import Services
 
@@ -21,6 +22,7 @@ def create_app(services: Services) -> FastAPI:
     app.include_router(identity.router)
     app.include_router(review.router)
     app.include_router(workbench.router)
+    app.include_router(templates.router)
     app.include_router(tasks.router)
 
     @app.exception_handler(HTTPException)

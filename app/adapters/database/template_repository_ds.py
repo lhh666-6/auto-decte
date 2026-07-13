@@ -147,6 +147,20 @@ class SqlAlchemyTemplateRepository:
                 for row in rows
             ]
 
+    def get_artifact(self, artifact_id: str) -> TemplateArtifact | None:
+        with self._read_session() as session:
+            row = session.get(TemplateArtifactRow, artifact_id)
+            if row is None:
+                return None
+            return TemplateArtifact(
+                artifact_id=row.artifact_id,
+                version_id=row.version_id,
+                kind=row.kind,
+                download_name=row.download_name,
+                internal_uri=row.internal_uri,
+                sha256=row.sha256,
+            )
+
 
 def _page_to_dict(page: PageSpec) -> dict[str, object]:
     return {
