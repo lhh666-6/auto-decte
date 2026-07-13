@@ -32,6 +32,8 @@ button { cursor: pointer; }
 .form-loader { display: flex; align-items: center; gap: 8px; }
 .form-loader label, .eyebrow, .drawer-label { color: #64748b; font-size: 12px; font-weight: 700; letter-spacing: .03em; }
 .form-loader input { min-width: 0; flex: 1; max-width: 240px; border: 1px solid #bcc9d8; border-radius: 7px; padding: 8px 10px; color: #16233a; outline-color: #2563eb; }
+.import-image-button { position: relative; display: inline-flex; align-items: center; cursor: pointer; }
+.import-image-button input[type="file"] { position: absolute; inset: 0; width: 100%; opacity: 0; cursor: pointer; }
 .form-summary { display: grid; gap: 3px; min-width: 180px; }
 .form-summary strong { color: #0f2742; font-size: 15px; }
 .form-summary span, .lease-summary { color: #64748b; font-size: 12px; }

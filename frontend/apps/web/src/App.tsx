@@ -28,7 +28,7 @@ function sourceDimension(region: Record<string, number>, longName: "width" | "he
 
 export function App() {
   const api = useMemo(() => new ReviewWorkbenchApi("/api/v1"), []);
-  const [formIdInput, setFormIdInput] = useState("FORM-1");
+  const [formIdInput, setFormIdInput] = useState("");
   const [detail, setDetail] = useState<WorkbenchDetail | null>(null);
   const [history, setHistory] = useState<ReviewHistory | null>(null);
   const [selectedFieldId, setSelectedFieldId] = useState<string | null>(null);
@@ -37,6 +37,7 @@ export function App() {
   const [imageSize, setImageSize] = useState({ width: 1, height: 1 });
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [mobilePane, setMobilePane] = useState<MobilePane>("evidence");
   const [feature, setFeature] = useState<Feature>("review");
 
@@ -138,6 +139,44 @@ export function App() {
     }
   }
 
+  async function importImage(file: File | null) {
+    if (file === null) return;
+    if (!file.type.startsWith("image/")) {
+      setError("请选择 PNG、JPEG 或 TIFF 图片。");
+      return;
+    }
+    try {
+      setUploading(true);
+      setError(null);
+      const response = await fetch("/api/v1/imports", {
+        method: "POST",
+        headers: {
+          "Content-Type": file.type,
+          "Idempotency-Key": crypto.randomUUID(),
+        },
+        body: file,
+      });
+      const payload = (await response.json()) as { form_id?: string; code?: string; detail?: string };
+      if (!response.ok || !payload.form_id) {
+        throw new Error(payload.detail ?? payload.code ?? "图片导入失败。");
+      }
+      setFormIdInput(payload.form_id);
+      const [loadedDetail, loadedHistory] = await Promise.all([
+        api.getWorkbench(payload.form_id),
+        api.getHistory(payload.form_id).catch(() => null),
+      ]);
+      setDetail(loadedDetail);
+      setHistory(loadedHistory);
+      setEdits({});
+      setSelectedFieldId(loadedDetail.fields[0]?.field_id ?? null);
+      setLease(null);
+    } catch (cause) {
+      setError(toMessage(cause));
+    } finally {
+      setUploading(false);
+    }
+  }
+
   function selectField(field: ReviewField) {
     setSelectedFieldId(field.field_id);
     setMobilePane("fields");
@@ -190,6 +229,15 @@ export function App() {
               placeholder="例如 FORM-1"
             />
             <button type="submit" className="button button-secondary" disabled={loading}>加载表单</button>
+            <label className="button button-primary import-image-button">
+              {uploading ? "正在导入…" : "导入图片"}
+              <input
+                type="file"
+                accept="image/png,image/jpeg,image/tiff"
+                disabled={uploading}
+                onChange={(event) => void importImage(event.target.files?.[0] ?? null)}
+              />
+            </label>
           </form>
           <div className="form-summary">
             <strong>{detail?.form.form_id ?? "未加载表单"}</strong>
