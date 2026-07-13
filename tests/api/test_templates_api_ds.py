@@ -34,6 +34,8 @@ def test_admin_creates_preflights_publishes_and_downloads_template_artifact(tmp_
             "display_name": "姓名",
             "data_type": "text",
             "input_type": "text_box",
+            "recognition_engine": "manual",
+            "minimum_prefill_confidence": 0.98,
             "region": {"x": 0.1, "y": 0.2, "width": 0.2, "height": 0.05},
         },
     )
@@ -41,6 +43,13 @@ def test_admin_creates_preflights_publishes_and_downloads_template_artifact(tmp_
     published = client.post(f"/api/v1/template-versions/{version_id}/publish", headers=_headers())
 
     assert added.status_code == 200
+    assert added.json()["fields"] == [
+        {
+            "field_key": "worker_name",
+            "recognition_engine": "manual",
+            "minimum_prefill_confidence": 0.98,
+        }
+    ]
     assert preflight.json()["ok"] is True
     assert published.status_code == 200
     assert published.json()["status"] == "PUBLISHED"

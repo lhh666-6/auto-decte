@@ -40,6 +40,8 @@ class AddFieldRequest(BaseModel):
     data_type: str
     input_type: str
     region: RegionRequest
+    recognition_engine: str = "manual"
+    minimum_prefill_confidence: float = Field(default=1.0, ge=0, le=1)
 
 
 def _actor(request: Request, services: Services) -> Actor:
@@ -88,6 +90,8 @@ def add_field(
                 body.input_type,
                 region,
                 version.page,
+                body.recognition_engine,
+                body.minimum_prefill_confidence,
             ),
         )
     except ValueError as error:
@@ -177,7 +181,14 @@ def _version_payload(
         "template_key": version.template_key,
         "version": version.version,
         "status": version.status.value,
-        "fields": [field.field_key for field in version.fields],
+        "fields": [
+            {
+                "field_key": field.field_key,
+                "recognition_engine": field.recognition_engine,
+                "minimum_prefill_confidence": field.minimum_prefill_confidence,
+            }
+            for field in version.fields
+        ],
         "artifacts": [
             {
                 "artifact_id": artifact.artifact_id,
