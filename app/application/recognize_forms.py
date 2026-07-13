@@ -119,6 +119,41 @@ class RecognizeForms:
             )
         )
 
+    def correct_and_record_template_canvas(
+        self,
+        form_id: str,
+        image: NDArray[Any],
+        *,
+        width: int,
+        height: int,
+    ) -> EvidenceFile:
+        """Persist a derived canonical canvas without overwriting the original evidence."""
+        self._require_form(form_id)
+        corrected = self._pipeline.correct_template_perspective(image, width=width, height=height)
+        encoded, buffer = cv2.imencode(".png", corrected)
+        if not encoded:
+            raise ValueError("Corrected template canvas could not be encoded")
+        stored = self._storage.store_bytes(buffer.tobytes(), ".png", "corrected-images")
+        evidence = EvidenceFile(
+            file_id=stored.file_id,
+            form_id=form_id,
+            type=EvidenceType.CORRECTED_IMAGE,
+            uri=stored.uri,
+            sha256=stored.sha256,
+        )
+        self._evidence.add_evidence(evidence)
+        self._audits.add_audit_event(
+            AuditEvent(
+                event_id=f"EVENT-{uuid4().hex}",
+                form_id=form_id,
+                event_type="NORMALIZE",
+                actor_id="system",
+                after={"file_id": evidence.file_id, "width": width, "height": height},
+                evidence_ids=(evidence.file_id,),
+            )
+        )
+        return evidence
+
     def record_candidate(
         self,
         form_id: str,

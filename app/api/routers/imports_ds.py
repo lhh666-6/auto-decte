@@ -61,7 +61,25 @@ async def import_image(
                 content, suffix, form_id, "UNKNOWN", "0", actor.actor_id
             )
             services.tasks.report(task.task_id, 60, "classify_template_qr")
-            services.recognition.classify_image(form_id, image)
+            classification = services.recognition.classify_image(form_id, image)
+            if classification.source == "QR":
+                classified_form = services.repository.get_form(form_id)
+                if classified_form is not None:
+                    template = services.template_repository.get_version_by_key_version(
+                        classified_form.template_id, int(classified_form.template_version)
+                    )
+                    if template is not None:
+                        try:
+                            services.recognition.correct_and_record_template_canvas(
+                                form_id,
+                                image,
+                                width=template.page.canonical_width_px,
+                                height=template.page.canonical_height_px,
+                            )
+                        except ValueError:
+                            services.tasks.report(
+                                task.task_id, 70, "correction_skipped_missing_markers"
+                            )
             services.tasks.report(task.task_id, 75, "await_recognition_or_review")
             task = services.tasks.succeed(task.task_id)
         except DuplicateEvidenceError as error:
