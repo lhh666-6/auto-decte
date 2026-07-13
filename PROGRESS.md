@@ -282,3 +282,11 @@
 - 验证：`uv run pytest tests/unit/test_templates_domain_ds.py -q`，`8 passed`；Ruff 与 mypy 定向检查通过。
 - 提交：`0cf97fb`、`363a512`。
 - 下一步：补齐模板库查询、草稿字段 mutation 用例和 API 契约，再连接 React 模板库与只读预览。
+
+## 模板中心可视化设计器：Task 2（2026-07-13）
+
+- 状态：已完成并通过需求符合性与代码质量两轮审查。
+- 已完成：模板仓储支持去重、字典序模板键查询；`TemplateVersions` 支持完整版本列表及草稿字段替换/删除用例，顺序稳定为模板键、版本、版本 ID。
+- 验证：仓储与用例定向测试 `7 passed`；审查记录显示全量测试 `139 passed`，另有 2 个未改动 identity 默认值既有失败；Ruff 与 mypy 通过。
+- 提交：`1f46d23`。
+- 下一步：公开受权限保护的模板库、版本读取、克隆与字段编辑 API，并补 HTTP 契约测试。
