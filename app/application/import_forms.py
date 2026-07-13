@@ -7,7 +7,7 @@ from uuid import uuid4
 
 from app.adapters.storage.local import LocalEvidenceStorage
 from app.application.ports import AuditRepository, EvidenceRepository, FormRepository
-from app.domain.models import AuditEvent, EvidenceFile, EvidenceType, Form
+from app.domain.models import AuditEvent, EvidenceFile, EvidenceType, Form, ReviewStatus
 
 
 class DuplicateEvidenceError(ValueError):
@@ -105,7 +105,18 @@ class ImportForms:
             uri=stored.uri,
             sha256=stored.sha256,
         )
-        self._forms.add_form(Form(form_id, template_id, template_version))
+        self._forms.add_form(
+            Form(
+                form_id,
+                template_id,
+                template_version,
+                review_status=(
+                    ReviewStatus.NEEDS_CLASSIFICATION
+                    if template_id == "UNKNOWN"
+                    else ReviewStatus.IMPORTED
+                ),
+            )
+        )
         self._evidence.add_evidence(item)
         self._audits.add_audit_event(
             AuditEvent(
