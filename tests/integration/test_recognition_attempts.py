@@ -161,6 +161,7 @@ def test_canonical_canvas_yields_immutable_template_field_crop_evidence(tmp_path
             "digit_boxes",
             Rect(0.1, 0.2, 0.2, 0.1),
             page,
+            recognition_engine="digit_template",
         )
     )
     canvas = np.full((page.canonical_height_px, page.canonical_width_px), 255, dtype=np.uint8)
@@ -170,4 +171,7 @@ def test_canonical_canvas_yields_immutable_template_field_crop_evidence(tmp_path
     assert crops["total_quantity"].type.value == "FIELD_CROP"
     assert crops["total_quantity"].related_field_id == "FORM-0001:TPL-1:total_quantity"
     assert repository.list_form_fields("FORM-0001")[0].field_id == "FORM-0001:TPL-1:total_quantity"
+    attempts = repository.list_recognition_attempts("FORM-0001:TPL-1:total_quantity")
+    assert len(attempts) == 1
+    assert attempts[0].engine == "opencv-template-digit"
     assert len(repository.list_evidence("FORM-0001")) == 2

@@ -8,6 +8,8 @@ import cv2
 from numpy.typing import NDArray
 
 from app.adapters.recognition.candidate import RecognitionCandidate
+from app.adapters.recognition.digits import DigitRecognizer
+from app.adapters.recognition.omr import OmrRecognizer
 from app.adapters.recognition.opencv import FieldRegion, OpenCvImagePipeline, QualityAssessment
 from app.adapters.storage.local import LocalEvidenceStorage
 from app.application.ports import AuditRepository, EvidenceRepository, FormRepository
@@ -62,6 +64,8 @@ class RecognizeForms:
         self._storage = storage
         self._pipeline = pipeline
         self._template_versions = template_versions
+        self._digits = DigitRecognizer()
+        self._omr = OmrRecognizer()
 
     def assess_quality(self, image: NDArray[Any]) -> QualityAssessment:
         return self._pipeline.assess_quality(image)
@@ -203,6 +207,19 @@ class RecognizeForms:
             )
             self._evidence.add_evidence(evidence)
             evidence_by_key[field_key] = evidence
+            candidate = self._recognize_template_crop(definition.recognition_engine, crop)
+            if candidate is not None:
+                self._recognition.add_recognition_attempt(
+                    RecognitionAttempt(
+                        attempt_id=f"ATTEMPT-{uuid4().hex}",
+                        field_id=field_id,
+                        engine=candidate.engine,
+                        model_version=candidate.model_version,
+                        candidate_value=candidate.value,
+                        confidence=candidate.confidence,
+                        crop_file_id=evidence.file_id,
+                    )
+                )
         self._audits.add_audit_event(
             AuditEvent(
                 event_id=f"EVENT-{uuid4().hex}",
@@ -217,6 +234,15 @@ class RecognizeForms:
             )
         )
         return evidence_by_key
+
+    def _recognize_template_crop(
+        self, recognition_engine: str, crop: NDArray[Any]
+    ) -> RecognitionCandidate[Any] | None:
+        if recognition_engine == "digit_template":
+            return self._digits.recognize_cell(crop)
+        if recognition_engine == "omr":
+            return self._omr.recognize(crop)
+        return None
 
     def record_candidate(
         self,
