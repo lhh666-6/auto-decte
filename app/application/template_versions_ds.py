@@ -20,6 +20,8 @@ class TemplateVersionRepository(Protocol):
 
     def list_versions(self, template_key: str) -> list[TemplateVersion]: ...
 
+    def list_template_keys(self) -> list[str]: ...
+
 
 @dataclass(frozen=True, slots=True)
 class PreflightIssue:
@@ -60,9 +62,34 @@ class TemplateVersions:
             raise KeyError(f"Unknown template version: {version_id}")
         return version
 
+    def list_templates(self) -> list[TemplateVersion]:
+        versions = [
+            version
+            for template_key in self._repository.list_template_keys()
+            for version in self._repository.list_versions(template_key)
+        ]
+        return sorted(
+            versions,
+            key=lambda version: (version.template_key, version.version, version.version_id),
+        )
+
     def add_field(self, version_id: str, definition: FieldDefinition) -> TemplateVersion:
         version = self.get(version_id)
         version.add_field(definition)
+        self._repository.replace_version(version)
+        return version
+
+    def replace_field(
+        self, version_id: str, field_key: str, definition: FieldDefinition
+    ) -> TemplateVersion:
+        version = self.get(version_id)
+        version.replace_field(field_key, definition)
+        self._repository.replace_version(version)
+        return version
+
+    def remove_field(self, version_id: str, field_key: str) -> TemplateVersion:
+        version = self.get(version_id)
+        version.remove_field(field_key)
         self._repository.replace_version(version)
         return version
 

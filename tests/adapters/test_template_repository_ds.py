@@ -66,3 +66,18 @@ def test_repository_round_trips_fields_and_safe_artifact_metadata(tmp_path: Path
 
     assert repository.get_version(version.version_id).status.value == "READY_TO_PUBLISH"  # type: ignore[union-attr]
     assert repository.list_versions("PAYROLL_HOURLY")[0].version_id == version.version_id
+
+
+def test_repository_lists_distinct_template_keys_in_lexical_order(tmp_path: Path) -> None:
+    engine = create_sqlite_engine(tmp_path / "template.db")
+    Base.metadata.create_all(engine)
+    repository = SqlAlchemyTemplateRepository(engine)
+    page = PageSpec.a4_portrait()
+
+    repository.add_version(TemplateVersion.draft("TPL-H-1", "PAYROLL_HOURLY", 1, page))
+    repository.add_version(TemplateVersion.draft("TPL-H-2", "PAYROLL_HOURLY", 2, page))
+    repository.add_version(
+        TemplateVersion.draft("TPL-P-1", "PAYROLL_STANDARD_PIECE", 1, page)
+    )
+
+    assert repository.list_template_keys() == ["PAYROLL_HOURLY", "PAYROLL_STANDARD_PIECE"]

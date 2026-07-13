@@ -128,6 +128,16 @@ class SqlAlchemyTemplateRepository:
         versions = (self.get_version(version_id) for version_id in ids)
         return [version for version in versions if version is not None]
 
+    def list_template_keys(self) -> list[str]:
+        with self._read_session() as session:
+            return list(
+                session.scalars(
+                    select(TemplateVersionRow.template_key)
+                    .distinct()
+                    .order_by(TemplateVersionRow.template_key)
+                ).all()
+            )
+
     def add_artifact(self, artifact: TemplateArtifact) -> None:
         with self._transaction() as session:
             session.add(
