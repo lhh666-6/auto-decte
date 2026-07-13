@@ -16,6 +16,7 @@ from app.domain.models import (
     EvidenceFile,
     EvidenceType,
     Form,
+    FormField,
     RecognitionAttempt,
     ReviewStatus,
 )
@@ -173,6 +174,21 @@ class RecognizeForms:
         encoded_crops = self._pipeline.crop_fields(canonical_image, regions)
         evidence_by_key: dict[str, EvidenceFile] = {}
         for field_key, crop in encoded_crops.items():
+            definition = next(item for item in template.fields if item.field_key == field_key)
+            field_id = f"{form_id}:{template.version_id}:{field_key}"
+            self._forms.add_form_field(
+                FormField(
+                    field_id=field_id,
+                    form_id=form_id,
+                    field_name=field_key,
+                    source_region={
+                        "x": int(definition.region.x * page.canonical_width_px),
+                        "y": int(definition.region.y * page.canonical_height_px),
+                        "width": int(definition.region.width * page.canonical_width_px),
+                        "height": int(definition.region.height * page.canonical_height_px),
+                    },
+                )
+            )
             encoded, buffer = cv2.imencode(".png", crop)
             if not encoded:
                 raise ValueError(f"Field crop could not be encoded: {field_key}")
@@ -180,7 +196,7 @@ class RecognizeForms:
             evidence = EvidenceFile(
                 file_id=stored.file_id,
                 form_id=form_id,
-                related_field_id=f"{template.version_id}:{field_key}",
+                related_field_id=field_id,
                 type=EvidenceType.FIELD_CROP,
                 uri=stored.uri,
                 sha256=stored.sha256,

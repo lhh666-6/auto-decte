@@ -8,6 +8,7 @@ from app.domain.models import (
     EvidenceFile,
     ExportStatus,
     Form,
+    FormField,
     RecordVersion,
     ReviewStatus,
 )
@@ -20,6 +21,7 @@ class FormRepository(Protocol):
     def list_record_versions(self, form_id: str) -> list[RecordVersion]: ...
     def set_review_status(self, form_id: str, status: ReviewStatus) -> None: ...
     def set_export_status(self, form_id: str, status: ExportStatus) -> None: ...
+    def add_form_field(self, field: FormField) -> None: ...
 
 
 class EvidenceRepository(Protocol):
