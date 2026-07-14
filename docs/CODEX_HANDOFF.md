@@ -6,8 +6,17 @@
 
 工作分支：`modular-architecture`
 
-交接前功能基线提交：`443fcfb`（交接文档提交请以远程分支最新 `git log -1` 为准）
+功能与交接基线：`66a90fd`（实际开始工作时以远程分支最新 `git log -1` 为准）
 工作目录：`D:\半自动表单检测系统\.worktrees\modular-architecture`
+
+## 一分钟分支摘要
+
+- 唯一集成分支：`modular-architecture`；不要在 `main` 或历史 `phase-*` 分支继续当前任务。
+- 已完成：React 审核工作台基础、真实队列、模板识别后端、模板中心 Task 1–5（模板库、只读预览、复制调优、草稿恢复、预检发布）。
+- 下一任务：实施计划 Task 6，完成字段选择、拖动、缩放和右侧属性编辑器。
+- 随后任务：四个企业模板的幂等 seed；当前只有 MD 映射，不能在 React 中伪造已发布模板。
+- 仍未产品闭环：审核草稿/退回/作废/确认并下一张、主数据 CRUD、模板化导出与重导、模板包和纸张实例、Tauri。
+- 验证边界：最近定向模板/API/前端检查通过；全量 Python 套件仍有 2 个 identity 默认值既有失败，正式验收前必须处理或说明。
 
 ## 队友开始前必须执行
 
@@ -19,6 +28,15 @@ git status --short
 ```
 
 预期 `git status --short` 无输出。不要在根目录 `main` 上开发，不要使用 `git reset --hard` 或覆盖其他人的提交。
+
+给协作者 Codex 的首条指令可以直接使用：
+
+```text
+完整阅读 docs/CODEX_HANDOFF.md、PROGRESS.md 和模板中心实施计划。
+只在 modular-architecture 分支工作，从 Task 6 开始。
+不要重新实现 Task 1–5，不要修改 main 或删除历史分支。
+完成后运行定向验证、更新 PROGRESS.md、提交并推送 modular-architecture。
+```
 
 ## 产品目标
 
