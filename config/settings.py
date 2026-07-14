@@ -24,10 +24,10 @@ class Settings(BaseSettings):
     review_lease_seconds: int = 300
     api_host: str = "127.0.0.1"
     api_port: int = 8000
-    # The standalone Demo must expose the complete local workflow. Production deployments
-    # replace this provider with an authenticated identity adapter and explicit roles.
-    local_default_user_id: str = "local-admin"
-    local_default_roles: tuple[str, ...] = ("ADMIN",)
+    # Keep the built-in fallback least-privileged. A standalone Demo that needs broader
+    # capabilities must grant them explicitly through local environment configuration.
+    local_default_user_id: str = "local-operator"
+    local_default_roles: tuple[str, ...] = ("OPERATOR",)
 
     @property
     def database_path(self) -> Path:

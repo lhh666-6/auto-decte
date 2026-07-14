@@ -122,7 +122,9 @@ def test_admin_can_list_read_clone_patch_and_delete_template_draft(tmp_path: Pat
     assert deleted.json()["fields"] == []
 
 
-def test_template_library_exposes_latest_editable_draft_alongside_published_version(tmp_path: Path) -> None:
+def test_template_library_exposes_latest_editable_draft_alongside_published_version(
+    tmp_path: Path,
+) -> None:
     client = _client(tmp_path)
     published_id = _published_template(client)
     clone = client.post(f"/api/v1/template-versions/{published_id}/clone", headers=_headers())

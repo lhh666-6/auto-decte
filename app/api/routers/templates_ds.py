@@ -136,7 +136,9 @@ def list_templates(
     summaries: list[dict[str, object]] = []
     for template_key in sorted({version.template_key for version in versions}):
         candidates = [version for version in versions if version.template_key == template_key]
-        published = [version for version in candidates if version.status is TemplateStatus.PUBLISHED]
+        published = [
+            version for version in candidates if version.status is TemplateStatus.PUBLISHED
+        ]
         editable = [
             version for version in candidates
             if version.status in {
