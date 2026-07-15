@@ -2,12 +2,27 @@
 
 最后更新：2026-07-15
 
-仓库：`git@github.com:lhh666-6/auto-decte.git`
+仓库：`https://github.com/lhh666-6/auto-decte.git`
 
 工作分支：`modular-architecture`
 
-功能与交接基线：实际开始工作时以当前分支最新 `git log -1` 为准
-工作目录：`D:\半自动表单检测系统\.worktrees\modular-architecture`
+本地功能基线：`5b9de49 feat: add versioned master data center`
+当前工作目录：`E:\codex\auto-decte`
+
+## 当前目标终止与转接状态
+
+- 2026-07-15，用户要求终止当前目标，后续任务转交另一位协作者；本协作者不再继续实现新功能。
+- 功能代码停在主数据阶段完成后：模板化导出与重导阶段只做了只读现状审计，**没有新增测试、迁移、API 或页面代码**。
+- 本次交接包含以下 7 个功能/修复提交，以及最后一个纯文档交接提交；用户已授权在总结完成后将它们全部推送到 `origin/modular-architecture`：
+  - `5b9de49 feat: add versioned master data center`
+  - `bd54ab3 feat: harden template and import lifecycle`
+  - `a20e295 feat: complete review workbench workflow`
+  - `3ed353c feat: install built-in payroll templates`
+  - `8564206 docs: record template studio completion`
+  - `a8374b6 feat: add editable template draft canvas`
+  - `7293ea3 fix: restore least-privileged local identity`
+- 最终交接完成后，本地与 `origin/modular-architecture` 应指向同一提交；另一台机器或新 clone 的协作者可以直接从远端继承全部成果。
+- 推送前必须先 `git fetch origin` 并确认没有分叉；推送后用 `git rev-parse HEAD`、`git rev-parse origin/modular-architecture` 和 `git status --short --branch` 复核。
 
 ## 一分钟分支摘要
 
@@ -26,6 +41,20 @@
 
 ## 队友开始前必须执行
 
+同一工作目录接手：
+
+```powershell
+Set-Location E:\codex\auto-decte
+git switch modular-architecture
+git status --short
+git log -8 --oneline
+git rev-list --count origin/modular-architecture..HEAD
+```
+
+预期 `git status --short` 无输出；最终推送完成后分支领先数为 0，本地 HEAD 与 `origin/modular-architecture` 一致。不要 reset、rebase 或覆盖交接提交。
+
+远程/新 clone 接手时执行：
+
 ```powershell
 git fetch origin
 git switch modular-architecture
@@ -33,7 +62,7 @@ git pull --ff-only origin modular-architecture
 git status --short
 ```
 
-预期 `git status --short` 无输出。不要在根目录 `main` 上开发，不要使用 `git reset --hard` 或覆盖其他人的提交。
+预期 `git status --short` 无输出。不要在 `main` 或历史 `phase-*` 分支开发，不要使用 `git reset --hard` 或覆盖其他人的提交。
 
 给协作者 Codex 的首条指令可以直接使用：
 
@@ -64,7 +93,7 @@ git status --short
 - `docs/design/review-workbench-style.md`
 - `PROGRESS.md`
 
-## 已完成并已推送
+## 已完成功能（推送状态见顶部）
 
 ### 1. 稳定后端闭环基础
 
@@ -166,11 +195,15 @@ git status --short
 
 ### E. 导出中心尚未产品化
 
+- 已有可复用基础：`ExportForms` 可同步筛选已确认记录，`XlsxExporter` 可生成“正式数据/异常与复核/汇总/导出说明”四工作表，`ExportBatch` 已保存文件路径、SHA-256 和 `(form_id, record_version)`；导出后更正会进入 `REEXPORT_REQUIRED`，旧文件不会覆盖。
+- 当前没有导出 API Router、React 导出中心或 `XLSX_EXPORT` Handler；现有导出仍主要由 Streamlit 页面同步调用。
 - `export-map.json` 模板映射；
-- 导出预览和 `XLSX_EXPORT` 真实任务 Handler；
+- 导出预览（包括排除记录和字段级错误）和 `XLSX_EXPORT` 真实持久化任务 Handler；
 - 公式注入防护验收；
-- 不可变导出批次、授权下载、重导关系和导出状态队列；
+- 扩充不可变导出批次的模板版本/映射版本/过滤快照，增加授权下载、`supersedes_batch_id` 重导关系和导出状态队列；
 - 数据表、统计图和筛选联动。
+
+建议下一位先写失败测试固定这些边界，再迁移数据库和实现 API；不要直接从页面或同步 Streamlit 按钮开始。
 
 ### F. 任务/桌面/生产化
 
@@ -181,11 +214,12 @@ git status --short
 
 ## 队友建议执行顺序
 
-1. 将已完成的模板、审核与主数据提交同步到 `modular-architecture`；
+1. 确认顶部列出的提交及最终交接文档提交已存在于 `origin/modular-architecture`；
 2. 实现模板化导出中心与重导闭环；
 3. 实现模板包、打印批次/纸张实例；
-4. 补齐持久化任务 Handler；
-5. 最后做 Tauri、真实设备和生产 Adapter。
+4. 补齐 FORM_IMPORT、FORM_RECOGNITION 等其余持久化任务 Handler；
+5. 完成审核工作台高级图像工具、规则结果面板和导出影响 UI；
+6. 最后做 Tauri、真实设备、生产认证与生产 Adapter。
 
 每个步骤都要：定向测试 → 需求审查 → 代码质量审查 → 更新 `PROGRESS.md` → 小提交 → 推送 `modular-architecture`。
 
