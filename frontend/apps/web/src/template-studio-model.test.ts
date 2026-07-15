@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { QR_SAFE_ZONE, canEdit, isProtectedOverlap, moveRect, resizeRect } from "./template-studio-model";
+import {
+  PROTECTED_ZONES,
+  QR_SAFE_ZONE,
+  canEdit,
+  isProtectedOverlap,
+  moveRect,
+  resizeRect,
+} from "./template-studio-model";
 
 describe("template studio canvas model", () => {
   it("moves a field within the printable page", () => {
@@ -27,6 +34,16 @@ describe("template studio canvas model", () => {
 
     const original = { x: 0.55, y: 0.1, width: 0.2, height: 0.05 };
     expect(resizeRect(original, 0.3, 0.05, QR_SAFE_ZONE)).toBe(original);
+  });
+
+  it("protects the instance code, corner markers, and printable page edge", () => {
+    const nearInstanceCode = { x: 0.64, y: 0.16, width: 0.12, height: 0.04 };
+    const nearTopEdge = { x: 0.2, y: 0.04, width: 0.2, height: 0.04 };
+    const nearBottomMarker = { x: 0.1, y: 0.89, width: 0.1, height: 0.05 };
+
+    expect(moveRect(nearInstanceCode, 0.08, 0, PROTECTED_ZONES)).toBe(nearInstanceCode);
+    expect(moveRect(nearTopEdge, 0, -0.03, PROTECTED_ZONES)).toBe(nearTopEdge);
+    expect(moveRect(nearBottomMarker, -0.08, 0.06, PROTECTED_ZONES)).toBe(nearBottomMarker);
   });
 
   it("permits every mutable template lifecycle status", () => {

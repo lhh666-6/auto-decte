@@ -101,3 +101,56 @@ button { cursor: pointer; }
 @media (max-width: 1068px) { .template-studio { padding: 20px; }.studio-header { flex-wrap: wrap; max-width: 760px; }.studio-header > div { min-width: 0; }.studio-grid { grid-template-columns: minmax(0, 1fr); max-width: 760px; }.studio-card, .studio-canvas { min-width: 0; }.studio-canvas { padding: 20px; }.paper-preview { width: min(100%, 580px); }.preflight { margin-right: auto; margin-left: auto; } }
 @media (max-width: 560px) { .template-studio { padding: 12px; }.studio-header { flex-direction: column; gap: 10px; margin-bottom: 12px; }.studio-header > .text-button { order: -1; }.studio-header h1 { font-size: 22px; }.studio-card, .studio-canvas { padding: 13px; }.studio-canvas { padding: 12px; overflow: hidden; }.paper-preview { width: 100%; padding: 34px 14px; }.safe-zone { top: 28px; right: 12px; padding: 8px 4px; }.coordinate-grid { grid-template-columns: 1fr; }.studio-card input, .studio-card select { min-width: 0; }.preflight { margin-top: 12px; } }
 @media (max-width: 360px) { .template-studio { padding: 8px; }.studio-card, .studio-canvas { border-radius: 9px; padding: 10px; }.paper-preview { padding: 30px 10px; }.marker { width: 22px; height: 22px; font-size: 9px; }.safe-zone { top: 25px; right: 8px; font-size: 9px; }.studio-card .button { width: 100%; } }
+
+.studio-message { max-width: 1280px; margin: 0 auto 16px; }
+.studio-layers h3, .new-field-panel h3 { margin: 0; color: #172f4d; font-size: 13px; }
+.locked-layers { display: flex; flex-wrap: wrap; gap: 5px; border-radius: 8px; padding: 9px; background: #f8fafc; }
+.locked-layers span { border: 1px solid #dbe4ef; border-radius: 999px; padding: 3px 6px; color: #475569; background: white; font-size: 10px; }
+.locked-layers span:first-child { width: 100%; border: 0; padding: 0; color: #64748b; background: transparent; font-weight: 700; }
+.layer-list, .new-field-panel, .studio-lifecycle-actions, .field-inspector form { display: grid; gap: 8px; }
+.layer-list { max-height: 230px; overflow: auto; }
+.layer-list button { display: grid; gap: 2px; border: 1px solid #dbe4ef; border-radius: 7px; padding: 8px; color: #334155; background: white; text-align: left; }
+.layer-list button:hover, .layer-list button.selected { border-color: #2563eb; color: #1d4ed8; background: #eff6ff; }
+.layer-list button span { color: #64748b; font-size: 10px; }
+.new-field-panel { border-top: 1px solid #e2e8f0; padding-top: 11px; }
+.studio-lifecycle-actions { border-top: 1px solid #e2e8f0; padding-top: 11px; }
+.canvas-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: #64748b; font-size: 11px; }
+.canvas-toolbar > div { display: grid; gap: 2px; }
+.canvas-toolbar strong { color: #172f4d; font-size: 13px; }
+.template-canvas-paper { box-sizing: border-box; padding: 0; overflow: hidden; touch-action: none; user-select: none; background-color: #fff; background-image: linear-gradient(rgb(148 163 184 / 13%) 1px, transparent 1px), linear-gradient(90deg, rgb(148 163 184 / 13%) 1px, transparent 1px); background-size: 5% 5%; }
+.template-canvas-paper.read-only { background-image: none; }
+.printable-boundary { position: absolute; z-index: 1; inset: 2.5%; border: 1px dashed #94a3b8; pointer-events: none; }
+.protected-zone { position: absolute; z-index: 2; display: grid; place-items: center; border: 1px dashed #f59e0b; color: #92400e; background: rgb(254 243 199 / 82%); pointer-events: none; font-size: 9px; text-align: center; }
+.sheet-zone { border-color: #f97316; color: #9a3412; background: rgb(255 237 213 / 86%); }
+.template-canvas-paper .marker { z-index: 3; }
+.template-field-overlay { position: absolute; z-index: 4; display: grid; align-content: center; min-width: 28px; min-height: 18px; border: 1px solid #2563eb; border-radius: 3px; padding: 2px 4px; overflow: visible; color: #1d4ed8; background: rgb(239 246 255 / 84%); cursor: grab; touch-action: none; text-align: left; }
+.template-field-overlay:hover, .template-field-overlay.selected { z-index: 5; border-width: 2px; border-color: #0f5bd7; background: rgb(219 234 254 / 92%); box-shadow: 0 0 0 2px rgb(37 99 235 / 18%); }
+.template-field-overlay:focus-visible { outline: 3px solid rgb(245 158 11 / 60%); outline-offset: 2px; }
+.template-field-overlay:active { cursor: grabbing; }
+.template-field-overlay > span:first-child { overflow: hidden; font-size: 10px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+.template-field-overlay small { overflow: hidden; color: #64748b; font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+.resize-handle { position: absolute; right: -5px; bottom: -5px; width: 11px; height: 11px; border: 2px solid white; border-radius: 3px; background: #2563eb; cursor: nwse-resize; touch-action: none; }
+.empty-template-canvas { position: absolute; top: 45%; right: 12%; left: 12%; border: 1px dashed #94a3b8; border-radius: 8px; padding: 16px; color: #64748b; background: rgb(248 250 252 / 88%); font-size: 12px; text-align: center; }
+.inspector-heading { display: flex; align-items: start; justify-content: space-between; gap: 8px; }
+.inspector-heading h2 { margin-top: 3px; }
+.field-inspector form { min-width: 0; }
+.field-inspector input:read-only { color: #64748b; background: #f1f5f9; }
+.inspector-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 4px; }
+.button-danger { border-color: #fecaca; color: #b91c1c; background: #fff; }
+.button-danger:hover:not(:disabled) { background: #fef2f2; }
+.empty-inspector { min-height: 190px; }
+
+@media (max-width: 1068px) {
+  .studio-layers { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .studio-layers > div:first-child, .studio-layers .locked-layers, .studio-layers .studio-lifecycle-actions { grid-column: 1 / -1; }
+  .field-inspector form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .field-inspector .coordinate-grid, .field-inspector .inspector-actions { grid-column: 1 / -1; }
+}
+
+@media (max-width: 560px) {
+  .studio-layers, .field-inspector form { grid-template-columns: 1fr; }
+  .studio-layers > div:first-child, .studio-layers .locked-layers, .studio-layers .studio-lifecycle-actions, .field-inspector .coordinate-grid, .field-inspector .inspector-actions { grid-column: auto; }
+  .canvas-toolbar { align-items: start; flex-direction: column; }
+  .template-canvas-paper { padding: 0; }
+  .inspector-actions { grid-template-columns: 1fr; }
+}

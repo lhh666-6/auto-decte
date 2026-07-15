@@ -1,21 +1,52 @@
 import type { TemplateRect } from "../../../packages/api-client/src/templates_ds";
 
 export const QR_SAFE_ZONE: TemplateRect = { x: 0.8, y: 0.02, width: 0.16, height: 0.12 };
+export const SHEET_CODE_SAFE_ZONE: TemplateRect = { x: 0.8, y: 0.15, width: 0.16, height: 0.07 };
+export const PROTECTED_PLACEMENT_MESSAGE = "该位置属于二维码、实例码、定位标记或打印安全区，不能放置字段。";
 
-export function isProtectedOverlap(rect: TemplateRect, protectedRect: TemplateRect = QR_SAFE_ZONE): boolean {
+const PAGE_EDGE = 0.025;
+const CORNER_MARKER = 0.07;
+
+export const PROTECTED_ZONES: readonly TemplateRect[] = [
+  QR_SAFE_ZONE,
+  SHEET_CODE_SAFE_ZONE,
+  { x: 0, y: 0, width: 1, height: PAGE_EDGE },
+  { x: 0, y: 1 - PAGE_EDGE, width: 1, height: PAGE_EDGE },
+  { x: 0, y: 0, width: PAGE_EDGE, height: 1 },
+  { x: 1 - PAGE_EDGE, y: 0, width: PAGE_EDGE, height: 1 },
+  { x: 0, y: 0, width: CORNER_MARKER, height: CORNER_MARKER },
+  { x: 1 - CORNER_MARKER, y: 0, width: CORNER_MARKER, height: CORNER_MARKER },
+  { x: 0, y: 1 - CORNER_MARKER, width: CORNER_MARKER, height: CORNER_MARKER },
+  {
+    x: 1 - CORNER_MARKER,
+    y: 1 - CORNER_MARKER,
+    width: CORNER_MARKER,
+    height: CORNER_MARKER,
+  },
+];
+
+type ProtectedRegion = TemplateRect | readonly TemplateRect[];
+
+export function isProtectedOverlap(
+  rect: TemplateRect,
+  protectedRegion: ProtectedRegion = PROTECTED_ZONES,
+): boolean {
   const candidate = normalizeRect(rect);
-  const zone = normalizeRect(protectedRect);
-  return candidate.x < zone.x + zone.width
-    && candidate.x + candidate.width > zone.x
-    && candidate.y < zone.y + zone.height
-    && candidate.y + candidate.height > zone.y;
+  const zones = Array.isArray(protectedRegion) ? protectedRegion : [protectedRegion];
+  return zones.some((item) => {
+    const zone = normalizeRect(item);
+    return candidate.x < zone.x + zone.width
+      && candidate.x + candidate.width > zone.x
+      && candidate.y < zone.y + zone.height
+      && candidate.y + candidate.height > zone.y;
+  });
 }
 
 export function moveRect(
   rect: TemplateRect,
   deltaX: number,
   deltaY: number,
-  protectedRect: TemplateRect = QR_SAFE_ZONE,
+  protectedRegion: ProtectedRegion = PROTECTED_ZONES,
 ): TemplateRect {
   const current = normalizeRect(rect);
   const candidate = {
@@ -23,14 +54,14 @@ export function moveRect(
     x: clamp(current.x + deltaX, 0, 1 - current.width),
     y: clamp(current.y + deltaY, 0, 1 - current.height),
   };
-  return isProtectedOverlap(candidate, protectedRect) ? rect : candidate;
+  return isProtectedOverlap(candidate, protectedRegion) ? rect : candidate;
 }
 
 export function resizeRect(
   rect: TemplateRect,
   width: number,
   height: number,
-  protectedRect: TemplateRect = QR_SAFE_ZONE,
+  protectedRegion: ProtectedRegion = PROTECTED_ZONES,
 ): TemplateRect {
   const current = normalizeRect(rect);
   const candidate = {
@@ -38,7 +69,7 @@ export function resizeRect(
     width: clamp(width, 0, 1 - current.x),
     height: clamp(height, 0, 1 - current.y),
   };
-  return isProtectedOverlap(candidate, protectedRect) ? rect : candidate;
+  return isProtectedOverlap(candidate, protectedRegion) ? rect : candidate;
 }
 
 export function canEdit(status: string): boolean {
