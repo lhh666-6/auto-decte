@@ -28,6 +28,52 @@ def test_alembic_upgrade_creates_template_version_tables(tmp_path: Path) -> None
     assert {"template_versions", "template_fields", "template_artifacts"} <= tables
 
 
+def test_alembic_upgrade_creates_review_drafts_and_form_priority(tmp_path: Path) -> None:
+    database_path = tmp_path / "review-schema.db"
+
+    upgrade_database(database_path)
+
+    engine = create_engine(f"sqlite:///{database_path}")
+    inspector = inspect(engine)
+    assert "review_drafts" in inspector.get_table_names()
+    assert "priority" in {column["name"] for column in inspector.get_columns("forms")}
+
+
+def test_auto_created_legacy_database_gains_priority_without_losing_forms(
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "database" / "demo.db"
+    database_path.parent.mkdir(parents=True)
+    engine = create_engine(f"sqlite:///{database_path}")
+    created_at = datetime(2026, 7, 15, tzinfo=UTC)
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "CREATE TABLE forms ("
+                "form_id VARCHAR PRIMARY KEY, template_id VARCHAR NOT NULL, "
+                "template_version VARCHAR NOT NULL, coordinate_version VARCHAR NOT NULL, "
+                "review_status VARCHAR NOT NULL, export_status VARCHAR NOT NULL, "
+                "current_record_version INTEGER NOT NULL, created_at DATETIME NOT NULL)"
+            )
+        )
+        connection.execute(
+            text(
+                "INSERT INTO forms VALUES "
+                "('FORM-LEGACY', 'T1', '1', '1', 'NEEDS_REVIEW', "
+                "'NOT_EXPORTED', 0, :created_at)"
+            ),
+            {"created_at": created_at},
+        )
+    engine.dispose()
+
+    services = build_services(Settings(data_root=tmp_path))
+
+    form = services.repository.get_form("FORM-LEGACY")
+    assert form is not None
+    assert form.priority == 0
+    assert "review_drafts" in inspect(services.engine).get_table_names()
+
+
 def test_production_mode_requires_current_alembic_revision(tmp_path: Path) -> None:
     database_path = tmp_path / "database" / "demo.db"
     upgrade_database(database_path)

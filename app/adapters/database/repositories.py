@@ -3,7 +3,7 @@
 from collections.abc import Iterator
 from contextlib import contextmanager
 
-from sqlalchemy import Engine, func, select
+from sqlalchemy import Engine, func, literal_column, select
 from sqlalchemy.orm import Session
 
 from app.adapters.database.models import (
@@ -70,6 +70,7 @@ class SqlAlchemyFormRepository:
                     review_status=form.review_status.value,
                     export_status=form.export_status.value,
                     current_record_version=form.current_record_version,
+                    priority=form.priority,
                     created_at=form.created_at,
                 )
             )
@@ -87,6 +88,7 @@ class SqlAlchemyFormRepository:
                 review_status=ReviewStatus(row.review_status),
                 export_status=ExportStatus(row.export_status),
                 current_record_version=row.current_record_version,
+                priority=row.priority,
                 created_at=row.created_at,
             )
 
@@ -109,7 +111,9 @@ class SqlAlchemyFormRepository:
         if export_statuses:
             values = [item.value for item in export_statuses]
             statement = statement.where(FormRow.export_status.in_(values))
-        statement = statement.order_by(FormRow.created_at, FormRow.form_id)
+        statement = statement.order_by(
+            FormRow.priority.desc(), FormRow.created_at, FormRow.form_id
+        )
         with self._read_session() as session:
             return [self._to_form(row) for row in session.scalars(statement).all()]
 
@@ -336,7 +340,7 @@ class SqlAlchemyFormRepository:
         statement = (
             select(AuditEventRow)
             .where(AuditEventRow.form_id == form_id)
-            .order_by(AuditEventRow.timestamp, AuditEventRow.event_id)
+            .order_by(AuditEventRow.timestamp, literal_column("audit_events.rowid"))
         )
         with self._read_session() as session:
             rows = session.scalars(statement).all()
@@ -488,6 +492,7 @@ class SqlAlchemyFormRepository:
             review_status=ReviewStatus(row.review_status),
             export_status=ExportStatus(row.export_status),
             current_record_version=row.current_record_version,
+            priority=row.priority,
             created_at=row.created_at,
         )
 

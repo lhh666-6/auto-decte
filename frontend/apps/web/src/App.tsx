@@ -1,6 +1,7 @@
 import {
   ApiRequestError,
   ReviewWorkbenchApi,
+  type ClassificationOption,
   type RecognitionCandidate,
   type ReviewField,
   type ReviewHistory,
@@ -10,7 +11,7 @@ import {
 import { WebNotificationPort } from "@form-detection/shell-ports";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { buildConfirmValues } from "./review-model";
+import { buildConfirmValues, selectReviewEvidence } from "./review-model";
 import { TemplateStudio } from "./TemplateStudio_ds";
 
 const notificationPort = new WebNotificationPort();
@@ -18,6 +19,7 @@ const notificationPort = new WebNotificationPort();
 type MobilePane = "evidence" | "fields";
 type Feature = "review" | "templates" | "master-data";
 type QueueKey = "classification" | "review" | "exceptions" | "exportable";
+type ReviewAction = "return" | "void";
 
 const QUEUES: Array<{ key: QueueKey; label: string; warning?: boolean }> = [
   { key: "classification", label: "待分类" },
@@ -49,44 +51,26 @@ export function App() {
   const [mobilePane, setMobilePane] = useState<MobilePane>("evidence");
   const [feature, setFeature] = useState<Feature>("review");
   const [selectedQueue, setSelectedQueue] = useState<QueueKey>("review");
+  const [classificationOptions, setClassificationOptions] = useState<ClassificationOption[]>([]);
+  const [classificationChoice, setClassificationChoice] = useState("");
+  const [classificationReason, setClassificationReason] = useState("");
+  const [classificationTask, setClassificationTask] = useState<string | null>(null);
+  const [reviewAction, setReviewAction] = useState<ReviewAction | null>(null);
+  const [actionReason, setActionReason] = useState("");
   const [queueForms, setQueueForms] = useState<Record<QueueKey, WorkbenchDetail["form"][]>>({
     classification: [], review: [], exceptions: [], exportable: [],
   });
 
   const selectedField = detail?.fields.find((field) => field.field_id === selectedFieldId) ?? null;
-  const originalEvidence = detail?.evidence.find((item) => item.type === "ORIGINAL_IMAGE") ?? null;
+  const reviewEvidence = selectReviewEvidence(detail?.evidence ?? []);
+  const hasUnsavedEdits =
+    detail !== null &&
+    JSON.stringify(edits) !== JSON.stringify(detail.draft?.values ?? {});
   const warningCount = detail?.fields.filter((field) => {
     const best = field.candidates[0];
-    return !field.current_value || (best !== undefined && best.confidence < 0.8);
+    const value = fieldValue(detail, field, edits);
+    return !value || (best !== undefined && best.confidence < 0.8);
   }).length ?? 0;
-
-  const loadWorkbench = useCallback(async () => {
-    const formId = formIdInput.trim();
-    if (!formId) {
-      setError("请先输入表单编号。");
-      return;
-    }
-    setLoading(true);
-    setError(null);
-    try {
-      const [loadedDetail, loadedHistory] = await Promise.all([
-        api.getWorkbench(formId),
-        api.getHistory(formId).catch(() => null),
-      ]);
-      setDetail(loadedDetail);
-      setHistory(loadedHistory);
-      setEdits({});
-      setSelectedFieldId(loadedDetail.fields[0]?.field_id ?? null);
-      setLease(null);
-      void refreshQueues();
-    } catch (cause) {
-      setDetail(null);
-      setHistory(null);
-      setError(toMessage(cause));
-    } finally {
-      setLoading(false);
-    }
-  }, [api, formIdInput]);
 
   const refreshQueues = useCallback(async () => {
     try {
@@ -97,18 +81,77 @@ export function App() {
     }
   }, [api]);
 
+  const loadWorkbenchById = useCallback(async (formId: string) => {
+    const cleaned = formId.trim();
+    if (!cleaned) {
+      setError("请先输入表单编号。");
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const [loadedDetail, loadedHistory] = await Promise.all([
+        api.getWorkbench(cleaned),
+        api.getHistory(cleaned).catch(() => null),
+      ]);
+      setFormIdInput(cleaned);
+      setDetail(loadedDetail);
+      setHistory(loadedHistory);
+      setEdits(loadedDetail.draft?.values ?? {});
+      setSelectedFieldId(loadedDetail.fields[0]?.field_id ?? null);
+      setLease(null);
+      setClassificationTask(null);
+      if (loadedDetail.form.review_status === "NEEDS_CLASSIFICATION") {
+        const options = await api.getClassificationOptions(cleaned);
+        setClassificationOptions(options);
+        setClassificationChoice(
+          options[0] ? `${options[0].template_key}@${options[0].version}` : "",
+        );
+      } else {
+        setClassificationOptions([]);
+        setClassificationChoice("");
+      }
+      void refreshQueues();
+    } catch (cause) {
+      setDetail(null);
+      setHistory(null);
+      setError(toMessage(cause));
+    } finally {
+      setLoading(false);
+    }
+  }, [api, refreshQueues]);
+
+  const loadWorkbench = useCallback(async () => {
+    await loadWorkbenchById(formIdInput);
+  }, [formIdInput, loadWorkbenchById]);
+
   useEffect(() => {
     void refreshQueues();
   }, [refreshQueues]);
 
+  useEffect(() => {
+    if (!hasUnsavedEdits) return undefined;
+    const warn = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [hasUnsavedEdits]);
+
+  function canLeaveCurrentForm(): boolean {
+    return !hasUnsavedEdits || window.confirm("当前有尚未保存的审核修改，确定离开吗？");
+  }
+
   function chooseQueue(queueKey: QueueKey) {
+    if (!canLeaveCurrentForm()) return;
     setFeature("review");
     setSelectedQueue(queueKey);
   }
 
   function openQueueForm(formId: string) {
-    setFormIdInput(formId);
-    window.setTimeout(() => void loadWorkbench(), 0);
+    if (!canLeaveCurrentForm()) return;
+    void loadWorkbenchById(formId);
   }
 
   useEffect(() => {
@@ -134,6 +177,9 @@ export function App() {
 
   async function releaseLease() {
     if (!detail || !lease) return;
+    if (hasUnsavedEdits && !window.confirm("尚有未保存修改，释放审核锁后将无法保存，仍要释放吗？")) {
+      return;
+    }
     try {
       await api.releaseLease(detail.form.form_id, lease.lease_token);
       setLease(null);
@@ -151,15 +197,19 @@ export function App() {
     try {
       setLoading(true);
       const values = buildConfirmValues(
-        detail.fields.map((field) => ({ fieldId: field.field_id, currentValue: field.current_value })),
+        detail.fields.map((field) => ({
+          fieldId: field.field_id,
+          currentValue: fieldValue(detail, field, {}),
+        })),
         edits,
       );
-      await api.confirm(detail.form.form_id, {
+      const result = await api.confirmAndClaimNext(detail.form.form_id, {
         expectedVersion: detail.form.current_record_version,
         leaseToken: lease.lease_token,
         values,
         reason: "人工审核工作台确认",
         evidenceIds: detail.evidence.map((evidence) => evidence.file_id),
+        queueKey: "review",
       });
       await notificationPort.notify({
         title: "表单已确认",
@@ -167,7 +217,131 @@ export function App() {
         level: "success",
         timeoutMs: 3_500,
       });
-      await loadWorkbench();
+      if (result.next) {
+        setDetail(result.next.workbench);
+        setFormIdInput(result.next.workbench.form.form_id);
+        setLease(result.next.lease);
+        setEdits(result.next.workbench.draft?.values ?? {});
+        setSelectedFieldId(result.next.workbench.fields[0]?.field_id ?? null);
+        setHistory(
+          await api.getHistory(result.next.workbench.form.form_id).catch(() => null),
+        );
+      } else {
+        setDetail(null);
+        setHistory(null);
+        setLease(null);
+        setEdits({});
+        setSelectedFieldId(null);
+        setFormIdInput("");
+      }
+      await refreshQueues();
+    } catch (cause) {
+      setError(toMessage(cause));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function saveDraft() {
+    if (!detail || !lease) {
+      setError("请先获取审核锁，再保存草稿。");
+      return;
+    }
+    try {
+      setLoading(true);
+      setError(null);
+      const values = buildConfirmValues(
+        detail.fields.map((field) => ({
+          fieldId: field.field_id,
+          currentValue: fieldValue(detail, field, {}),
+        })),
+        edits,
+      );
+      const draft = await api.saveDraft(detail.form.form_id, {
+        expectedVersion: detail.form.current_record_version,
+        leaseToken: lease.lease_token,
+        values,
+      });
+      setDetail((current) => current ? { ...current, draft } : current);
+      setEdits(draft.values);
+      await notificationPort.notify({
+        title: "草稿已保存",
+        body: `${detail.form.form_id} 的人工修改已保存，正式记录未改变。`,
+        level: "success",
+        timeoutMs: 3_500,
+      });
+    } catch (cause) {
+      setError(toMessage(cause));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function submitReviewAction() {
+    if (!detail || !lease || !reviewAction) return;
+    if (!actionReason.trim()) {
+      setError("退回或作废必须填写原因。");
+      return;
+    }
+    try {
+      setLoading(true);
+      const input = {
+        expectedVersion: detail.form.current_record_version,
+        leaseToken: lease.lease_token,
+        reason: actionReason.trim(),
+        evidenceIds: detail.evidence.map((evidence) => evidence.file_id),
+      };
+      if (reviewAction === "return") {
+        await api.returnForm(detail.form.form_id, input);
+      } else {
+        await api.voidForm(detail.form.form_id, input);
+      }
+      await notificationPort.notify({
+        title: reviewAction === "return" ? "表单已退回" : "表单已作废",
+        body: `${detail.form.form_id} 已完成操作并写入审计。`,
+        level: "success",
+        timeoutMs: 3_500,
+      });
+      setReviewAction(null);
+      setActionReason("");
+      setDetail(null);
+      setHistory(null);
+      setLease(null);
+      setEdits({});
+      setFormIdInput("");
+      await refreshQueues();
+    } catch (cause) {
+      setError(toMessage(cause));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function assignSelectedTemplate() {
+    if (!detail || !classificationChoice || !classificationReason.trim()) {
+      setError("请选择模板并填写人工分类原因。");
+      return;
+    }
+    const separator = classificationChoice.lastIndexOf("@");
+    const templateKey = classificationChoice.slice(0, separator);
+    const version = Number(classificationChoice.slice(separator + 1));
+    try {
+      setLoading(true);
+      const result = await api.assignTemplate(detail.form.form_id, {
+        templateKey,
+        version,
+        reason: classificationReason.trim(),
+      });
+      setClassificationReason("");
+      await notificationPort.notify({
+        title: "人工分类已保存",
+        body: `已创建识别任务 ${result.recognition_task_id}。`,
+        level: "success",
+        timeoutMs: 4_000,
+      });
+      await loadWorkbenchById(detail.form.form_id);
+      setClassificationTask(result.recognition_task_id);
+      await refreshQueues();
     } catch (cause) {
       setError(toMessage(cause));
     } finally {
@@ -196,17 +370,7 @@ export function App() {
       if (!response.ok || !payload.form_id) {
         throw new Error(payload.detail ?? payload.code ?? "图片导入失败。");
       }
-      setFormIdInput(payload.form_id);
-      const [loadedDetail, loadedHistory] = await Promise.all([
-        api.getWorkbench(payload.form_id),
-        api.getHistory(payload.form_id).catch(() => null),
-      ]);
-      setDetail(loadedDetail);
-      setHistory(loadedHistory);
-      setEdits({});
-      setSelectedFieldId(loadedDetail.fields[0]?.field_id ?? null);
-      setLease(null);
-      void refreshQueues();
+      await loadWorkbenchById(payload.form_id);
     } catch (cause) {
       setError(toMessage(cause));
     } finally {
@@ -250,12 +414,19 @@ export function App() {
         <div className="sidebar-divider" />
         <nav className="secondary-nav">
           <button type="button" onClick={() => {
+            if (!canLeaveCurrentForm()) return;
             setFeature("review");
             window.setTimeout(() => document.getElementById("image-import")?.click(), 0);
           }}>数据管理</button>
-          <button type="button" onClick={() => setFeature("templates")}>模板与字段</button>
-          <button type="button" onClick={() => setFeature("master-data")}>员工 / 工单</button>
-          <button type="button" onClick={() => setFeature("master-data")}>产品 / 工序</button>
+          <button type="button" onClick={() => {
+            if (canLeaveCurrentForm()) setFeature("templates");
+          }}>模板与字段</button>
+          <button type="button" onClick={() => {
+            if (canLeaveCurrentForm()) setFeature("master-data");
+          }}>员工 / 工单</button>
+          <button type="button" onClick={() => {
+            if (canLeaveCurrentForm()) setFeature("master-data");
+          }}>产品 / 工序</button>
         </nav>
       </aside>
 
@@ -265,7 +436,7 @@ export function App() {
             className="form-loader"
             onSubmit={(event) => {
               event.preventDefault();
-              void loadWorkbench();
+              if (canLeaveCurrentForm()) void loadWorkbench();
             }}
           >
             <label htmlFor="form-id">表单编号</label>
@@ -313,36 +484,85 @@ export function App() {
               <span className="muted">当前没有表单</span>
             ) : queueForms[selectedQueue].map((form) => (
               <button key={form.form_id} type="button" onClick={() => openQueueForm(form.form_id)}>
-                <strong>{form.form_id}</strong><span>{form.template_id} · {form.review_status}</span>
+                <strong>{form.form_id}</strong>
+                <span>{form.template_id} · {form.review_status} · 优先级 {form.priority}</span>
               </button>
             ))}
           </div>
         </section>
 
-        <div className="mobile-pane-switch" role="tablist" aria-label="审核面板">
-          <button type="button" className={mobilePane === "evidence" ? "active" : ""} onClick={() => setMobilePane("evidence")}>图片</button>
-          <button type="button" className={mobilePane === "fields" ? "active" : ""} onClick={() => setMobilePane("fields")}>电子表格</button>
-        </div>
+        {detail?.form.review_status === "NEEDS_CLASSIFICATION" ? (
+          <section className="classification-card" aria-label="人工模板分类">
+            <div>
+              <span className="eyebrow">二维码识别失败</span>
+              <h2>人工选择已发布模板</h2>
+              <p>系统不会猜测模板。选择结果、原因和后续识别任务都会被审计。</p>
+            </div>
+            <label>
+              已发布模板
+              <select
+                value={classificationChoice}
+                onChange={(event) => setClassificationChoice(event.target.value)}
+              >
+                {classificationOptions.map((option) => (
+                  <option
+                    key={`${option.template_key}@${option.version}`}
+                    value={`${option.template_key}@${option.version}`}
+                  >
+                    {option.template_key} · V{option.version} · {option.field_count} 字段
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              分类原因
+              <textarea
+                value={classificationReason}
+                onChange={(event) => setClassificationReason(event.target.value)}
+                placeholder="例如：二维码污损，依据纸面标题确认模板"
+                maxLength={500}
+              />
+            </label>
+            <button
+              type="button"
+              className="button button-primary"
+              disabled={!classificationChoice || !classificationReason.trim() || loading}
+              onClick={() => void assignSelectedTemplate()}
+            >
+              确认分类并创建识别任务
+            </button>
+            {classificationTask && (
+              <p className="classification-task">识别任务 {classificationTask} 已进入队列。</p>
+            )}
+          </section>
+        ) : (
+          <>
+            <div className="mobile-pane-switch" role="tablist" aria-label="审核面板">
+              <button type="button" className={mobilePane === "evidence" ? "active" : ""} onClick={() => setMobilePane("evidence")}>图片</button>
+              <button type="button" className={mobilePane === "fields" ? "active" : ""} onClick={() => setMobilePane("fields")}>电子表格</button>
+            </div>
 
-        <section className="review-grid" data-mobile-pane={mobilePane}>
-          <EvidenceCanvas
-            evidenceUrl={originalEvidence?.download_url ?? null}
-            fields={detail?.fields ?? []}
-            selectedFieldId={selectedFieldId}
-            imageSize={imageSize}
-            onImageLoad={setImageSize}
-            onSelectField={selectField}
-          />
-          <FieldTable
-            fields={detail?.fields ?? []}
-            edits={edits}
-            selectedFieldId={selectedFieldId}
-            onSelectField={selectField}
-            onEdit={(fieldId, value) => setEdits((current) => ({ ...current, [fieldId]: value }))}
-          />
-        </section>
+            <section className="review-grid" data-mobile-pane={mobilePane}>
+              <EvidenceCanvas
+                evidenceUrl={reviewEvidence.evidence?.download_url ?? null}
+                coordinateSpace={reviewEvidence.coordinateSpace}
+                fields={detail?.fields ?? []}
+                selectedFieldId={selectedFieldId}
+                imageSize={imageSize}
+                onImageLoad={setImageSize}
+                onSelectField={selectField}
+              />
+              <FieldTable
+                fields={detail?.fields ?? []}
+                edits={edits}
+                recordValues={detail?.current_record?.values ?? {}}
+                selectedFieldId={selectedFieldId}
+                onSelectField={selectField}
+                onEdit={(fieldId, value) => setEdits((current) => ({ ...current, [fieldId]: value }))}
+              />
+            </section>
 
-        <section className="detail-drawer">
+            <section className="detail-drawer">
           <div className="drawer-heading">
             <div>
               <span className="eyebrow">规则与建议</span>
@@ -359,7 +579,11 @@ export function App() {
                 <button key={candidate.attempt_id} type="button" className="candidate-chip" onClick={() => useCandidate(selectedField.field_id, candidate)}>
                   {stringValue(candidate.candidate_value)} <span>{Math.round(candidate.confidence * 100)}%</span>
                 </button>
-              )) : <span className="muted">暂无 OCR/OMR 候选</span>}
+              )) : <span className="muted">
+                {selectedField?.recognition_engine === "manual"
+                  ? "该字段配置为人工录入，不会自动生成识别候选"
+                  : "暂无 OCR/OMR 候选"}
+              </span>}
             </div>
             <div>
               <span className="drawer-label">历史版本</span>
@@ -370,22 +594,121 @@ export function App() {
               <span className="muted">{detail?.evidence.length ?? 0} 个受控文件</span>
             </div>
           </div>
-        </section>
+            </section>
 
-        <footer className="action-bar">
-          <button type="button" className="button button-secondary" disabled>保存草稿</button>
-          <span className="action-hint">确认会创建新版本并写入审计记录</span>
-          <button type="button" className="button button-primary" disabled={!detail || loading} onClick={() => void confirmAndNext()}>
-            确认并下一张
-          </button>
-        </footer>
+            <footer className="action-bar">
+              <button
+                type="button"
+                className="button button-danger-secondary"
+                disabled={!detail || !lease || loading}
+                onClick={() => setReviewAction("return")}
+              >退回</button>
+              <button
+                type="button"
+                className="button button-danger-secondary"
+                disabled={!detail || !lease || loading}
+                onClick={() => setReviewAction("void")}
+              >作废</button>
+              <button
+                type="button"
+                className="button button-secondary"
+                disabled={!detail || !lease || loading || !hasUnsavedEdits}
+                onClick={() => void saveDraft()}
+              >保存草稿</button>
+              <span className="action-hint">
+                {detail?.draft
+                  ? `草稿由 ${detail.draft.saved_by} 保存于 ${new Date(detail.draft.updated_at).toLocaleTimeString()}`
+                  : "确认会创建新版本并原子领取下一张"}
+              </span>
+              <button
+                type="button"
+                className="button button-primary"
+                disabled={!detail || !lease || loading || selectedQueue !== "review"}
+                onClick={() => void confirmAndNext()}
+              >
+                确认并下一张
+              </button>
+            </footer>
+          </>
+        )}
       </main>
+      {reviewAction && (
+        <ReviewActionDialog
+          action={reviewAction}
+          reason={actionReason}
+          loading={loading}
+          onReasonChange={setActionReason}
+          onCancel={() => {
+            setReviewAction(null);
+            setActionReason("");
+          }}
+          onConfirm={() => void submitReviewAction()}
+        />
+      )}
     </div>
   );
 }
 
 function QueueItem({ label, count, active = false, warning = false, onClick }: { label: string; count: string; active?: boolean; warning?: boolean; onClick: () => void }) {
   return <button type="button" onClick={onClick} className={`queue-item ${active ? "active" : ""} ${warning ? "warning" : ""}`}><span>{label}</span><span>{count}</span></button>;
+}
+
+function ReviewActionDialog({
+  action,
+  reason,
+  loading,
+  onReasonChange,
+  onCancel,
+  onConfirm,
+}: {
+  action: ReviewAction;
+  reason: string;
+  loading: boolean;
+  onReasonChange: (reason: string) => void;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const isVoid = action === "void";
+  return (
+    <div className="dialog-backdrop" role="presentation">
+      <section
+        className="review-action-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="review-action-title"
+      >
+        <span className="eyebrow">需写入审计原因</span>
+        <h2 id="review-action-title">{isVoid ? "作废当前表单" : "退回当前表单"}</h2>
+        <p>
+          {isVoid
+            ? "作废会创建不可变的 VOIDED 记录版本，并从审核队列移除。"
+            : "退回会清除审核草稿和租约，并将表单送入重新采集队列。"}
+        </p>
+        <label>
+          操作原因
+          <textarea
+            autoFocus
+            value={reason}
+            maxLength={500}
+            onChange={(event) => onReasonChange(event.target.value)}
+          />
+        </label>
+        <div className="dialog-actions">
+          <button type="button" className="button button-secondary" onClick={onCancel}>
+            取消
+          </button>
+          <button
+            type="button"
+            className="button button-danger"
+            disabled={!reason.trim() || loading}
+            onClick={onConfirm}
+          >
+            确认{isVoid ? "作废" : "退回"}
+          </button>
+        </div>
+      </section>
+    </div>
+  );
 }
 
 function MasterDataNotice({ onBack }: { onBack: () => void }) {
@@ -404,6 +727,7 @@ function MasterDataNotice({ onBack }: { onBack: () => void }) {
 
 function EvidenceCanvas({
   evidenceUrl,
+  coordinateSpace,
   fields,
   selectedFieldId,
   imageSize,
@@ -411,20 +735,30 @@ function EvidenceCanvas({
   onSelectField,
 }: {
   evidenceUrl: string | null;
+  coordinateSpace: "canonical" | "original" | "none";
   fields: ReviewField[];
   selectedFieldId: string | null;
   imageSize: { width: number; height: number };
   onImageLoad: (size: { width: number; height: number }) => void;
   onSelectField: (field: ReviewField) => void;
 }) {
+  const alignmentReady = coordinateSpace === "canonical";
   return (
-    <section className="evidence-panel" aria-label="原始表单证据">
-      <div className="panel-toolbar"><strong>原始表单证据</strong><span>适配 · 100% · 旋转</span></div>
+    <section className="evidence-panel" aria-label="表单图像证据">
+      <div className="panel-toolbar">
+        <strong>{alignmentReady ? "校正后的表单" : "原始表单证据"}</strong>
+        <span>{alignmentReady ? "四角定位已应用 · 标准坐标" : "未完成四角校正"}</span>
+      </div>
+      {coordinateSpace === "original" && (
+        <div className="alignment-warning" role="status">
+          未生成校正图，已隐藏标准字段框，避免将模板坐标错误覆盖到原图。
+        </div>
+      )}
       <div className="canvas-stage">
         {evidenceUrl ? (
           <div className="image-wrap">
             <img src={evidenceUrl} alt="原始表单" onLoad={(event) => onImageLoad({ width: event.currentTarget.naturalWidth, height: event.currentTarget.naturalHeight })} />
-            {fields.map((field) => {
+            {alignmentReady && fields.map((field) => {
               const region = field.source_region;
               const width = sourceDimension(region, "width");
               const height = sourceDimension(region, "height");
@@ -456,12 +790,14 @@ function EvidenceCanvas({
 function FieldTable({
   fields,
   edits,
+  recordValues,
   selectedFieldId,
   onSelectField,
   onEdit,
 }: {
   fields: ReviewField[];
   edits: Record<string, unknown>;
+  recordValues: Record<string, unknown>;
   selectedFieldId: string | null;
   onSelectField: (field: ReviewField) => void;
   onEdit: (fieldId: string, value: string) => void;
@@ -473,7 +809,7 @@ function FieldTable({
         <div className="field-row field-head" role="row"><span>字段</span><span>识别结果</span><span>置信度</span><span>确认值</span><span>状态</span></div>
         {fields.length === 0 ? <div className="table-empty">尚未加载字段</div> : fields.map((field) => {
           const candidate = field.candidates[0];
-          const displayValue = Object.hasOwn(edits, field.field_id) ? edits[field.field_id] : field.current_value;
+          const displayValue = valueForField(field, edits, recordValues);
           const hasWarning = !displayValue || (candidate !== undefined && candidate.confidence < 0.8);
           return (
             <div
@@ -487,7 +823,9 @@ function FieldTable({
               }}
             >
               <span className="field-name">{field.field_name}</span>
-              <span className="candidate-value">{candidate ? stringValue(candidate.candidate_value) : "—"}</span>
+              <span className="candidate-value">
+                {candidate ? stringValue(candidate.candidate_value) : field.recognition_engine === "manual" ? "人工录入" : "—"}
+              </span>
               <span>{candidate ? `${Math.round(candidate.confidence * 100)}%` : "—"}</span>
               <span onClick={(event) => event.stopPropagation()}><input aria-label={`${field.field_name} 确认值`} value={stringValue(displayValue)} onChange={(event) => onEdit(field.field_id, event.target.value)} /></span>
               <span>{hasWarning ? <em className="inline-warning">待确认</em> : <em className="inline-success">已就绪</em>}</span>
@@ -497,6 +835,26 @@ function FieldTable({
       </div>
     </section>
   );
+}
+
+function fieldValue(
+  detail: WorkbenchDetail | null,
+  field: ReviewField,
+  edits: Readonly<Record<string, unknown>>,
+): unknown {
+  return valueForField(field, edits, detail?.current_record?.values ?? {});
+}
+
+function valueForField(
+  field: ReviewField,
+  edits: Readonly<Record<string, unknown>>,
+  recordValues: Readonly<Record<string, unknown>>,
+): unknown {
+  if (Object.hasOwn(edits, field.field_id)) return edits[field.field_id];
+  if (Object.hasOwn(edits, field.field_name)) return edits[field.field_name];
+  if (Object.hasOwn(recordValues, field.field_id)) return recordValues[field.field_id];
+  if (Object.hasOwn(recordValues, field.field_name)) return recordValues[field.field_name];
+  return field.current_value;
 }
 
 function toMessage(cause: unknown): string {

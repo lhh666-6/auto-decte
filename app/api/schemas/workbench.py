@@ -14,6 +14,7 @@ class FormSummaryResponse(BaseModel):
     review_status: str
     export_status: str
     current_record_version: int
+    priority: int
     created_at: datetime
 
 
@@ -29,6 +30,7 @@ class CandidateResponse(BaseModel):
 class FieldResponse(BaseModel):
     field_id: str
     field_name: str
+    recognition_engine: str | None
     source_region: dict[str, int]
     current_value: Any
     current_value_source: str | None
@@ -66,11 +68,19 @@ class AuditEventResponse(BaseModel):
     evidence_ids: list[str]
 
 
+class ReviewDraftResponse(BaseModel):
+    expected_version: int
+    values: dict[str, Any]
+    saved_by: str
+    updated_at: datetime
+
+
 class WorkbenchDetailResponse(BaseModel):
     form: FormSummaryResponse
     fields: list[FieldResponse]
     evidence: list[EvidenceResponse]
     current_record: RecordVersionResponse | None
+    draft: ReviewDraftResponse | None
 
 
 class ReviewHistoryResponse(BaseModel):

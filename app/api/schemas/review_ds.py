@@ -1,5 +1,7 @@
 """Review HTTP DTOs."""
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 
@@ -7,8 +9,25 @@ class ConfirmRequest(BaseModel):
     expected_version: int = Field(ge=0)
     lease_token: str
     values: dict[str, object]
-    reason: str
-    evidence_ids: list[str] = []
+    reason: str = Field(min_length=1, max_length=500)
+    evidence_ids: list[str] = Field(default_factory=list)
+
+
+class ConfirmAndClaimNextRequest(ConfirmRequest):
+    queue_key: Literal["review"] = "review"
+
+
+class SaveDraftRequest(BaseModel):
+    expected_version: int = Field(ge=0)
+    lease_token: str = Field(min_length=1)
+    values: dict[str, object]
+
+
+class ReviewActionRequest(BaseModel):
+    expected_version: int = Field(ge=0)
+    lease_token: str = Field(min_length=1)
+    reason: str = Field(min_length=1, max_length=500)
+    evidence_ids: list[str] = Field(default_factory=list)
 
 
 class LeaseResponse(BaseModel):

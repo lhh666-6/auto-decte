@@ -18,6 +18,7 @@ ROLE_PERMISSIONS: dict[Role, frozenset[Permission]] = {
     Role.REVIEWER: frozenset(
         {
             Permission.FORM_READ,
+            Permission.FORM_EDIT_DRAFT,
             Permission.REVIEW_ACQUIRE,
             Permission.REVIEW_CONFIRM,
             Permission.REVIEW_CORRECT,

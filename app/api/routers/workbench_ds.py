@@ -13,6 +13,7 @@ from app.api.schemas.workbench import (
     FieldResponse,
     FormSummaryResponse,
     RecordVersionResponse,
+    ReviewDraftResponse,
     ReviewHistoryResponse,
     WorkbenchDetailResponse,
 )
@@ -108,6 +109,7 @@ def get_queue(
             review_status=form.review_status.value,
             export_status=form.export_status.value,
             current_record_version=form.current_record_version,
+            priority=form.priority,
             created_at=form.created_at,
         )
         for form in forms
@@ -122,6 +124,13 @@ def get_workbench_detail(
 ) -> WorkbenchDetailResponse:
     actor = _actor(request, services)
     _require(actor, Permission.FORM_READ)
+    return build_workbench_response(request, services, form_id)
+
+
+def build_workbench_response(
+    request: Request, services: Services, form_id: str
+) -> WorkbenchDetailResponse:
+    """Build the reusable workbench DTO for reads and atomic next responses."""
     workbench = _workbench_or_404(services, form_id)
     attempts_by_field: dict[str, list[CandidateResponse]] = {}
     for attempt in workbench.trace.attempts:
@@ -136,6 +145,18 @@ def get_workbench_detail(
             )
         )
     form = workbench.trace.form
+    draft = services.review_repository.get_draft(form_id)
+    try:
+        template = services.template_repository.get_version_by_key_version(
+            form.template_id, int(form.template_version)
+        )
+    except ValueError:
+        template = None
+    recognition_engines = (
+        {field.field_key: field.recognition_engine for field in template.fields}
+        if template is not None
+        else {}
+    )
     return WorkbenchDetailResponse(
         form=FormSummaryResponse(
             form_id=form.form_id,
@@ -145,12 +166,14 @@ def get_workbench_detail(
             review_status=form.review_status.value,
             export_status=form.export_status.value,
             current_record_version=form.current_record_version,
+            priority=form.priority,
             created_at=form.created_at,
         ),
         fields=[
             FieldResponse(
                 field_id=field.field_id,
                 field_name=field.field_name,
+                recognition_engine=recognition_engines.get(field.field_name),
                 source_region=field.source_region,
                 current_value=field.current_value,
                 current_value_source=(
@@ -167,6 +190,16 @@ def get_workbench_detail(
         ],
         current_record=(
             _record_response(workbench.trace.versions[-1]) if workbench.trace.versions else None
+        ),
+        draft=(
+            ReviewDraftResponse(
+                expected_version=draft.expected_version,
+                values=draft.values,
+                saved_by=draft.saved_by,
+                updated_at=draft.updated_at,
+            )
+            if draft is not None
+            else None
         ),
     )
 

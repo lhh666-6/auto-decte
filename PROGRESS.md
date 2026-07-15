@@ -373,3 +373,33 @@
 - 最终验证：Python `154 passed`；Ruff 全部通过；mypy 检查 121 个源文件无问题；
   前端 5 个测试文件共 `19 passed`；TypeScript 类型检查和 Web 生产构建通过。
 - 下一步：审核工作台保存草稿、退回/作废、人工分类与原子 `confirm-and-claim-next`。
+
+## 审核图像坐标系修复（2026-07-15）
+
+- 使用 `dd8df17bbee1ec9f7ec467c12e10be09.png` 复现并确认：模板 QR 与 ArUco
+  10/11/12/13 均成功识别，系统已生成标准 `CORRECTED_IMAGE` 和 24 个字段裁切；原问题
+  不是四角定位失败，而是审核页将标准画布坐标覆盖到低分辨率 `ORIGINAL_IMAGE`。
+- 审核页现在优先显示 `CORRECTED_IMAGE` 并叠加字段框；只有原图时会隐藏标准坐标框并显示
+  明确的未校正提示，避免误导审核人员。
+- 工作台 API 公开字段的 `recognition_engine`；前端会明确标识 `manual` 字段为人工录入。
+  当前项目和本机均没有中文 OCR 引擎，因此日期、班次和姓名不会伪造自动识别结果。
+- 验证：Python 全量 `154 passed`；Ruff 全部通过；mypy 检查 121 个源文件无问题；
+  前端 5 个测试文件共 `21 passed`；TypeScript 类型检查和 Web 生产构建通过。
+
+## 审核工作台事务闭环（2026-07-15）
+
+- 新增持久化审核草稿：保存和重载不会创建正式 `RecordVersion`，草稿写入独立审计；
+  同一审核人刷新页面后可原子恢复并续期尚未过期的 Lease，其他审核人仍收到 409。
+- 退回要求原因、版本和 Lease，原子清除草稿/Lease 并进入 `RECAPTURE_REQUIRED`；
+  作废追加不可变 `VOIDED` 版本，保留原因、证据和审计。
+- `confirm-and-claim-next` 在同一事务中校验权限、Lease、乐观版本和模板规则，写确认版本，
+  释放当前 Lease，并按 `priority DESC, created_at ASC, form_id ASC` 跳过被占用表单领取下一张。
+- 人工分类页面只展示 `PUBLISHED` 模板；分类结果写审计并幂等创建持久化
+  `FORM_RECOGNITION` 任务。任务 Handler/生产 Worker 仍属于后续阶段。
+- 新增 Alembic `003`：审核草稿表、表单优先级和队列排序索引；旧版自动建库会先兼容补列，
+  再补建新表和索引，不丢失原有数据。
+- 浏览器自验覆盖：草稿保存/刷新恢复、租约恢复、退回、作废、确认并领取下一张、人工分类；
+  数据库复核确认状态、版本、审计与 `PENDING` 识别任务，页面控制台无错误。
+- 最终质量门：Python `163 passed`；Ruff 全部通过；mypy 检查 121 个源文件无问题；
+  前端 5 个测试文件共 `22 passed`；TypeScript 类型检查和 Web 生产构建通过。
+- 下一步：主数据 CRUD；本阶段按用户要求完成后暂停，不进入下一阶段。

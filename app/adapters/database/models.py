@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import JSON, DateTime, ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import JSON, DateTime, ForeignKey, Index, Integer, String, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -13,6 +13,15 @@ class Base(DeclarativeBase):
 
 class FormRow(Base):
     __tablename__ = "forms"
+    __table_args__ = (
+        Index(
+            "ix_forms_review_queue_order",
+            "review_status",
+            "priority",
+            "created_at",
+            "form_id",
+        ),
+    )
 
     form_id: Mapped[str] = mapped_column(String, primary_key=True)
     template_id: Mapped[str] = mapped_column(String, nullable=False)
@@ -21,6 +30,7 @@ class FormRow(Base):
     review_status: Mapped[str] = mapped_column(String, nullable=False)
     export_status: Mapped[str] = mapped_column(String, nullable=False)
     current_record_version: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    priority: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
@@ -142,6 +152,18 @@ class ReviewLeaseRow(Base):
     heartbeat_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     forced_release_by: Mapped[str | None] = mapped_column(String)
     forced_release_reason: Mapped[str | None] = mapped_column(String)
+
+
+class ReviewDraftRow(Base):
+    __tablename__ = "review_drafts"
+
+    form_id: Mapped[str] = mapped_column(
+        ForeignKey("forms.form_id"), primary_key=True
+    )
+    expected_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    values: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    saved_by: Mapped[str] = mapped_column(String, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
 class TaskRow(Base):

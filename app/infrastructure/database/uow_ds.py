@@ -7,11 +7,13 @@ from sqlalchemy import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.adapters.database.repositories import SqlAlchemyFormRepository
+from app.modules.review.repository_ds import SqlAlchemyReviewLeaseRepository
 
 
 class UnitOfWork(Protocol):
     forms: SqlAlchemyFormRepository
     audits: SqlAlchemyFormRepository
+    review_state: SqlAlchemyReviewLeaseRepository
 
     def __enter__(self) -> Self: ...
 
@@ -33,11 +35,13 @@ class SqlAlchemyUnitOfWork:
         self.session: Session | None = None
         self.forms: SqlAlchemyFormRepository
         self.audits: SqlAlchemyFormRepository
+        self.review_state: SqlAlchemyReviewLeaseRepository
 
     def __enter__(self) -> Self:
         self.session = self._session_factory()
         self.forms = SqlAlchemyFormRepository(self._engine, self.session)
         self.audits = SqlAlchemyFormRepository(self._engine, self.session)
+        self.review_state = SqlAlchemyReviewLeaseRepository(self._engine, self.session)
         return self
 
     def commit(self) -> None:

@@ -6,6 +6,7 @@ export interface FormSummary {
   review_status: string;
   export_status: string;
   current_record_version: number;
+  priority: number;
   created_at: string;
 }
 
@@ -21,6 +22,7 @@ export interface RecognitionCandidate {
 export interface ReviewField {
   field_id: string;
   field_name: string;
+  recognition_engine: string | null;
   source_region: Record<string, number>;
   current_value: unknown;
   current_value_source: string | null;
@@ -63,6 +65,14 @@ export interface WorkbenchDetail {
   fields: ReviewField[];
   evidence: EvidenceItem[];
   current_record: RecordVersion | null;
+  draft: ReviewDraft | null;
+}
+
+export interface ReviewDraft {
+  expected_version: number;
+  values: Record<string, unknown>;
+  saved_by: string;
+  updated_at: string;
 }
 
 export interface ReviewHistory {
@@ -75,6 +85,29 @@ export interface ReviewLease {
   owner_id: string;
   lease_token: string;
   expires_at: string;
+}
+
+export interface ClassificationOption {
+  template_key: string;
+  version: number;
+  field_count: number;
+  page_size: string;
+  orientation: string;
+}
+
+export interface ConfirmAndClaimNextResult {
+  record: { record_id: string; version: number; status: string };
+  next: { workbench: WorkbenchDetail; lease: ReviewLease } | null;
+}
+
+interface ReviewVersionInput {
+  expectedVersion: number;
+  leaseToken: string;
+}
+
+interface ReviewActionInput extends ReviewVersionInput {
+  reason: string;
+  evidenceIds: string[];
 }
 
 export class ApiRequestError extends Error {
@@ -143,6 +176,97 @@ export class ReviewWorkbenchApi {
         expected_version: input.expectedVersion,
         lease_token: input.leaseToken,
         values: input.values,
+        reason: input.reason,
+        evidence_ids: input.evidenceIds,
+      },
+    });
+  }
+
+  saveDraft(
+    formId: string,
+    input: ReviewVersionInput & { values: Record<string, unknown> },
+  ): Promise<ReviewDraft> {
+    return this.request(`/forms/${encodeURIComponent(formId)}/review-draft`, {
+      method: "PUT",
+      body: {
+        expected_version: input.expectedVersion,
+        lease_token: input.leaseToken,
+        values: input.values,
+      },
+    });
+  }
+
+  returnForm(
+    formId: string,
+    input: ReviewActionInput,
+  ): Promise<{ form_id: string; review_status: string }> {
+    return this.reviewAction(formId, "return", input);
+  }
+
+  voidForm(
+    formId: string,
+    input: ReviewActionInput,
+  ): Promise<{ record_id: string; version: number; status: string }> {
+    return this.reviewAction(formId, "void", input);
+  }
+
+  confirmAndClaimNext(
+    formId: string,
+    input: ReviewActionInput & {
+      values: Record<string, unknown>;
+      queueKey: "review";
+    },
+  ): Promise<ConfirmAndClaimNextResult> {
+    return this.request(`/forms/${encodeURIComponent(formId)}/confirm-and-claim-next`, {
+      method: "POST",
+      headers: { "If-Match": String(input.expectedVersion) },
+      body: {
+        expected_version: input.expectedVersion,
+        lease_token: input.leaseToken,
+        values: input.values,
+        reason: input.reason,
+        evidence_ids: input.evidenceIds,
+        queue_key: input.queueKey,
+      },
+    });
+  }
+
+  getClassificationOptions(formId: string): Promise<ClassificationOption[]> {
+    return this.request(`/forms/${encodeURIComponent(formId)}/classification-options`);
+  }
+
+  assignTemplate(
+    formId: string,
+    input: { templateKey: string; version: number; reason: string },
+  ): Promise<{
+    form_id: string;
+    template_key: string;
+    template_version: number;
+    review_status: string;
+    recognition_task_id: string;
+    recognition_task_status: string;
+  }> {
+    return this.request(`/forms/${encodeURIComponent(formId)}/assign-template`, {
+      method: "POST",
+      body: {
+        template_key: input.templateKey,
+        version: input.version,
+        reason: input.reason,
+      },
+    });
+  }
+
+  private reviewAction<T>(
+    formId: string,
+    action: "return" | "void",
+    input: ReviewActionInput,
+  ): Promise<T> {
+    return this.request(`/forms/${encodeURIComponent(formId)}/${action}`, {
+      method: "POST",
+      headers: { "If-Match": String(input.expectedVersion) },
+      body: {
+        expected_version: input.expectedVersion,
+        lease_token: input.leaseToken,
         reason: input.reason,
         evidence_ids: input.evidenceIds,
       },

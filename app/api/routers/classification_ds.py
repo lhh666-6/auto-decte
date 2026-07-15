@@ -8,6 +8,7 @@ from app.domain.models import ReviewStatus
 from app.domain.templates_ds import TemplateStatus
 from app.modules.identity_access.models_ds import Actor, Permission
 from app.modules.identity_access.policy_ds import PermissionPolicy
+from app.modules.tasks.models_ds import TaskCommand
 from app.services.container import Services
 
 router = APIRouter(prefix="/api/v1/forms", tags=["classification"])
@@ -33,6 +34,43 @@ def _require(actor: Actor, permission: Permission) -> None:
             status_code=403,
             detail={"code": "PERMISSION_DENIED", "detail": str(error)},
         ) from error
+
+
+@router.get("/{form_id}/classification-options")
+def classification_options(
+    form_id: str,
+    request: Request,
+    services: Services = Depends(get_services),  # noqa: B008
+) -> list[dict[str, object]]:
+    """List only immutable published versions that may be selected manually."""
+    actor = _actor(request, services)
+    _require(actor, Permission.FORM_CLASSIFY)
+    form = services.repository.get_form(form_id)
+    if form is None:
+        raise HTTPException(status_code=404, detail={"code": "FORM_NOT_FOUND"})
+    if form.review_status is not ReviewStatus.NEEDS_CLASSIFICATION:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "FORM_NOT_AWAITING_CLASSIFICATION"},
+        )
+    versions = sorted(
+        (
+            version
+            for version in services.templates.list_templates()
+            if version.status is TemplateStatus.PUBLISHED
+        ),
+        key=lambda version: (version.template_key, version.version),
+    )
+    return [
+        {
+            "template_key": version.template_key,
+            "version": version.version,
+            "field_count": len(version.fields),
+            "page_size": version.page.size,
+            "orientation": version.page.orientation,
+        }
+        for version in versions
+    ]
 
 
 @router.post("/{form_id}/assign-template")
@@ -68,9 +106,26 @@ def assign_template(
         actor_id=actor.actor_id,
         reason=body.reason,
     )
+    task = services.tasks.submit(
+        TaskCommand(
+            operation="FORM_RECOGNITION",
+            resource_id=form_id,
+            actor_id=actor.actor_id,
+            idempotency_key=(
+                f"manual-classification:{body.template_key}:{body.version}"
+            ),
+            payload={
+                "template_key": template.template_key,
+                "template_version": template.version,
+                "classification_source": "MANUAL",
+            },
+        )
+    )
     return {
         "form_id": form_id,
         "template_key": template.template_key,
         "template_version": template.version,
         "review_status": ReviewStatus.CLASSIFIED.value,
+        "recognition_task_id": task.task_id,
+        "recognition_task_status": task.status.value,
     }

@@ -55,6 +55,7 @@ def test_form_workbench_detail_exposes_fields_candidates_and_safe_evidence_url(
         {
             "field_id": "FIELD-1",
             "field_name": "total_quantity",
+            "recognition_engine": None,
             "source_region": {"x": 10, "y": 20, "width": 80, "height": 30},
             "current_value": 8,
             "current_value_source": None,

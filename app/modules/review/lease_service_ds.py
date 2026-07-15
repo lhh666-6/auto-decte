@@ -39,6 +39,12 @@ class ReviewLeaseService:
             heartbeat_at=now,
         )
         if not self._repository.try_acquire(lease, now):
+            restored = self._repository.restore_owned(
+                form_id, owner_id, now, now + self._ttl
+            )
+            if restored is not None:
+                self._audit(form_id, "LEASE_RESTORE", owner_id, now)
+                return restored
             existing = self._repository.get(form_id)
             holder = existing.owner_id if existing is not None else "another reviewer"
             raise LeaseHeldError(f"Form {form_id} is held by {holder}")

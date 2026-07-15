@@ -40,6 +40,24 @@ def test_second_reviewer_cannot_acquire_live_lease(tmp_path) -> None:
     assert first.owner_id == "reviewer-a"
 
 
+def test_same_reviewer_can_restore_live_lease_after_page_reload(tmp_path) -> None:
+    engine = create_sqlite_engine(tmp_path / "demo.db")
+    Base.metadata.create_all(engine)
+    clock = FrozenClock(datetime(2026, 7, 12, tzinfo=UTC))
+    leases = ReviewLeaseService(
+        SqlAlchemyReviewLeaseRepository(engine), clock=clock, ttl_seconds=60
+    )
+    first = leases.acquire("FORM-1", "reviewer-a")
+    clock.advance(30)
+
+    restored = leases.acquire("FORM-1", "reviewer-a")
+
+    assert restored.lease_token == first.lease_token
+    assert restored.acquired_at == first.acquired_at
+    assert restored.heartbeat_at == clock.now
+    assert restored.expires_at == clock.now + timedelta(seconds=60)
+
+
 def test_expired_lease_can_be_reacquired_and_owner_can_heartbeat(tmp_path) -> None:
     engine = create_sqlite_engine(tmp_path / "demo.db")
     Base.metadata.create_all(engine)
