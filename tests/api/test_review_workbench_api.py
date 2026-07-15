@@ -110,6 +110,8 @@ def test_workbench_exposes_template_rules_for_frontend_validation(tmp_path: Path
         "minimum_value": 0.0,
         "maximum_value": 100.0,
         "allowed_values": [],
+        "master_data_source": None,
+        "master_data_options": [],
     }
 
 

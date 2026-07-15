@@ -44,6 +44,20 @@ def test_alembic_upgrade_creates_review_drafts_and_form_priority(tmp_path: Path)
     assert "priority" in {column["name"] for column in inspector.get_columns("forms")}
 
 
+def test_alembic_upgrade_creates_master_data_and_audit_tables(tmp_path: Path) -> None:
+    database_path = tmp_path / "master-data-schema.db"
+
+    upgrade_database(database_path)
+
+    engine = create_engine(f"sqlite:///{database_path}")
+    inspector = inspect(engine)
+    assert {"master_data_records", "master_data_audits"} <= set(
+        inspector.get_table_names()
+    )
+    record_indexes = {item["name"] for item in inspector.get_indexes("master_data_records")}
+    assert "ix_master_data_records_catalog_active_name" in record_indexes
+
+
 def test_evidence_hash_is_unique_only_for_original_images(tmp_path: Path) -> None:
     database_path = tmp_path / "evidence-schema.db"
     upgrade_database(database_path)

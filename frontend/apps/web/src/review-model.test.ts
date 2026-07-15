@@ -56,6 +56,8 @@ describe("reviewValueIssue", () => {
     minimum_value: null,
     maximum_value: null,
     allowed_values: [] as string[],
+    master_data_source: null,
+    master_data_options: [] as Array<{ value: string; label: string }>,
   };
 
   it("rejects an invalid enum even when the value is non-empty", () => {
@@ -75,6 +77,19 @@ describe("reviewValueIssue", () => {
       ...baseRules,
       minimum_value: 0,
     })).toBe("数值不能小于 0");
+  });
+
+  it("rejects inactive or unknown master-data codes", () => {
+    expect(reviewValueIssue("E999", undefined, true, "text", {
+      ...baseRules,
+      master_data_source: "employees",
+      master_data_options: [{ value: "E001", label: "张三" }],
+    })).toBe("请选择有效的主数据记录");
+    expect(reviewValueIssue("E001", undefined, true, "text", {
+      ...baseRules,
+      master_data_source: "employees",
+      master_data_options: [{ value: "E001", label: "张三" }],
+    })).toBeNull();
   });
 
   it("requires an explicit edit for a low-confidence candidate", () => {

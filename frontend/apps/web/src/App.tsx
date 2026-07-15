@@ -17,6 +17,7 @@ import {
   selectReviewEvidence,
 } from "./review-model";
 import { TemplateStudio } from "./TemplateStudio_ds";
+import { MasterDataCenter } from "./MasterDataCenter_ds";
 
 const notificationPort = new WebNotificationPort();
 
@@ -855,17 +856,7 @@ function ReviewActionDialog({
 }
 
 function MasterDataNotice({ onBack }: { onBack: () => void }) {
-  return (
-    <main className="master-data-notice">
-      <button type="button" className="text-button" onClick={onBack}>← 返回审核工作台</button>
-      <section>
-        <span className="eyebrow">主数据中心</span>
-        <h1>员工、工单、产品与工序</h1>
-        <p>当前代码只提供主数据规则校验，没有持久化表和编辑 API。这里不再显示无法保存的伪表单。</p>
-        <p>下一步会先补主数据的 SQLite 迁移、权限接口与编辑页面，再把模板字段的下拉选项接入这些数据。</p>
-      </section>
-    </main>
-  );
+  return <MasterDataCenter onBack={onBack} />;
 }
 
 function EvidenceCanvas({
@@ -977,7 +968,7 @@ function FieldTable({
                 {candidate ? stringValue(candidate.candidate_value) : field.recognition_engine === "manual" ? "人工录入" : "—"}
               </span>
               <span>{candidate ? `${Math.round(candidate.confidence * 100)}%` : "—"}</span>
-              <span onClick={(event) => event.stopPropagation()}>{field.rules?.allowed_values.length ? <select aria-label={`${field.display_name ?? field.field_name} 确认值`} value={stringValue(displayValue)} onChange={(event) => onEdit(field.field_id, event.target.value)}><option value="">请选择</option>{field.rules.allowed_values.map((value) => <option key={value} value={value}>{value}</option>)}</select> : <input aria-label={`${field.display_name ?? field.field_name} 确认值`} value={stringValue(displayValue)} onChange={(event) => onEdit(field.field_id, event.target.value)} />}</span>
+              <span onClick={(event) => event.stopPropagation()}>{field.rules && (field.rules.master_data_options.length || field.rules.allowed_values.length) ? <select aria-label={`${field.display_name ?? field.field_name} 确认值`} value={stringValue(displayValue)} onChange={(event) => onEdit(field.field_id, event.target.value)}><option value="">请选择</option>{field.rules.master_data_options.length ? field.rules.master_data_options.map((option) => <option key={option.value} value={option.value}>{option.label}（{option.value}）</option>) : field.rules.allowed_values.map((value) => <option key={value} value={value}>{value}</option>)}</select> : <input aria-label={`${field.display_name ?? field.field_name} 确认值`} value={stringValue(displayValue)} onChange={(event) => onEdit(field.field_id, event.target.value)} />}</span>
               <span>{hasWarning ? <><em className="inline-warning">待确认</em><small className="field-rule-message">{issue}</small></> : <em className="inline-success">已就绪</em>}</span>
             </div>
           );

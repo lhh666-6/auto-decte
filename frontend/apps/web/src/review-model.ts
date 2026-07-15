@@ -37,6 +37,12 @@ export function reviewValueIssue(
   if (rules?.allowed_values.length && !rules.allowed_values.includes(String(value))) {
     return `请选择：${rules.allowed_values.join(" / ")}`;
   }
+  if (
+    rules?.master_data_source &&
+    !rules.master_data_options.some((option) => option.value === String(value))
+  ) {
+    return "请选择有效的主数据记录";
+  }
   if (dataType === "integer" || dataType === "decimal") {
     const text = String(value).trim();
     const numeric = Number(text);

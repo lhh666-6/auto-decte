@@ -13,6 +13,7 @@ from app.api.schemas.workbench import (
     FieldResponse,
     FieldRulesResponse,
     FormSummaryResponse,
+    MasterDataOptionResponse,
     RecordVersionResponse,
     ReviewDraftResponse,
     ReviewHistoryResponse,
@@ -98,9 +99,7 @@ def get_queue(
             status_code=404,
             detail={"code": "QUEUE_NOT_FOUND", "detail": f"Unknown queue: {queue_key}"},
         )
-    forms = services.queries.list_forms(
-        review_statuses=filters[0], export_statuses=filters[1]
-    )
+    forms = services.queries.list_forms(review_statuses=filters[0], export_statuses=filters[1])
     return [
         FormSummaryResponse(
             form_id=form.form_id,
@@ -154,10 +153,13 @@ def build_workbench_response(
     except ValueError:
         template = None
     template_fields = (
-        {field.field_key: field for field in template.fields}
-        if template is not None
-        else {}
+        {field.field_key: field for field in template.fields} if template is not None else {}
     )
+    master_data_options: dict[str, list[dict[str, str]]] = {}
+    for definition in template_fields.values():
+        source = definition.rules.master_data_source
+        if source and source not in master_data_options:
+            master_data_options[source] = services.master_data.options(source)
     return WorkbenchDetailResponse(
         form=FormSummaryResponse(
             form_id=form.form_id,
@@ -192,15 +194,19 @@ def build_workbench_response(
                 rules=(
                     FieldRulesResponse(
                         required=template_fields[field.field_name].rules.required,
-                        minimum_value=(
-                            template_fields[field.field_name].rules.minimum_value
+                        minimum_value=(template_fields[field.field_name].rules.minimum_value),
+                        maximum_value=(template_fields[field.field_name].rules.maximum_value),
+                        allowed_values=list(template_fields[field.field_name].rules.allowed_values),
+                        master_data_source=(
+                            template_fields[field.field_name].rules.master_data_source
                         ),
-                        maximum_value=(
-                            template_fields[field.field_name].rules.maximum_value
-                        ),
-                        allowed_values=list(
-                            template_fields[field.field_name].rules.allowed_values
-                        ),
+                        master_data_options=[
+                            MasterDataOptionResponse(**option)
+                            for option in master_data_options.get(
+                                template_fields[field.field_name].rules.master_data_source or "",
+                                [],
+                            )
+                        ],
                     )
                     if field.field_name in template_fields
                     else None
@@ -216,8 +222,7 @@ def build_workbench_response(
             for field in workbench.fields
         ],
         evidence=[
-            _evidence_response(request, form_id, evidence)
-            for evidence in workbench.trace.evidence
+            _evidence_response(request, form_id, evidence) for evidence in workbench.trace.evidence
         ],
         current_record=(
             _record_response(workbench.trace.versions[-1]) if workbench.trace.versions else None

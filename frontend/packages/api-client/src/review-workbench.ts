@@ -76,6 +76,8 @@ export interface ReviewFieldRules {
   minimum_value: number | null;
   maximum_value: number | null;
   allowed_values: string[];
+  master_data_source: string | null;
+  master_data_options: Array<{ value: string; label: string }>;
 }
 
 export interface ReviewRuleFailure {

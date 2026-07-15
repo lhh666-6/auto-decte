@@ -3,7 +3,17 @@
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import JSON, DateTime, ForeignKey, Index, Integer, String, UniqueConstraint, text
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    UniqueConstraint,
+    text,
+)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -173,9 +183,7 @@ class ReviewLeaseRow(Base):
 class ReviewDraftRow(Base):
     __tablename__ = "review_drafts"
 
-    form_id: Mapped[str] = mapped_column(
-        ForeignKey("forms.form_id"), primary_key=True
-    )
+    form_id: Mapped[str] = mapped_column(ForeignKey("forms.form_id"), primary_key=True)
     expected_version: Mapped[int] = mapped_column(Integer, nullable=False)
     values: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
     saved_by: Mapped[str] = mapped_column(String, nullable=False)
@@ -237,3 +245,50 @@ class AIReviewRow(Base):
     status: Mapped[str] = mapped_column(String, nullable=False)
     payload: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class MasterDataRecordRow(Base):
+    __tablename__ = "master_data_records"
+    __table_args__ = (
+        Index(
+            "ix_master_data_records_catalog_active_name",
+            "catalog",
+            "active",
+            "display_name",
+            "code",
+        ),
+    )
+
+    catalog: Mapped[str] = mapped_column(String, primary_key=True)
+    code: Mapped[str] = mapped_column(String, primary_key=True)
+    display_name: Mapped[str] = mapped_column(String, nullable=False)
+    attributes: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    revision: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_by: Mapped[str] = mapped_column(String, nullable=False)
+    updated_by: Mapped[str] = mapped_column(String, nullable=False)
+
+
+class MasterDataAuditRow(Base):
+    __tablename__ = "master_data_audits"
+    __table_args__ = (
+        Index(
+            "ix_master_data_audits_catalog_code_revision",
+            "catalog",
+            "code",
+            "revision",
+        ),
+    )
+
+    audit_id: Mapped[str] = mapped_column(String, primary_key=True)
+    catalog: Mapped[str] = mapped_column(String, nullable=False)
+    code: Mapped[str] = mapped_column(String, nullable=False)
+    revision: Mapped[int] = mapped_column(Integer, nullable=False)
+    event_type: Mapped[str] = mapped_column(String, nullable=False)
+    actor_id: Mapped[str] = mapped_column(String, nullable=False)
+    timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    before: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    after: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    reason: Mapped[str] = mapped_column(String, nullable=False)

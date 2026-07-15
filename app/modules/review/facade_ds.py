@@ -93,6 +93,10 @@ class TemplateVersionResolver(Protocol):
     ) -> TemplateVersion | None: ...
 
 
+class MasterDataLookup(Protocol):
+    def is_active(self, source: str, code: str) -> bool: ...
+
+
 _CLAIMABLE_REVIEW_STATUSES = (
     ReviewStatus.IMPORTED,
     ReviewStatus.CLASSIFIED,
@@ -109,6 +113,7 @@ class ReviewFacade:
         policy: PermissionPolicy | None = None,
         leases: ReviewLeaseService | None = None,
         template_versions: TemplateVersionResolver | None = None,
+        master_data: MasterDataLookup | None = None,
         *,
         clock: Callable[[], datetime] | None = None,
         lease_ttl_seconds: int = 300,
@@ -118,6 +123,7 @@ class ReviewFacade:
         self._policy = policy or PermissionPolicy()
         self._leases = leases
         self._template_versions = template_versions
+        self._master_data = master_data
         self._clock = clock or (lambda: datetime.now(UTC))
         self._lease_ttl = timedelta(seconds=lease_ttl_seconds)
 
@@ -154,9 +160,7 @@ class ReviewFacade:
         now = self._clock()
         with self._uow_factory() as uow:
             self._require_form_and_version(uow, command.form_id, command.expected_version)
-            self._assert_owned(
-                uow, command.form_id, command.actor_id, command.lease_token, now
-            )
+            self._assert_owned(uow, command.form_id, command.actor_id, command.lease_token, now)
             before = uow.review_state.get_draft(command.form_id)
             draft = ReviewDraft(
                 form_id=command.form_id,
@@ -186,9 +190,7 @@ class ReviewFacade:
         now = self._clock()
         with self._uow_factory() as uow:
             form = self._require_form_and_version(uow, command.form_id, command.expected_version)
-            self._assert_owned(
-                uow, command.form_id, command.actor_id, command.lease_token, now
-            )
+            self._assert_owned(uow, command.form_id, command.actor_id, command.lease_token, now)
             self._require_non_terminal(form.review_status)
             draft = uow.review_state.get_draft(command.form_id)
             uow.forms.set_review_status(command.form_id, ReviewStatus.RECAPTURE_REQUIRED)
@@ -218,17 +220,13 @@ class ReviewFacade:
         now = self._clock()
         with self._uow_factory() as uow:
             form = self._require_form_and_version(uow, command.form_id, command.expected_version)
-            self._assert_owned(
-                uow, command.form_id, command.actor_id, command.lease_token, now
-            )
+            self._assert_owned(uow, command.form_id, command.actor_id, command.lease_token, now)
             self._require_non_terminal(form.review_status)
             versions = uow.forms.list_record_versions(command.form_id)
             draft = uow.review_state.get_draft(command.form_id)
             before = versions[-1].values if versions else None
             values = dict(
-                draft.values
-                if draft is not None
-                else (versions[-1].values if versions else {})
+                draft.values if draft is not None else (versions[-1].values if versions else {})
             )
             record = RecordVersion(
                 record_id=f"RECORD-{uuid4().hex}",
@@ -278,12 +276,8 @@ class ReviewFacade:
         with self._uow_factory() as uow:
             form = self._require_form_and_version(uow, command.form_id, command.expected_version)
             if form.review_status not in _CLAIMABLE_REVIEW_STATUSES:
-                raise ValueError(
-                    "The current form does not belong to the review queue snapshot"
-                )
-            self._assert_owned(
-                uow, command.form_id, command.actor_id, command.lease_token, now
-            )
+                raise ValueError("The current form does not belong to the review queue snapshot")
+            self._assert_owned(uow, command.form_id, command.actor_id, command.lease_token, now)
             normalized_values = self._prepare_template_values(
                 uow,
                 command.form_id,
@@ -355,9 +349,7 @@ class ReviewFacade:
             version=command.expected_version + 1,
             previous_version=command.expected_version or None,
             status=(
-                RecordStatus.CONFIRMED
-                if command.expected_version == 0
-                else RecordStatus.CORRECTED
+                RecordStatus.CONFIRMED if command.expected_version == 0 else RecordStatus.CORRECTED
             ),
             values=dict(command.values),
             change_reason=command.reason,
@@ -397,9 +389,7 @@ class ReviewFacade:
             version_number = int(template_version)
         except ValueError:
             return normalized
-        template = self._template_versions.get_version_by_key_version(
-            template_key, version_number
-        )
+        template = self._template_versions.get_version_by_key_version(template_key, version_number)
         if template is None:
             return normalized
         failures: list[ReviewRuleFailure] = []
@@ -429,16 +419,24 @@ class ReviewFacade:
                         pass
             rules = definition.rules
             if rules.required and (
-                not has_value
-                or value is None
-                or (isinstance(value, str) and not value.strip())
+                not has_value or value is None or (isinstance(value, str) and not value.strip())
             ):
-                failures.append(
-                    ReviewRuleFailure("REQUIRED", definition.field_key, "必填字段缺失")
-                )
+                failures.append(ReviewRuleFailure("REQUIRED", definition.field_key, "必填字段缺失"))
                 continue
             if value is None or (isinstance(value, str) and not value.strip()):
                 continue
+            if (
+                rules.master_data_source
+                and self._master_data is not None
+                and not self._master_data.is_active(rules.master_data_source, str(value))
+            ):
+                failures.append(
+                    ReviewRuleFailure(
+                        "INVALID_MASTER_DATA",
+                        definition.field_key,
+                        "字段值不在有效主数据中",
+                    )
+                )
             if rules.allowed_values and str(value) not in rules.allowed_values:
                 failures.append(
                     ReviewRuleFailure(
@@ -450,9 +448,7 @@ class ReviewFacade:
             if rules.minimum_value is not None or rules.maximum_value is not None:
                 if isinstance(value, bool) or not isinstance(value, int | float):
                     failures.append(
-                        ReviewRuleFailure(
-                            "INVALID_NUMBER", definition.field_key, "字段必须是数值"
-                        )
+                        ReviewRuleFailure("INVALID_NUMBER", definition.field_key, "字段必须是数值")
                     )
                 else:
                     if rules.minimum_value is not None and value < rules.minimum_value:
@@ -476,9 +472,7 @@ class ReviewFacade:
         return normalized
 
     @staticmethod
-    def _require_form_and_version(
-        uow: UnitOfWork, form_id: str, expected_version: int
-    ) -> Form:
+    def _require_form_and_version(uow: UnitOfWork, form_id: str, expected_version: int) -> Form:
         form = uow.forms.get_form(form_id)
         if form is None:
             raise KeyError(f"Unknown form: {form_id}")
@@ -506,9 +500,7 @@ class ReviewFacade:
             )
         return lease
 
-    def _require_actor(
-        self, actor: Actor | None, actor_id: str, permission: Permission
-    ) -> None:
+    def _require_actor(self, actor: Actor | None, actor_id: str, permission: Permission) -> None:
         if actor is None:
             return
         if actor.actor_id != actor_id:

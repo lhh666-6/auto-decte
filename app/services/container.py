@@ -29,6 +29,8 @@ from app.infrastructure.database.migrations import (
 from app.infrastructure.database.sqlite_ds import create_sqlite_engine
 from app.infrastructure.database.uow_ds import SqlAlchemyUnitOfWork
 from app.infrastructure.tasks.sqlite_store_ds import SqliteTaskStore
+from app.modules.master_data.facade_ds import MasterDataFacade
+from app.modules.master_data.repository_ds import SqlAlchemyMasterDataRepository
 from app.modules.review.facade_ds import ReviewFacade
 from app.modules.review.lease_service_ds import ReviewLeaseService
 from app.modules.review.repository_ds import SqlAlchemyReviewLeaseRepository
@@ -58,6 +60,8 @@ class Services:
     task_store: SqliteTaskStore
     tasks: TaskService
     evidence_storage: LocalEvidenceStorage
+    master_data_repository: SqlAlchemyMasterDataRepository
+    master_data: MasterDataFacade
 
 
 def build_services(settings: Settings, *, install_seed_templates: bool = False) -> Services:
@@ -81,6 +85,8 @@ def build_services(settings: Settings, *, install_seed_templates: bool = False) 
     queries = QueryForms(repository)
     pipeline = OpenCvImagePipeline()
     review_repository = SqlAlchemyReviewLeaseRepository(engine)
+    master_data_repository = SqlAlchemyMasterDataRepository(engine)
+    master_data = MasterDataFacade(master_data_repository)
     review_leases = ReviewLeaseService(
         review_repository,
         ttl_seconds=settings.review_lease_seconds,
@@ -114,11 +120,14 @@ def build_services(settings: Settings, *, install_seed_templates: bool = False) 
             uow_factory=lambda: SqlAlchemyUnitOfWork(engine),
             leases=review_leases,
             template_versions=template_repository,
+            master_data=master_data,
             lease_ttl_seconds=settings.review_lease_seconds,
         ),
         task_store=task_store,
         tasks=TaskService(task_store),
         evidence_storage=storage,
+        master_data_repository=master_data_repository,
+        master_data=master_data,
     )
     if install_seed_templates:
         install_legacy_payroll_seed_templates(template_repository, template_renderer)

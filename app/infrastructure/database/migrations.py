@@ -7,7 +7,7 @@ from sqlalchemy import Engine, inspect, text
 
 from alembic import command
 
-HEAD_REVISION = "005"
+HEAD_REVISION = "006"
 
 
 class SchemaRevisionError(RuntimeError):

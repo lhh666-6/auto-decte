@@ -1,56 +1,195 @@
-"""Master data management module facade."""
+"""Application boundary for versioned master-data management."""
 
-from collections.abc import Mapping
+from __future__ import annotations
+
+from collections.abc import Callable, Mapping
+from dataclasses import asdict, replace
+from datetime import UTC, datetime
+from uuid import uuid4
+
+from app.modules.master_data.models_ds import (
+    MasterDataAudit,
+    MasterDataCatalog,
+    MasterDataNotFound,
+    MasterDataRecord,
+)
+from app.modules.master_data.repository_ds import SqlAlchemyMasterDataRepository
 
 
 class MasterDataFacade:
-    """Master data boundary backed by in-memory reference data.
-
-    In a production deployment these lookups would be backed by a database
-    or an external master-data service.  The current in-memory approach is
-    suitable for the Demo deployment.
-    """
-
     def __init__(
         self,
-        valid_employee_ids: frozenset[str] = frozenset(),
-        valid_work_order_ids: frozenset[str] = frozenset(),
-        field_ranges: Mapping[str, tuple[int | float, int | float]] = {},
-        field_labels: Mapping[str, str] = {},
+        repository: SqlAlchemyMasterDataRepository,
+        *,
+        clock: Callable[[], datetime] | None = None,
     ) -> None:
-        self._valid_employee_ids = valid_employee_ids
-        self._valid_work_order_ids = valid_work_order_ids
-        self._field_ranges = dict(field_ranges)
-        self._field_labels = dict(field_labels)
+        self._repository = repository
+        self._clock = clock or (lambda: datetime.now(UTC))
 
-    # --- Employee data ---
+    def create(
+        self,
+        catalog: MasterDataCatalog,
+        code: str,
+        display_name: str,
+        attributes: Mapping[str, object],
+        actor_id: str,
+        reason: str,
+    ) -> MasterDataRecord:
+        now = self._clock()
+        record = MasterDataRecord(
+            catalog=catalog,
+            code=_required(code, "code"),
+            display_name=_required(display_name, "display_name"),
+            attributes=dict(attributes),
+            active=True,
+            revision=1,
+            created_at=now,
+            updated_at=now,
+            created_by=actor_id,
+            updated_by=actor_id,
+        )
+        self._repository.create(
+            record,
+            self._audit(record, "CREATE", actor_id, reason, before=None),
+        )
+        return record
 
-    @property
-    def valid_employee_ids(self) -> frozenset[str]:
-        """Return the known set of valid employee identifiers."""
-        return self._valid_employee_ids
+    def get(self, catalog: MasterDataCatalog, code: str) -> MasterDataRecord:
+        record = self._repository.get(catalog, code)
+        if record is None:
+            raise MasterDataNotFound(code)
+        return record
 
-    def is_valid_employee(self, employee_id: str) -> bool:
-        """Check whether an employee id is known in master data."""
-        return employee_id in self._valid_employee_ids
+    def list_records(
+        self,
+        catalog: MasterDataCatalog,
+        *,
+        include_inactive: bool = False,
+        query: str | None = None,
+    ) -> list[MasterDataRecord]:
+        return self._repository.list_records(
+            catalog,
+            include_inactive=include_inactive,
+            query=query.strip() if query and query.strip() else None,
+        )
 
-    # --- Work order data ---
+    def update(
+        self,
+        catalog: MasterDataCatalog,
+        code: str,
+        expected_revision: int,
+        actor_id: str,
+        reason: str,
+        *,
+        display_name: str | None = None,
+        attributes: Mapping[str, object] | None = None,
+    ) -> MasterDataRecord:
+        current = self.get(catalog, code)
+        updated = replace(
+            current,
+            display_name=(
+                _required(display_name, "display_name")
+                if display_name is not None
+                else current.display_name
+            ),
+            attributes=dict(attributes) if attributes is not None else current.attributes,
+            revision=current.revision + 1,
+            updated_at=self._clock(),
+            updated_by=actor_id,
+        )
+        self._repository.update(
+            updated,
+            self._audit(updated, "UPDATE", actor_id, reason, before=current),
+            expected_revision,
+        )
+        return updated
 
-    @property
-    def valid_work_order_ids(self) -> frozenset[str]:
-        """Return the known set of valid work order identifiers."""
-        return self._valid_work_order_ids
+    def set_active(
+        self,
+        catalog: MasterDataCatalog,
+        code: str,
+        active: bool,
+        expected_revision: int,
+        actor_id: str,
+        reason: str,
+    ) -> MasterDataRecord:
+        current = self.get(catalog, code)
+        updated = replace(
+            current,
+            active=active,
+            revision=current.revision + 1,
+            updated_at=self._clock(),
+            updated_by=actor_id,
+        )
+        self._repository.update(
+            updated,
+            self._audit(
+                updated,
+                "REACTIVATE" if active else "DEACTIVATE",
+                actor_id,
+                reason,
+                before=current,
+            ),
+            expected_revision,
+        )
+        return updated
 
-    def is_valid_work_order(self, work_order_id: str) -> bool:
-        """Check whether a work order id is known in master data."""
-        return work_order_id in self._valid_work_order_ids
+    def audits(self, catalog: MasterDataCatalog, code: str) -> list[MasterDataAudit]:
+        self.get(catalog, code)
+        return self._repository.list_audits(catalog, code)
 
-    # --- Field metadata ---
+    def is_active(self, source: str, code: str) -> bool:
+        try:
+            catalog = MasterDataCatalog(source)
+        except ValueError:
+            return False
+        return self._repository.is_active(catalog, code)
 
-    def field_range(self, field_id: str) -> tuple[int | float, int | float] | None:
-        """Return the allowed (min, max) for a numeric field, or ``None``."""
-        return self._field_ranges.get(field_id)
+    def options(self, source: str) -> list[dict[str, str]]:
+        try:
+            catalog = MasterDataCatalog(source)
+        except ValueError:
+            return []
+        return [
+            {"value": record.code, "label": record.display_name}
+            for record in self.list_records(catalog)
+        ]
 
-    def field_label(self, field_id: str) -> str | None:
-        """Return the human-readable label for a field, or ``None``."""
-        return self._field_labels.get(field_id)
+    def _audit(
+        self,
+        record: MasterDataRecord,
+        event_type: str,
+        actor_id: str,
+        reason: str,
+        *,
+        before: MasterDataRecord | None,
+    ) -> MasterDataAudit:
+        return MasterDataAudit(
+            audit_id=f"MD-AUDIT-{uuid4().hex}",
+            catalog=record.catalog,
+            code=record.code,
+            revision=record.revision,
+            event_type=event_type,
+            actor_id=actor_id,
+            timestamp=record.updated_at,
+            before=_snapshot(before),
+            after=_snapshot(record),
+            reason=_required(reason, "reason"),
+        )
+
+
+def _required(value: str, field: str) -> str:
+    cleaned = value.strip()
+    if not cleaned:
+        raise ValueError(f"{field} is required")
+    return cleaned
+
+
+def _snapshot(record: MasterDataRecord | None) -> dict[str, object] | None:
+    if record is None:
+        return None
+    snapshot = asdict(record)
+    snapshot["catalog"] = record.catalog.value
+    snapshot["created_at"] = record.created_at.isoformat()
+    snapshot["updated_at"] = record.updated_at.isoformat()
+    return snapshot

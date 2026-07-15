@@ -27,11 +27,18 @@ class CandidateResponse(BaseModel):
     crop_file_id: str
 
 
+class MasterDataOptionResponse(BaseModel):
+    value: str
+    label: str
+
+
 class FieldRulesResponse(BaseModel):
     required: bool
     minimum_value: float | None
     maximum_value: float | None
     allowed_values: list[str]
+    master_data_source: str | None = None
+    master_data_options: list[MasterDataOptionResponse]
 
 
 class FieldResponse(BaseModel):

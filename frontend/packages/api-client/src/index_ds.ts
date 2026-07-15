@@ -4,6 +4,14 @@
 export type { ProblemDetails } from "./problem_ds.js";
 export { isProblemDetails } from "./problem_ds.js";
 export {
+  MasterDataApi,
+  type CreateMasterDataInput,
+  type MasterDataAudit,
+  type MasterDataCatalog,
+  type MasterDataRecord,
+  type UpdateMasterDataInput,
+} from "./master-data_ds.js";
+export {
   TemplateApi,
   type PreflightReport,
   type TemplateArtifact,

@@ -12,6 +12,7 @@ ROLE_PERMISSIONS: dict[Role, frozenset[Permission]] = {
             Permission.FORM_EDIT_DRAFT,
             Permission.REVIEW_ACQUIRE,
             Permission.EVIDENCE_IMAGE_READ,
+            Permission.MASTER_DATA_READ,
             Permission.TASK_READ,
         }
     ),
@@ -27,6 +28,7 @@ ROLE_PERMISSIONS: dict[Role, frozenset[Permission]] = {
             Permission.AUDIT_READ,
             Permission.EVIDENCE_IMAGE_READ,
             Permission.EVIDENCE_AUDIO_READ,
+            Permission.MASTER_DATA_READ,
             Permission.TASK_READ,
         }
     ),
@@ -37,6 +39,7 @@ ROLE_PERMISSIONS: dict[Role, frozenset[Permission]] = {
             Permission.EXPORT_CREATE,
             Permission.AUDIT_READ,
             Permission.EVIDENCE_IMAGE_READ,
+            Permission.MASTER_DATA_READ,
         }
     ),
     Role.AUDITOR: frozenset(
@@ -45,6 +48,7 @@ ROLE_PERMISSIONS: dict[Role, frozenset[Permission]] = {
             Permission.AUDIT_READ,
             Permission.EVIDENCE_IMAGE_READ,
             Permission.EVIDENCE_AUDIO_READ,
+            Permission.MASTER_DATA_READ,
             Permission.TASK_READ,
         }
     ),

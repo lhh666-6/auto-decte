@@ -9,6 +9,7 @@ from app.api.routers import classification_ds as classification
 from app.api.routers import health_ds as health
 from app.api.routers import identity_ds as identity
 from app.api.routers import imports_ds as imports
+from app.api.routers import master_data_ds as master_data
 from app.api.routers import review_ds as review
 from app.api.routers import tasks_ds as tasks
 from app.api.routers import templates_ds as templates
@@ -23,6 +24,7 @@ def create_app(services: Services) -> FastAPI:
     app.include_router(health.router)
     app.include_router(identity.router)
     app.include_router(imports.router)
+    app.include_router(master_data.router)
     app.include_router(classification.router)
     app.include_router(review.router)
     app.include_router(workbench.router)
