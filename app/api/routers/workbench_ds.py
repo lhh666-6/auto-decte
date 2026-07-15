@@ -11,6 +11,7 @@ from app.api.schemas.workbench import (
     CandidateResponse,
     EvidenceResponse,
     FieldResponse,
+    FieldRulesResponse,
     FormSummaryResponse,
     RecordVersionResponse,
     ReviewDraftResponse,
@@ -152,8 +153,8 @@ def build_workbench_response(
         )
     except ValueError:
         template = None
-    recognition_engines = (
-        {field.field_key: field.recognition_engine for field in template.fields}
+    template_fields = (
+        {field.field_key: field for field in template.fields}
         if template is not None
         else {}
     )
@@ -173,7 +174,37 @@ def build_workbench_response(
             FieldResponse(
                 field_id=field.field_id,
                 field_name=field.field_name,
-                recognition_engine=recognition_engines.get(field.field_name),
+                display_name=(
+                    template_fields[field.field_name].display_name
+                    if field.field_name in template_fields
+                    else None
+                ),
+                data_type=(
+                    template_fields[field.field_name].data_type
+                    if field.field_name in template_fields
+                    else None
+                ),
+                recognition_engine=(
+                    template_fields[field.field_name].recognition_engine
+                    if field.field_name in template_fields
+                    else None
+                ),
+                rules=(
+                    FieldRulesResponse(
+                        required=template_fields[field.field_name].rules.required,
+                        minimum_value=(
+                            template_fields[field.field_name].rules.minimum_value
+                        ),
+                        maximum_value=(
+                            template_fields[field.field_name].rules.maximum_value
+                        ),
+                        allowed_values=list(
+                            template_fields[field.field_name].rules.allowed_values
+                        ),
+                    )
+                    if field.field_name in template_fields
+                    else None
+                ),
                 source_region=field.source_region,
                 current_value=field.current_value,
                 current_value_source=(

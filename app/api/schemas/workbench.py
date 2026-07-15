@@ -27,10 +27,20 @@ class CandidateResponse(BaseModel):
     crop_file_id: str
 
 
+class FieldRulesResponse(BaseModel):
+    required: bool
+    minimum_value: float | None
+    maximum_value: float | None
+    allowed_values: list[str]
+
+
 class FieldResponse(BaseModel):
     field_id: str
     field_name: str
+    display_name: str | None
+    data_type: str | None
     recognition_engine: str | None
+    rules: FieldRulesResponse | None
     source_region: dict[str, int]
     current_value: Any
     current_value_source: str | None

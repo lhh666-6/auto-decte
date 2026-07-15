@@ -219,6 +219,11 @@ class TemplateVersion:
             raise ValueError("template version must pass preflight before publication")
         self.status = TemplateStatus.PUBLISHED
 
+    def retire(self) -> None:
+        if self.status not in {TemplateStatus.PUBLISHED, TemplateStatus.DEPRECATED}:
+            raise ValueError("only published or deprecated template versions can be retired")
+        self.status = TemplateStatus.RETIRED
+
     def _require_editable(self) -> None:
         immutable_statuses = {
             TemplateStatus.PUBLISHED,

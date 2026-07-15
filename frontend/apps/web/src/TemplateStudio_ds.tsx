@@ -53,8 +53,13 @@ export function TemplateStudio({ onBack }: Props) {
     setScreen((current) => nextScreen(current, action));
   }
 
-  async function createBlank(templateKey: string, pageSize: "A4" | "A5") {
-    const draft = await api.createDraft(templateKey, pageSize);
+  async function createBlank(
+    templateKey: string,
+    pageSize: "A4" | "A5",
+    displayName: string,
+    description: string,
+  ) {
+    const draft = await api.createDraft(templateKey, pageSize, displayName, description);
     navigate({ type: "draftCreated", versionId: draft.version_id });
   }
 
@@ -107,6 +112,8 @@ function TemplateEditor({
   const [error, setError] = useState<string | null>(null);
   const [selectedFieldKey, setSelectedFieldKey] = useState<string | null>(null);
   const [newField, setNewField] = useState<TemplateField>(INITIAL_FIELD);
+  const [metadataName, setMetadataName] = useState("");
+  const [metadataDescription, setMetadataDescription] = useState("");
   const [working, setWorking] = useState(false);
 
   useEffect(() => {
@@ -117,6 +124,8 @@ function TemplateEditor({
       .then((item) => {
         if (!active) return;
         setVersion(item);
+        setMetadataName(item.display_name);
+        setMetadataDescription(item.description);
         setSelectedFieldKey(item.fields[0]?.field_key ?? null);
       })
       .catch((cause: unknown) => active && setError(message(cause)));
@@ -222,11 +231,49 @@ function TemplateEditor({
     }
   }
 
+  async function saveMetadata() {
+    if (!version || !metadataName.trim()) return;
+    setWorking(true);
+    try {
+      setError(null);
+      const metadata = await api.updateMetadata(
+        version.template_key,
+        metadataName.trim(),
+        metadataDescription.trim(),
+      );
+      setVersion({
+        ...version,
+        display_name: metadata.display_name,
+        description: metadata.description,
+      });
+      setMetadataName(metadata.display_name);
+      setMetadataDescription(metadata.description);
+    } catch (cause) {
+      setError(message(cause));
+    } finally {
+      setWorking(false);
+    }
+  }
+
+  async function discardDraft() {
+    if (!version || !editable) return;
+    if (!window.confirm("确定放弃这个草稿吗？草稿字段和未发布修改将被永久删除。")) return;
+    setWorking(true);
+    try {
+      setError(null);
+      await api.discardDraft(version.version_id);
+      onBack();
+    } catch (cause) {
+      setError(message(cause));
+      setWorking(false);
+    }
+  }
+
   return (
     <main className="template-studio">
       <header className="studio-header">
         <button className="text-button" onClick={onBack}>返回模板库</button>
-        <div><span className="eyebrow">模板可视化设计器</span><h1>{version?.template_key ?? "正在加载草稿…"}</h1><p>字段坐标、识别策略和发布状态均由模板 API 持久化。</p></div>
+        <div><span className="eyebrow">模板可视化设计器</span><h1>{version?.display_name ?? "正在加载草稿…"}</h1><p>{version ? `${version.template_key} · ${version.description || "尚未填写用途说明"}` : "字段坐标、识别策略和发布状态均由模板 API 持久化。"}</p></div>
         <span className={`status-pill ${version?.status === "PUBLISHED" ? "success" : "warning"}`}>{version?.status ?? "加载中"}</span>
       </header>
       {error && <div className="error-banner studio-message" role="alert">{error}</div>}
@@ -234,6 +281,12 @@ function TemplateEditor({
         <section className="studio-grid">
           <aside className="studio-card studio-layers">
             <div><span className="eyebrow">组件与图层</span><h2>V{version.version} · {version.page.size}</h2><p className="muted">{version.fields.length} 个字段；发布终态保持只读。</p></div>
+            <section className="template-metadata-editor">
+              <h3>模板信息</h3>
+              <label>模板名称<input value={metadataName} maxLength={100} disabled={working} onChange={(event) => setMetadataName(event.target.value)} /></label>
+              <label>用途说明<textarea value={metadataDescription} maxLength={500} disabled={working} onChange={(event) => setMetadataDescription(event.target.value)} /></label>
+              <button className="button button-secondary" disabled={working || !metadataName.trim() || (metadataName === version.display_name && metadataDescription === version.description)} onClick={() => void saveMetadata()}>保存模板信息</button>
+            </section>
             <div className="locked-layers"><span>锁定组件</span><span>QR</span><span>SHEET</span><span>ArUco 10–13</span></div>
             <section className="layer-list" aria-label="字段图层">
               <h3>字段图层</h3>
@@ -250,6 +303,7 @@ function TemplateEditor({
             <div className="studio-lifecycle-actions">
               <button className="button button-secondary" disabled={!editable || working} onClick={() => void preflight()}>运行发布预检</button>
               <button className="button button-primary" disabled={version.status !== "READY_TO_PUBLISH" || working} onClick={() => void publish()}>发布模板</button>
+              <button className="button button-danger-secondary" disabled={!editable || working} onClick={() => void discardDraft()}>放弃草稿</button>
             </div>
           </aside>
           <TemplateCanvasEditor

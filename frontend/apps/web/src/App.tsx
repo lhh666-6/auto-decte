@@ -11,7 +11,11 @@ import {
 import { WebNotificationPort } from "@form-detection/shell-ports";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { buildConfirmValues, selectReviewEvidence } from "./review-model";
+import {
+  buildConfirmValues,
+  reviewValueIssue,
+  selectReviewEvidence,
+} from "./review-model";
 import { TemplateStudio } from "./TemplateStudio_ds";
 
 const notificationPort = new WebNotificationPort();
@@ -20,6 +24,17 @@ type MobilePane = "evidence" | "fields";
 type Feature = "review" | "templates" | "master-data";
 type QueueKey = "classification" | "review" | "exceptions" | "exportable";
 type ReviewAction = "return" | "void";
+
+interface DuplicateImportInfo {
+  code: "DUPLICATE_EVIDENCE";
+  detail: string;
+  existing_form: { form_id: string; review_status: string };
+  actions: {
+    can_open: boolean;
+    can_reopen_for_test: boolean;
+    can_purge_for_test: boolean;
+  };
+}
 
 const QUEUES: Array<{ key: QueueKey; label: string; warning?: boolean }> = [
   { key: "classification", label: "待分类" },
@@ -43,11 +58,13 @@ export function App() {
   const [history, setHistory] = useState<ReviewHistory | null>(null);
   const [selectedFieldId, setSelectedFieldId] = useState<string | null>(null);
   const [edits, setEdits] = useState<Record<string, unknown>>({});
+  const [ruleFailures, setRuleFailures] = useState<Record<string, string>>({});
   const [lease, setLease] = useState<ReviewLease | null>(null);
   const [imageSize, setImageSize] = useState({ width: 1, height: 1 });
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [duplicateImport, setDuplicateImport] = useState<DuplicateImportInfo | null>(null);
   const [mobilePane, setMobilePane] = useState<MobilePane>("evidence");
   const [feature, setFeature] = useState<Feature>("review");
   const [selectedQueue, setSelectedQueue] = useState<QueueKey>("review");
@@ -69,7 +86,11 @@ export function App() {
   const warningCount = detail?.fields.filter((field) => {
     const best = field.candidates[0];
     const value = fieldValue(detail, field, edits);
-    return !value || (best !== undefined && best.confidence < 0.8);
+    return Boolean(ruleFailures[field.field_name] ?? reviewValueIssue(
+      value, best?.confidence,
+      Object.hasOwn(edits, field.field_id) || Object.hasOwn(edits, field.field_name),
+      field.data_type, field.rules,
+    ));
   }).length ?? 0;
 
   const refreshQueues = useCallback(async () => {
@@ -98,6 +119,7 @@ export function App() {
       setDetail(loadedDetail);
       setHistory(loadedHistory);
       setEdits(loadedDetail.draft?.values ?? {});
+      setRuleFailures({});
       setSelectedFieldId(loadedDetail.fields[0]?.field_id ?? null);
       setLease(null);
       setClassificationTask(null);
@@ -222,6 +244,7 @@ export function App() {
         setFormIdInput(result.next.workbench.form.form_id);
         setLease(result.next.lease);
         setEdits(result.next.workbench.draft?.values ?? {});
+        setRuleFailures({});
         setSelectedFieldId(result.next.workbench.fields[0]?.field_id ?? null);
         setHistory(
           await api.getHistory(result.next.workbench.form.form_id).catch(() => null),
@@ -231,12 +254,20 @@ export function App() {
         setHistory(null);
         setLease(null);
         setEdits({});
+        setRuleFailures({});
         setSelectedFieldId(null);
         setFormIdInput("");
       }
       await refreshQueues();
     } catch (cause) {
-      setError(toMessage(cause));
+      if (cause instanceof ApiRequestError && cause.code === "REVIEW_RULE_BLOCKED") {
+        setRuleFailures(Object.fromEntries(
+          cause.failures.map((failure) => [failure.field_key, failure.message]),
+        ));
+        setError("审核规则拦截：请修正电子表格中标红的字段。");
+      } else {
+        setError(toMessage(cause));
+      }
     } finally {
       setLoading(false);
     }
@@ -308,6 +339,7 @@ export function App() {
       setHistory(null);
       setLease(null);
       setEdits({});
+      setRuleFailures({});
       setFormIdInput("");
       await refreshQueues();
     } catch (cause) {
@@ -358,6 +390,7 @@ export function App() {
     try {
       setUploading(true);
       setError(null);
+      setDuplicateImport(null);
       const response = await fetch("/api/v1/imports", {
         method: "POST",
         headers: {
@@ -366,7 +399,25 @@ export function App() {
         },
         body: file,
       });
-      const payload = (await response.json()) as { form_id?: string; code?: string; detail?: string };
+      const payload = (await response.json()) as {
+        form_id?: string;
+        code?: string;
+        detail?: string;
+        existing_form?: DuplicateImportInfo["existing_form"];
+        actions?: DuplicateImportInfo["actions"];
+      };
+      if (
+        response.status === 409 && payload.code === "DUPLICATE_EVIDENCE" &&
+        payload.existing_form && payload.actions
+      ) {
+        setDuplicateImport({
+          code: "DUPLICATE_EVIDENCE",
+          detail: payload.detail ?? "该图片已经导入。",
+          existing_form: payload.existing_form,
+          actions: payload.actions,
+        });
+        return;
+      }
       if (!response.ok || !payload.form_id) {
         throw new Error(payload.detail ?? payload.code ?? "图片导入失败。");
       }
@@ -378,6 +429,52 @@ export function App() {
     }
   }
 
+  async function reopenDuplicateForTest() {
+    if (!duplicateImport) return;
+    try {
+      setLoading(true);
+      setError(null);
+      const response = await fetch(
+        `/api/v1/imports/existing/${encodeURIComponent(duplicateImport.existing_form.form_id)}/reopen-test`,
+        { method: "POST" },
+      );
+      if (!response.ok) throw new Error(await responseDetail(response, "重新启用测试表单失败。"));
+      const formId = duplicateImport.existing_form.form_id;
+      setDuplicateImport(null);
+      await loadWorkbenchById(formId);
+    } catch (cause) {
+      setError(toMessage(cause));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function purgeDuplicateForTest() {
+    if (!duplicateImport) return;
+    const formId = duplicateImport.existing_form.form_id;
+    if (!window.confirm(`彻底清除测试表单 ${formId} 及其全部证据？此操作不可恢复。`)) return;
+    try {
+      setLoading(true);
+      setError(null);
+      const response = await fetch(`/api/v1/imports/existing/${encodeURIComponent(formId)}`, {
+        method: "DELETE",
+      });
+      if (!response.ok) throw new Error(await responseDetail(response, "清除测试表单失败。"));
+      setDuplicateImport(null);
+      if (detail?.form.form_id === formId) {
+        setDetail(null);
+        setHistory(null);
+        setEdits({});
+        setFormIdInput("");
+      }
+      await refreshQueues();
+    } catch (cause) {
+      setError(toMessage(cause));
+    } finally {
+      setLoading(false);
+    }
+  }
+
   function selectField(field: ReviewField) {
     setSelectedFieldId(field.field_id);
     setMobilePane("fields");
@@ -385,6 +482,23 @@ export function App() {
 
   function useCandidate(fieldId: string, candidate: RecognitionCandidate) {
     setEdits((current) => ({ ...current, [fieldId]: candidate.candidate_value }));
+    const field = detail?.fields.find((item) => item.field_id === fieldId);
+    if (field) clearRuleFailure(field.field_name);
+  }
+
+  function editField(fieldId: string, value: string) {
+    setEdits((current) => ({ ...current, [fieldId]: value }));
+    const field = detail?.fields.find((item) => item.field_id === fieldId);
+    if (field) clearRuleFailure(field.field_name);
+  }
+
+  function clearRuleFailure(fieldName: string) {
+    setRuleFailures((current) => {
+      if (!Object.hasOwn(current, fieldName)) return current;
+      const next = { ...current };
+      delete next[fieldName];
+      return next;
+    });
   }
 
   if (feature === "templates") return <TemplateStudio onBack={() => setFeature("review")} />;
@@ -454,7 +568,11 @@ export function App() {
                 type="file"
                 accept="image/png,image/jpeg,image/tiff"
                 disabled={uploading}
-                onChange={(event) => void importImage(event.target.files?.[0] ?? null)}
+                onChange={(event) => {
+                  const file = event.target.files?.[0] ?? null;
+                  event.target.value = "";
+                  void importImage(file);
+                }}
               />
             </label>
           </form>
@@ -473,6 +591,29 @@ export function App() {
         </section>
 
         {error && <div className="error-banner" role="alert">{error}</div>}
+        {duplicateImport && (
+          <section className="duplicate-import-card" role="alert">
+            <div>
+              <strong>图片已经导入</strong>
+              <p>{duplicateImport.detail}</p>
+              <span>
+                表单 {duplicateImport.existing_form.form_id} · {reviewStatusLabel(duplicateImport.existing_form.review_status)}
+              </span>
+              {duplicateImport.existing_form.review_status === "RECAPTURE_REQUIRED" && (
+                <em>该表单已退回，重新采集必须上传内容不同的新照片。</em>
+              )}
+            </div>
+            <div className="duplicate-import-actions">
+              {duplicateImport.actions.can_open && <button type="button" className="button button-secondary" onClick={() => {
+                const formId = duplicateImport.existing_form.form_id;
+                setDuplicateImport(null);
+                void loadWorkbenchById(formId);
+              }}>打开已有表单</button>}
+              {duplicateImport.actions.can_reopen_for_test && <button type="button" className="button button-primary" disabled={loading} onClick={() => void reopenDuplicateForTest()}>重新用于本地测试</button>}
+              {duplicateImport.actions.can_purge_for_test && <button type="button" className="button button-danger" disabled={loading} onClick={() => void purgeDuplicateForTest()}>彻底清除测试数据</button>}
+            </div>
+          </section>
+        )}
 
         <section className="queue-panel" aria-label="当前审核队列">
           <div>
@@ -556,9 +697,10 @@ export function App() {
                 fields={detail?.fields ?? []}
                 edits={edits}
                 recordValues={detail?.current_record?.values ?? {}}
+                ruleFailures={ruleFailures}
                 selectedFieldId={selectedFieldId}
                 onSelectField={selectField}
-                onEdit={(fieldId, value) => setEdits((current) => ({ ...current, [fieldId]: value }))}
+                onEdit={editField}
               />
             </section>
 
@@ -566,7 +708,7 @@ export function App() {
           <div className="drawer-heading">
             <div>
               <span className="eyebrow">规则与建议</span>
-              <strong>{selectedField ? selectedField.field_name : "选择一个字段查看详情"}</strong>
+              <strong>{selectedField ? selectedField.display_name ?? selectedField.field_name : "选择一个字段查看详情"}</strong>
             </div>
             <span className={warningCount > 0 ? "status-pill warning" : "status-pill success"}>
               {warningCount > 0 ? `${warningCount} 项待确认` : "无待确认项"}
@@ -623,7 +765,8 @@ export function App() {
               <button
                 type="button"
                 className="button button-primary"
-                disabled={!detail || !lease || loading || selectedQueue !== "review"}
+                disabled={!detail || !lease || loading || selectedQueue !== "review" || warningCount > 0}
+                title={warningCount > 0 ? "请先处理所有待确认字段" : undefined}
                 onClick={() => void confirmAndNext()}
               >
                 确认并下一张
@@ -791,6 +934,7 @@ function FieldTable({
   fields,
   edits,
   recordValues,
+  ruleFailures,
   selectedFieldId,
   onSelectField,
   onEdit,
@@ -798,6 +942,7 @@ function FieldTable({
   fields: ReviewField[];
   edits: Record<string, unknown>;
   recordValues: Record<string, unknown>;
+  ruleFailures: Record<string, string>;
   selectedFieldId: string | null;
   onSelectField: (field: ReviewField) => void;
   onEdit: (fieldId: string, value: string) => void;
@@ -810,7 +955,12 @@ function FieldTable({
         {fields.length === 0 ? <div className="table-empty">尚未加载字段</div> : fields.map((field) => {
           const candidate = field.candidates[0];
           const displayValue = valueForField(field, edits, recordValues);
-          const hasWarning = !displayValue || (candidate !== undefined && candidate.confidence < 0.8);
+          const issue = ruleFailures[field.field_name] ?? reviewValueIssue(
+            displayValue, candidate?.confidence,
+            Object.hasOwn(edits, field.field_id) || Object.hasOwn(edits, field.field_name),
+            field.data_type, field.rules,
+          );
+          const hasWarning = issue !== null;
           return (
             <div
               className={`field-row ${field.field_id === selectedFieldId ? "selected" : ""} ${hasWarning ? "has-warning" : ""}`}
@@ -822,13 +972,13 @@ function FieldTable({
                 if (event.key === "Enter" || event.key === " ") onSelectField(field);
               }}
             >
-              <span className="field-name">{field.field_name}</span>
+              <span className="field-name"><strong>{field.display_name ?? field.field_name}</strong>{field.display_name && <small>{field.field_name}</small>}</span>
               <span className="candidate-value">
                 {candidate ? stringValue(candidate.candidate_value) : field.recognition_engine === "manual" ? "人工录入" : "—"}
               </span>
               <span>{candidate ? `${Math.round(candidate.confidence * 100)}%` : "—"}</span>
-              <span onClick={(event) => event.stopPropagation()}><input aria-label={`${field.field_name} 确认值`} value={stringValue(displayValue)} onChange={(event) => onEdit(field.field_id, event.target.value)} /></span>
-              <span>{hasWarning ? <em className="inline-warning">待确认</em> : <em className="inline-success">已就绪</em>}</span>
+              <span onClick={(event) => event.stopPropagation()}>{field.rules?.allowed_values.length ? <select aria-label={`${field.display_name ?? field.field_name} 确认值`} value={stringValue(displayValue)} onChange={(event) => onEdit(field.field_id, event.target.value)}><option value="">请选择</option>{field.rules.allowed_values.map((value) => <option key={value} value={value}>{value}</option>)}</select> : <input aria-label={`${field.display_name ?? field.field_name} 确认值`} value={stringValue(displayValue)} onChange={(event) => onEdit(field.field_id, event.target.value)} />}</span>
+              <span>{hasWarning ? <><em className="inline-warning">待确认</em><small className="field-rule-message">{issue}</small></> : <em className="inline-success">已就绪</em>}</span>
             </div>
           );
         })}
@@ -860,4 +1010,27 @@ function valueForField(
 function toMessage(cause: unknown): string {
   if (cause instanceof ApiRequestError) return `${cause.code}：${cause.message}`;
   return cause instanceof Error ? cause.message : "请求无法完成。";
+}
+
+async function responseDetail(response: Response, fallback: string): Promise<string> {
+  try {
+    const payload = await response.json() as {
+      code?: string;
+      detail?: string | { code?: string };
+    };
+    if (typeof payload.detail === "string") return payload.detail;
+    return payload.detail?.code ?? payload.code ?? fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function reviewStatusLabel(status: string): string {
+  return ({
+    NEEDS_CLASSIFICATION: "待人工分类",
+    CLASSIFIED: "待复核",
+    RECAPTURE_REQUIRED: "已退回，需重新采集",
+    VOIDED: "已作废",
+    CONFIRMED: "已确认",
+  } as Record<string, string>)[status] ?? status;
 }

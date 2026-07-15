@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.adapters.database.models import (
     TemplateArtifactRow,
     TemplateFieldRow,
+    TemplateMetadataRow,
     TemplateVersionRow,
 )
 from app.domain.templates_ds import (
@@ -41,6 +42,14 @@ class SqlAlchemyTemplateRepository:
 
     def add_version(self, version: TemplateVersion) -> None:
         with self._transaction() as session:
+            if session.get(TemplateMetadataRow, version.template_key) is None:
+                session.add(
+                    TemplateMetadataRow(
+                        template_key=version.template_key,
+                        display_name=version.template_key,
+                        description="",
+                    )
+                )
             session.add(
                 TemplateVersionRow(
                     version_id=version.version_id,
@@ -183,6 +192,47 @@ class SqlAlchemyTemplateRepository:
                     TemplateArtifactRow.download_name.in_(download_names),
                 )
             )
+
+    def get_template_metadata(self, template_key: str) -> tuple[str, str] | None:
+        with self._read_session() as session:
+            row = session.get(TemplateMetadataRow, template_key)
+            if row is None:
+                return None
+            return row.display_name, row.description
+
+    def update_template_metadata(
+        self, template_key: str, display_name: str, description: str
+    ) -> None:
+        with self._transaction() as session:
+            row = session.get(TemplateMetadataRow, template_key)
+            if row is None:
+                raise KeyError(f"Unknown template: {template_key}")
+            row.display_name = display_name
+            row.description = description
+
+    def delete_version(self, version_id: str) -> None:
+        with self._transaction() as session:
+            row = session.get(TemplateVersionRow, version_id)
+            if row is None:
+                raise KeyError(f"Unknown template version: {version_id}")
+            template_key = row.template_key
+            session.execute(
+                delete(TemplateArtifactRow).where(TemplateArtifactRow.version_id == version_id)
+            )
+            session.execute(
+                delete(TemplateFieldRow).where(TemplateFieldRow.version_id == version_id)
+            )
+            session.delete(row)
+            session.flush()
+            remaining = session.scalar(
+                select(TemplateVersionRow.version_id)
+                .where(TemplateVersionRow.template_key == template_key)
+                .limit(1)
+            )
+            if remaining is None:
+                metadata = session.get(TemplateMetadataRow, template_key)
+                if metadata is not None:
+                    session.delete(metadata)
 
     def get_artifact(self, artifact_id: str) -> TemplateArtifact | None:
         with self._read_session() as session:

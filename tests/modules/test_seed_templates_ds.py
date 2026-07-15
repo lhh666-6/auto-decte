@@ -111,6 +111,20 @@ def test_seed_install_repairs_missing_base_print_artifacts(tmp_path: Path) -> No
     assert all(Path(artifact.internal_uri).is_file() for artifact in repaired)
 
 
+def test_seed_reinstall_preserves_an_intentional_retired_lifecycle(tmp_path: Path) -> None:
+    repository = _repository(tmp_path)
+    renderer = TemplatePrintRenderer(tmp_path / "evidence")
+    install_legacy_payroll_seed_templates(repository, renderer)
+    version = repository.list_versions("PAYROLL_HOURLY")[0]
+    version.retire()
+    repository.replace_version(version)
+
+    result = install_legacy_payroll_seed_templates(repository, renderer)
+
+    assert "PAYROLL_HOURLY" in result.existing
+    assert repository.list_versions("PAYROLL_HOURLY")[0].status.value == "RETIRED"
+
+
 def test_application_composition_can_install_seeds_into_a_new_database(tmp_path: Path) -> None:
     first = build_services(Settings(data_root=tmp_path), install_seed_templates=True)
     second = build_services(Settings(data_root=tmp_path), install_seed_templates=True)

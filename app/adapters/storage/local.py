@@ -40,3 +40,11 @@ class LocalEvidenceStorage:
             for block in iter(lambda: stream.read(1024 * 1024), b""):
                 digest.update(block)
         return digest.hexdigest()
+
+    def delete_uri(self, uri: str) -> None:
+        """Delete a stored test artifact while preventing paths outside the evidence root."""
+        root = self._root.resolve()
+        target = (root / Path(uri)).resolve()
+        if not target.is_relative_to(root):
+            raise ValueError("Evidence URI escapes the configured storage root")
+        target.unlink(missing_ok=True)

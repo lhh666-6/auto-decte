@@ -20,6 +20,12 @@ from app.domain.templates_ds import (
 )
 
 _WORKBOOK = "企业工资记录.xlsx"
+_SEED_METADATA = {
+    "PAYROLL_HOURLY": ("计时考核单", "适用于按工时统计的生产岗位"),
+    "PAYROLL_STANDARD_PIECE": ("标准计件单", "适用于标准计件生产记录"),
+    "PAYROLL_FIXED_PRODUCTION_GRID": ("固定生产明细单", "适用于固定生产明细岗位"),
+    "PAYROLL_EQUIPMENT_PROCESS": ("设备工序单", "适用于设备与工序计件岗位"),
+}
 _COMMON_FIELDS = (
     ("work_date", "日期", "text", "text_box", True),
     ("shift", "班次", "text", "text_box", True),
@@ -57,6 +63,10 @@ class SeedTemplateRepository(Protocol):
     def list_artifacts(self, version_id: str) -> list[TemplateArtifact]: ...
 
     def remove_artifacts(self, version_id: str, download_names: set[str]) -> None: ...
+
+    def update_template_metadata(
+        self, template_key: str, display_name: str, description: str
+    ) -> None: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -145,6 +155,10 @@ def install_legacy_payroll_seed_templates(
         current = current_versions[expected.template_key]
         if current is None:
             repository.add_version(expected)
+            display_name, description = _SEED_METADATA[expected.template_key]
+            repository.update_template_metadata(
+                expected.template_key, display_name, description
+            )
             current = expected
             installed.append(expected.template_key)
         else:
@@ -256,7 +270,6 @@ def _content_fingerprint(version: TemplateVersion) -> str:
     value = {
         "template_key": version.template_key,
         "version": version.version,
-        "status": version.status.value,
         "page": asdict(version.page),
         "parent_version_id": version.parent_version_id,
         "fields": [asdict(field) for field in version.fields],

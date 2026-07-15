@@ -16,6 +16,7 @@ class Permission(StrEnum):
     FORM_READ = "form.read"
     FORM_IMPORT = "form.import"
     FORM_CLASSIFY = "form.classify"
+    FORM_TEST_ADMIN = "form.test_admin"
     FORM_EDIT_DRAFT = "form.edit_draft"
     REVIEW_ACQUIRE = "review.acquire"
     REVIEW_CONFIRM = "review.confirm"

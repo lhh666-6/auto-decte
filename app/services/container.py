@@ -57,6 +57,7 @@ class Services:
     review_facade: ReviewFacade
     task_store: SqliteTaskStore
     tasks: TaskService
+    evidence_storage: LocalEvidenceStorage
 
 
 def build_services(settings: Settings, *, install_seed_templates: bool = False) -> Services:
@@ -70,6 +71,7 @@ def build_services(settings: Settings, *, install_seed_templates: bool = False) 
         else:
             ensure_auto_created_schema_compatibility(engine)
             Base.metadata.create_all(engine)
+            ensure_auto_created_schema_compatibility(engine)
     else:
         verify_database_revision(engine)
     repository = SqlAlchemyFormRepository(engine)
@@ -116,6 +118,7 @@ def build_services(settings: Settings, *, install_seed_templates: bool = False) 
         ),
         task_store=task_store,
         tasks=TaskService(task_store),
+        evidence_storage=storage,
     )
     if install_seed_templates:
         install_legacy_payroll_seed_templates(template_repository, template_renderer)

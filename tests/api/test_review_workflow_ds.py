@@ -263,6 +263,32 @@ def test_confirm_and_claim_next_rolls_back_when_template_rules_block_values(
     assert SqlAlchemyReviewLeaseRepository(services.engine).get("FORM-2") is None
 
 
+def test_confirm_allows_an_optional_numeric_field_to_remain_blank(tmp_path: Path) -> None:
+    client, services = _client(tmp_path)
+    lease = _lease(client)
+
+    response = client.post(
+        "/api/v1/forms/FORM-1/confirm-and-claim-next",
+        headers=_headers(),
+        json={
+            "expected_version": 0,
+            "lease_token": lease["lease_token"],
+            "values": {
+                "FORM-1:work_date": "2026-07-15",
+                "FORM-1:quantity": "",
+            },
+            "reason": "人工复核确认",
+            "evidence_ids": [],
+            "queue_key": "review",
+        },
+    )
+
+    assert response.status_code == 200
+    assert services.repository.list_record_versions("FORM-1")[-1].values[
+        "FORM-1:quantity"
+    ] == ""
+
+
 def test_manual_classification_lists_published_options_and_queues_recognition(
     tmp_path: Path,
 ) -> None:

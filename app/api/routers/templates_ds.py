@@ -29,6 +29,13 @@ router = APIRouter(prefix="/api/v1", tags=["templates"])
 class CreateTemplateRequest(BaseModel):
     template_key: str
     page_size: str = "A4"
+    display_name: str | None = None
+    description: str = ""
+
+
+class TemplateMetadataRequest(BaseModel):
+    display_name: str
+    description: str = ""
 
 
 class RegionRequest(BaseModel):
@@ -87,8 +94,63 @@ def create_template(
 ) -> dict[str, object]:
     _require(_actor(request, services), Permission.TEMPLATE_CREATE_VERSION)
     page = _page_spec(body.page_size)
-    version = services.templates.create_draft(body.template_key, page)
-    return _version_payload(version, ())
+    try:
+        version = services.templates.create_draft(
+            body.template_key, page, body.display_name, body.description
+        )
+    except ValueError as error:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "INVALID_TEMPLATE", "detail": str(error)},
+        ) from error
+    return _version_payload(version, (), services.templates.get_metadata(version.template_key))
+
+
+@router.patch("/templates/{template_key}")
+def update_template_metadata(
+    template_key: str,
+    body: TemplateMetadataRequest,
+    request: Request,
+    services: Services = Depends(get_services),  # noqa: B008
+) -> dict[str, str]:
+    _require(_actor(request, services), Permission.TEMPLATE_CREATE_VERSION)
+    try:
+        display_name, description = services.templates.update_metadata(
+            template_key, body.display_name, body.description
+        )
+    except KeyError as error:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "TEMPLATE_NOT_FOUND", "detail": str(error)},
+        ) from error
+    except ValueError as error:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "INVALID_TEMPLATE_METADATA", "detail": str(error)},
+        ) from error
+    return {
+        "template_key": template_key,
+        "display_name": display_name,
+        "description": description,
+    }
+
+
+@router.post("/templates/{template_key}/retire", status_code=status.HTTP_204_NO_CONTENT)
+def retire_template(
+    template_key: str,
+    request: Request,
+    services: Services = Depends(get_services),  # noqa: B008
+) -> None:
+    _require(_actor(request, services), Permission.TEMPLATE_CREATE_VERSION)
+    try:
+        services.templates.retire_template(template_key)
+    except KeyError as error:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "TEMPLATE_NOT_FOUND", "detail": str(error)},
+        ) from error
+    except ValueError as error:
+        raise _invalid_lifecycle(error) from error
 
 
 @router.post("/template-versions/{version_id}/fields")
@@ -106,7 +168,9 @@ def add_field(
         raise _version_not_found(error) from error
     except ValueError as error:
         raise _invalid_field(error) from error
-    return _version_payload(updated, ())
+    return _version_payload(
+        updated, (), services.templates.get_metadata(updated.template_key)
+    )
 
 
 @router.post("/template-versions/{version_id}/preflight")
@@ -143,7 +207,9 @@ def publish(
     artifacts = services.template_renderer.render(version)
     for artifact in artifacts:
         services.template_repository.add_artifact(artifact)
-    return _version_payload(version, artifacts)
+    return _version_payload(
+        version, artifacts, services.templates.get_metadata(version.template_key)
+    )
 
 
 @router.get("/templates")
@@ -169,7 +235,13 @@ def list_templates(
         ]
         selected = max(published or candidates, key=lambda item: (item.version, item.version_id))
         active_draft = max(editable, key=lambda item: (item.version, item.version_id), default=None)
-        summaries.append(_library_item_payload(selected, active_draft))
+        summaries.append(
+            _library_item_payload(
+                selected,
+                active_draft,
+                services.templates.get_metadata(template_key),
+            )
+        )
     return summaries
 
 
@@ -184,7 +256,11 @@ def get_template_version(
         version = services.templates.get(version_id)
     except KeyError as error:
         raise _version_not_found(error) from error
-    return _version_payload(version, services.template_repository.list_artifacts(version_id))
+    return _version_payload(
+        version,
+        services.template_repository.list_artifacts(version_id),
+        services.templates.get_metadata(version.template_key),
+    )
 
 
 @router.post("/template-versions/{version_id}/clone", status_code=status.HTTP_201_CREATED)
@@ -200,7 +276,26 @@ def clone_template_version(
         raise _version_not_found(error) from error
     except ValueError as error:
         raise _invalid_lifecycle(error) from error
-    return _version_payload(version, ())
+    return _version_payload(
+        version, (), services.templates.get_metadata(version.template_key)
+    )
+
+
+@router.delete(
+    "/template-versions/{version_id}", status_code=status.HTTP_204_NO_CONTENT
+)
+def discard_template_draft(
+    version_id: str,
+    request: Request,
+    services: Services = Depends(get_services),  # noqa: B008
+) -> None:
+    _require(_actor(request, services), Permission.TEMPLATE_CREATE_VERSION)
+    try:
+        services.templates.discard_draft(version_id)
+    except KeyError as error:
+        raise _version_not_found(error) from error
+    except ValueError as error:
+        raise _invalid_lifecycle(error) from error
 
 
 @router.patch("/template-versions/{version_id}/fields/{field_key}")
@@ -226,7 +321,9 @@ def replace_field(
         if "cannot be mutated" in str(error):
             raise _invalid_lifecycle(error) from error
         raise _invalid_field(error) from error
-    return _version_payload(updated, ())
+    return _version_payload(
+        updated, (), services.templates.get_metadata(updated.template_key)
+    )
 
 
 @router.delete("/template-versions/{version_id}/fields/{field_key}")
@@ -249,7 +346,9 @@ def delete_field(
         if "cannot be mutated" in str(error):
             raise _invalid_lifecycle(error) from error
         raise _invalid_field(error) from error
-    return _version_payload(updated, ())
+    return _version_payload(
+        updated, (), services.templates.get_metadata(updated.template_key)
+    )
 
 
 @router.get("/template-artifacts/{artifact_id}/content")
@@ -347,10 +446,14 @@ def _preflight_payload(report: PreflightReport, version: TemplateVersion) -> dic
 def _version_payload(
     version: TemplateVersion,
     artifacts: tuple[TemplateArtifact, ...] | list[TemplateArtifact],
+    metadata: tuple[str, str] | None = None,
 ) -> dict[str, object]:
+    display_name, description = metadata or (version.template_key, "")
     return {
         "version_id": version.version_id,
         "template_key": version.template_key,
+        "display_name": display_name,
+        "description": description,
         "version": version.version,
         "status": version.status.value,
         "parent_version_id": version.parent_version_id,
@@ -403,10 +506,15 @@ def _version_payload(
 
 
 def _library_item_payload(
-    version: TemplateVersion, active_draft: TemplateVersion | None = None
+    version: TemplateVersion,
+    active_draft: TemplateVersion | None = None,
+    metadata: tuple[str, str] | None = None,
 ) -> dict[str, object]:
+    display_name, description = metadata or (version.template_key, "")
     return {
         "template_key": version.template_key,
+        "display_name": display_name,
+        "description": description,
         "version_id": version.version_id,
         "current_published_version": (
             version.version if version.status.value == "PUBLISHED" else None

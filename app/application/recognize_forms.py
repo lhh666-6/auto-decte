@@ -146,7 +146,11 @@ class RecognizeForms:
             uri=stored.uri,
             sha256=stored.sha256,
         )
-        self._evidence.add_evidence(evidence)
+        try:
+            self._evidence.add_evidence(evidence)
+        except Exception:
+            self._storage.delete_uri(stored.uri)
+            raise
         self._audits.add_audit_event(
             AuditEvent(
                 event_id=f"EVENT-{uuid4().hex}",
@@ -205,7 +209,11 @@ class RecognizeForms:
                 uri=stored.uri,
                 sha256=stored.sha256,
             )
-            self._evidence.add_evidence(evidence)
+            try:
+                self._evidence.add_evidence(evidence)
+            except Exception:
+                self._storage.delete_uri(stored.uri)
+                raise
             evidence_by_key[field_key] = evidence
             candidate = self._recognize_template_crop(definition.recognition_engine, crop)
             if candidate is not None:

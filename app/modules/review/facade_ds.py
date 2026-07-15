@@ -437,7 +437,7 @@ class ReviewFacade:
                     ReviewRuleFailure("REQUIRED", definition.field_key, "必填字段缺失")
                 )
                 continue
-            if value is None:
+            if value is None or (isinstance(value, str) and not value.strip()):
                 continue
             if rules.allowed_values and str(value) not in rules.allowed_values:
                 failures.append(

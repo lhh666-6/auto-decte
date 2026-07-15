@@ -4,6 +4,7 @@ from fastapi.testclient import TestClient
 
 from app.api.main import create_app
 from app.domain.models import FormField, RecognitionAttempt
+from app.domain.templates_ds import FieldDefinition, FieldRules, PageSpec, Rect, TemplateVersion
 from app.services.container import Services, build_services
 from config.settings import Settings
 
@@ -55,7 +56,10 @@ def test_form_workbench_detail_exposes_fields_candidates_and_safe_evidence_url(
         {
             "field_id": "FIELD-1",
             "field_name": "total_quantity",
+            "display_name": None,
+            "data_type": None,
             "recognition_engine": None,
+            "rules": None,
             "source_region": {"x": 10, "y": 20, "width": 80, "height": 30},
             "current_value": 8,
             "current_value_source": None,
@@ -76,6 +80,37 @@ def test_form_workbench_detail_exposes_fields_candidates_and_safe_evidence_url(
         f"/evidence/{payload['evidence'][0]['file_id']}"
     )
     assert "uri" not in payload["evidence"][0]
+
+
+def test_workbench_exposes_template_rules_for_frontend_validation(tmp_path: Path) -> None:
+    client, services = build_client(tmp_path)
+    page = PageSpec.a4_portrait()
+    template = TemplateVersion.draft("TPL-T1", "T1", 1, page)
+    template.add_field(
+        FieldDefinition(
+            field_key="total_quantity",
+            display_name="总数量",
+            data_type="integer",
+            input_type="digit_boxes",
+            page=page,
+            region=Rect(0.1, 0.1, 0.2, 0.05),
+            rules=FieldRules(required=True, minimum_value=0, maximum_value=100),
+        )
+    )
+    template.mark_ready_to_publish()
+    template.publish()
+    services.template_repository.add_version(template)
+
+    field = client.get("/api/v1/forms/FORM-1", headers=reviewer_headers()).json()["fields"][0]
+
+    assert field["display_name"] == "总数量"
+    assert field["data_type"] == "integer"
+    assert field["rules"] == {
+        "required": True,
+        "minimum_value": 0.0,
+        "maximum_value": 100.0,
+        "allowed_values": [],
+    }
 
 
 def test_reviewer_reads_form_evidence_through_controlled_endpoint(tmp_path: Path) -> None:

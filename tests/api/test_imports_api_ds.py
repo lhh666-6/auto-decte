@@ -1,7 +1,9 @@
+from hashlib import sha256
 from pathlib import Path
 
 import cv2
 import numpy as np
+import pytest
 from fastapi.testclient import TestClient
 
 from app.api.main import create_app
@@ -72,6 +74,105 @@ def test_repeated_idempotency_key_returns_the_original_import_task(tmp_path: Pat
     assert second.status_code == 202
     assert second.json()["task_id"] == first.json()["task_id"]
     assert second.json()["form_id"] == first.json()["form_id"]
+
+
+def test_duplicate_image_returns_existing_form_without_creating_failed_task(
+    tmp_path: Path,
+) -> None:
+    services = build_services(Settings(data_root=tmp_path, allow_header_identity=True))
+    client = TestClient(create_app(services), raise_server_exceptions=False)
+    content = _png_bytes(np.full((201, 201), 230, dtype=np.uint8))
+    base_headers = {
+        "X-Actor-ID": "operator-a",
+        "X-Roles": "OPERATOR",
+        "Content-Type": "image/png",
+    }
+    first = client.post(
+        "/api/v1/imports",
+        headers={**base_headers, "Idempotency-Key": "first-import"},
+        content=content,
+    )
+    second = client.post(
+        "/api/v1/imports",
+        headers={**base_headers, "Idempotency-Key": "second-import"},
+        content=content,
+    )
+
+    assert first.status_code == 202
+    assert second.status_code == 409
+    payload = second.json()
+    assert payload["code"] == "DUPLICATE_EVIDENCE"
+    assert payload["existing_form"] == {
+        "form_id": first.json()["form_id"],
+        "review_status": "NEEDS_CLASSIFICATION",
+    }
+    assert payload["actions"] == {
+        "can_open": True,
+        "can_reopen_for_test": False,
+        "can_purge_for_test": False,
+    }
+    assert services.task_store.list_by_status("FAILED") == []
+
+
+def test_development_admin_reopens_voided_form_and_can_purge_it(tmp_path: Path) -> None:
+    services = build_services(Settings(data_root=tmp_path, allow_header_identity=True))
+    client = TestClient(create_app(services), raise_server_exceptions=False)
+    content = _png_bytes(np.full((202, 202), 220, dtype=np.uint8))
+    admin_headers = {
+        "X-Actor-ID": "admin-a",
+        "X-Roles": "ADMIN",
+        "Content-Type": "image/png",
+        "Idempotency-Key": "admin-import",
+    }
+    imported = client.post("/api/v1/imports", headers=admin_headers, content=content)
+    form_id = imported.json()["form_id"]
+    services.repository.set_review_status(form_id, ReviewStatus.VOIDED)
+
+    duplicate = client.post(
+        "/api/v1/imports",
+        headers={**admin_headers, "Idempotency-Key": "admin-duplicate"},
+        content=content,
+    )
+    assert duplicate.json()["actions"]["can_reopen_for_test"] is True
+    assert duplicate.json()["actions"]["can_purge_for_test"] is True
+
+    reopened = client.post(
+        f"/api/v1/imports/existing/{form_id}/reopen-test",
+        headers={"X-Actor-ID": "admin-a", "X-Roles": "ADMIN"},
+    )
+    assert reopened.status_code == 200
+    assert reopened.json()["review_status"] == "NEEDS_CLASSIFICATION"
+    assert services.repository.list_audit_events(form_id)[-1].event_type == (
+        "REOPEN_FOR_LOCAL_TEST"
+    )
+    classification_queue = client.get(
+        "/api/v1/forms/queue/classification",
+        headers={"X-Actor-ID": "admin-a", "X-Roles": "ADMIN"},
+    )
+    assert form_id in {item["form_id"] for item in classification_queue.json()}
+
+    original_uri = services.repository.list_evidence(form_id)[0].uri
+    purged = client.delete(
+        f"/api/v1/imports/existing/{form_id}",
+        headers={"X-Actor-ID": "admin-a", "X-Roles": "ADMIN"},
+    )
+    assert purged.status_code == 200
+    assert services.repository.get_form(form_id) is None
+    assert not (services.settings.evidence_root / original_uri).exists()
+
+
+def test_test_admin_routes_are_hidden_outside_development(tmp_path: Path) -> None:
+    services = build_services(
+        Settings(data_root=tmp_path, allow_header_identity=True, environment="production")
+    )
+    client = TestClient(create_app(services), raise_server_exceptions=False)
+
+    response = client.delete(
+        "/api/v1/imports/existing/FORM-1",
+        headers={"X-Actor-ID": "admin-a", "X-Roles": "ADMIN"},
+    )
+
+    assert response.status_code == 404
 
 
 def test_import_binds_only_the_exact_published_template_from_its_qr(tmp_path: Path) -> None:
@@ -164,3 +265,42 @@ def test_generated_template_print_runs_the_full_correction_and_crop_path(tmp_pat
     assert {"ORIGINAL_IMAGE", "CORRECTED_IMAGE", "FIELD_CROP"} <= evidence_types
     field = services.repository.list_form_fields(form_id)[0]
     assert services.repository.list_recognition_attempts(field.field_id)
+
+
+def test_processing_failure_marks_task_failed_and_removes_partial_form(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    services = build_services(Settings(data_root=tmp_path, allow_header_identity=True))
+    page = PageSpec.a4_portrait()
+    template = TemplateVersion.draft("TPL-FAIL", "PAYROLL_HOURLY", 1, page)
+    template.mark_ready_to_publish()
+    template.publish()
+    services.template_repository.add_version(template)
+    artifact = next(
+        item for item in services.template_renderer.render(template) if item.kind == "PRINT_PNG"
+    )
+    content = Path(artifact.internal_uri).read_bytes()
+
+    def fail_crops(*args: object, **kwargs: object) -> None:
+        raise RuntimeError("simulated crop failure")
+
+    monkeypatch.setattr(services.recognition, "record_template_field_crops", fail_crops)
+    client = TestClient(create_app(services), raise_server_exceptions=False)
+    response = client.post(
+        "/api/v1/imports",
+        headers={
+            "X-Actor-ID": "operator-a",
+            "X-Roles": "OPERATOR",
+            "Idempotency-Key": "failing-import",
+            "Content-Type": "image/png",
+        },
+        content=content,
+    )
+
+    form_id = f"FORM-{sha256(content).hexdigest()[:24]}"
+    assert response.status_code == 500
+    assert response.json()["code"] == "IMPORT_PROCESSING_FAILED"
+    assert services.repository.get_form(form_id) is None
+    failed_tasks = services.task_store.list_by_status("FAILED")
+    assert len(failed_tasks) == 1
+    assert failed_tasks[0].resource_id == form_id

@@ -1,4 +1,4 @@
-import type { EvidenceItem } from "@form-detection/api-client";
+import type { EvidenceItem, ReviewFieldRules } from "@form-detection/api-client";
 
 export interface ReviewValueField {
   fieldId: string;
@@ -8,6 +8,52 @@ export interface ReviewValueField {
 export interface ReviewEvidenceSelection {
   evidence: EvidenceItem | null;
   coordinateSpace: "canonical" | "original" | "none";
+}
+
+export function reviewValueNeedsConfirmation(
+  value: unknown,
+  candidateConfidence: number | undefined,
+  manuallyEdited: boolean,
+): boolean {
+  const blank = value === null || value === undefined ||
+    (typeof value === "string" && value.trim() === "");
+  if (blank) return true;
+  return !manuallyEdited && candidateConfidence !== undefined && candidateConfidence < 0.8;
+}
+
+export function reviewValueIssue(
+  value: unknown,
+  candidateConfidence: number | undefined,
+  manuallyEdited: boolean,
+  dataType: string | null,
+  rules: ReviewFieldRules | null,
+): string | null {
+  const blank = value === null || value === undefined ||
+    (typeof value === "string" && value.trim() === "");
+  if (blank) {
+    if (rules === null) return "请填写或确认字段值";
+    return rules.required ? "必填字段缺失" : null;
+  }
+  if (rules?.allowed_values.length && !rules.allowed_values.includes(String(value))) {
+    return `请选择：${rules.allowed_values.join(" / ")}`;
+  }
+  if (dataType === "integer" || dataType === "decimal") {
+    const text = String(value).trim();
+    const numeric = Number(text);
+    if (!Number.isFinite(numeric) || (dataType === "integer" && !/^[+-]?\d+$/.test(text))) {
+      return dataType === "integer" ? "请输入整数" : "请输入数值";
+    }
+    if (rules?.minimum_value !== null && rules?.minimum_value !== undefined && numeric < rules.minimum_value) {
+      return `数值不能小于 ${rules.minimum_value}`;
+    }
+    if (rules?.maximum_value !== null && rules?.maximum_value !== undefined && numeric > rules.maximum_value) {
+      return `数值不能大于 ${rules.maximum_value}`;
+    }
+  }
+  if (!manuallyEdited && candidateConfidence !== undefined && candidateConfidence < 0.8) {
+    return "识别置信度较低，请人工确认";
+  }
+  return null;
 }
 
 export function selectReviewEvidence(

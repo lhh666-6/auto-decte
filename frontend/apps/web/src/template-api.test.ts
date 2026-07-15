@@ -35,12 +35,17 @@ describe("TemplateApi", () => {
     );
     const api = new TemplateApi("/api/v1", fetcher);
 
-    const created = await api.createDraft("PAYROLL_HOURLY", "A4");
+    const created = await api.createDraft("PAYROLL_HOURLY", "A4", "计时工资单", "计时记录");
 
     expect(fetcher).toHaveBeenCalledWith("/api/v1/templates", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ template_key: "PAYROLL_HOURLY", page_size: "A4" }),
+      body: JSON.stringify({
+        template_key: "PAYROLL_HOURLY",
+        page_size: "A4",
+        display_name: "计时工资单",
+        description: "计时记录",
+      }),
     });
     expect(created.version_id).toBe("TPL-1");
   });
@@ -62,6 +67,32 @@ describe("TemplateApi", () => {
     await new TemplateApi("/api/v1", fetcher).clone("TPL/1");
 
     expect(fetcher).toHaveBeenCalledWith("/api/v1/template-versions/TPL%2F1/clone", {
+      method: "POST",
+      headers: {},
+    });
+  });
+
+  it("updates metadata, discards drafts and retires templates", async () => {
+    const fetcher = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ template_key: "T1" }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }));
+    const api = new TemplateApi("/api/v1", fetcher);
+
+    await api.updateMetadata("T/1", "中文名称", "用途");
+    await api.discardDraft("D/1");
+    await api.retireTemplate("T/1");
+
+    expect(fetcher).toHaveBeenNthCalledWith(1, "/api/v1/templates/T%2F1", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ display_name: "中文名称", description: "用途" }),
+    });
+    expect(fetcher).toHaveBeenNthCalledWith(2, "/api/v1/template-versions/D%2F1", {
+      method: "DELETE",
+      headers: {},
+    });
+    expect(fetcher).toHaveBeenNthCalledWith(3, "/api/v1/templates/T%2F1/retire", {
       method: "POST",
       headers: {},
     });

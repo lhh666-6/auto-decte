@@ -3,7 +3,7 @@
 from collections.abc import Iterator
 from contextlib import contextmanager
 
-from sqlalchemy import Engine, func, literal_column, select
+from sqlalchemy import Engine, delete, func, literal_column, select
 from sqlalchemy.orm import Session
 
 from app.adapters.database.models import (
@@ -15,6 +15,10 @@ from app.adapters.database.models import (
     FormRow,
     RecognitionAttemptRow,
     RecordVersionRow,
+    ReviewDraftRow,
+    ReviewLeaseRow,
+    TaskEventRow,
+    TaskRow,
 )
 from app.domain.models import (
     AIReviewRecord,
@@ -319,6 +323,46 @@ class SqlAlchemyFormRepository:
                 immutable=row.immutable,
                 created_at=row.created_at,
             )
+
+    def purge_test_form(self, form_id: str) -> list[str]:
+        """Physically remove one local-development form and return stored file URIs."""
+        return self._delete_form_data(form_id, delete_tasks=True)
+
+    def rollback_failed_import(self, form_id: str) -> list[str]:
+        """Remove partially imported form data while retaining the failed task record."""
+        return self._delete_form_data(form_id, delete_tasks=False)
+
+    def _delete_form_data(self, form_id: str, *, delete_tasks: bool) -> list[str]:
+        with self._transaction() as session:
+            form = session.get(FormRow, form_id)
+            if form is None:
+                if delete_tasks:
+                    raise KeyError(f"Unknown form: {form_id}")
+                return []
+            field_ids = select(FormFieldRow.field_id).where(FormFieldRow.form_id == form_id)
+            task_ids = select(TaskRow.task_id).where(TaskRow.resource_id == form_id)
+            uris = list(
+                session.scalars(
+                    select(EvidenceFileRow.uri).where(EvidenceFileRow.form_id == form_id)
+                )
+            )
+            session.execute(
+                delete(RecognitionAttemptRow).where(
+                    RecognitionAttemptRow.field_id.in_(field_ids)
+                )
+            )
+            session.execute(delete(ReviewDraftRow).where(ReviewDraftRow.form_id == form_id))
+            session.execute(delete(ReviewLeaseRow).where(ReviewLeaseRow.form_id == form_id))
+            session.execute(delete(AIReviewRow).where(AIReviewRow.form_id == form_id))
+            session.execute(delete(AuditEventRow).where(AuditEventRow.form_id == form_id))
+            session.execute(delete(RecordVersionRow).where(RecordVersionRow.form_id == form_id))
+            session.execute(delete(FormFieldRow).where(FormFieldRow.form_id == form_id))
+            session.execute(delete(EvidenceFileRow).where(EvidenceFileRow.form_id == form_id))
+            if delete_tasks:
+                session.execute(delete(TaskEventRow).where(TaskEventRow.task_id.in_(task_ids)))
+                session.execute(delete(TaskRow).where(TaskRow.resource_id == form_id))
+            session.delete(form)
+            return uris
 
     def add_audit_event(self, event: AuditEvent) -> None:
         with self._transaction() as session:

@@ -55,6 +55,8 @@ export interface TemplatePage {
 export interface TemplateVersion {
   version_id: string;
   template_key: string;
+  display_name: string;
+  description: string;
   version: number;
   status: TemplateStatus;
   parent_version_id: string | null;
@@ -86,6 +88,8 @@ export function isEditableTemplateStatus(status: string): status is EditableTemp
 
 export interface TemplateLibraryItem {
   template_key: string;
+  display_name: string;
+  description: string;
   version_id: string;
   current_published_version: number | null;
   version: number;
@@ -115,8 +119,21 @@ export class TemplateApi {
     private readonly fetcher: Fetcher = fetch,
   ) {}
 
-  createDraft(templateKey: string, pageSize: "A4" | "A5"): Promise<TemplateVersion> {
-    return this.request("/templates", { method: "POST", body: { template_key: templateKey, page_size: pageSize } });
+  createDraft(
+    templateKey: string,
+    pageSize: "A4" | "A5",
+    displayName: string,
+    description: string,
+  ): Promise<TemplateVersion> {
+    return this.request("/templates", {
+      method: "POST",
+      body: {
+        template_key: templateKey,
+        page_size: pageSize,
+        display_name: displayName,
+        description,
+      },
+    });
   }
 
   listTemplates(): Promise<TemplateLibraryItem[]> {
@@ -129,6 +146,29 @@ export class TemplateApi {
 
   clone(versionId: string): Promise<TemplateVersion> {
     return this.request(`/template-versions/${encodeURIComponent(versionId)}/clone`, { method: "POST" });
+  }
+
+  updateMetadata(
+    templateKey: string,
+    displayName: string,
+    description: string,
+  ): Promise<{ template_key: string; display_name: string; description: string }> {
+    return this.request(`/templates/${encodeURIComponent(templateKey)}`, {
+      method: "PATCH",
+      body: { display_name: displayName, description },
+    });
+  }
+
+  discardDraft(versionId: string): Promise<void> {
+    return this.request(`/template-versions/${encodeURIComponent(versionId)}`, {
+      method: "DELETE",
+    });
+  }
+
+  retireTemplate(templateKey: string): Promise<void> {
+    return this.request(`/templates/${encodeURIComponent(templateKey)}/retire`, {
+      method: "POST",
+    });
   }
 
   addField(versionId: string, field: TemplateFieldInput): Promise<TemplateVersion> {

@@ -25,7 +25,12 @@ def test_alembic_upgrade_creates_template_version_tables(tmp_path: Path) -> None
     upgrade_database(database_path)
 
     tables = set(inspect(create_engine(f"sqlite:///{database_path}")).get_table_names())
-    assert {"template_versions", "template_fields", "template_artifacts"} <= tables
+    assert {
+        "template_versions",
+        "template_fields",
+        "template_artifacts",
+        "template_metadata",
+    } <= tables
 
 
 def test_alembic_upgrade_creates_review_drafts_and_form_priority(tmp_path: Path) -> None:
@@ -37,6 +42,38 @@ def test_alembic_upgrade_creates_review_drafts_and_form_priority(tmp_path: Path)
     inspector = inspect(engine)
     assert "review_drafts" in inspector.get_table_names()
     assert "priority" in {column["name"] for column in inspector.get_columns("forms")}
+
+
+def test_evidence_hash_is_unique_only_for_original_images(tmp_path: Path) -> None:
+    database_path = tmp_path / "evidence-schema.db"
+    upgrade_database(database_path)
+    engine = create_engine(f"sqlite:///{database_path}")
+
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO forms VALUES "
+                "('FORM-1', 'T1', '1', '1', 'CLASSIFIED', 'NOT_EXPORTED', 0, 0, "
+                "CURRENT_TIMESTAMP), "
+                "('FORM-2', 'T1', '1', '1', 'CLASSIFIED', 'NOT_EXPORTED', 0, 0, "
+                "CURRENT_TIMESTAMP)"
+            )
+        )
+        connection.execute(
+            text(
+                "INSERT INTO evidence_files "
+                "(file_id, form_id, related_field_id, type, uri, sha256, immutable, created_at) "
+                "VALUES "
+                "('CROP-1', 'FORM-1', NULL, 'FIELD_CROP', 'crop-1.png', "
+                "'same', 1, CURRENT_TIMESTAMP), "
+                "('CROP-2', 'FORM-2', NULL, 'FIELD_CROP', 'crop-2.png', "
+                "'same', 1, CURRENT_TIMESTAMP)"
+            )
+        )
+
+    indexes = {item["name"]: item for item in inspect(engine).get_indexes("evidence_files")}
+    assert not indexes["ix_evidence_files_sha256"]["unique"]
+    assert indexes["ux_evidence_files_original_sha256"]["unique"]
 
 
 def test_auto_created_legacy_database_gains_priority_without_losing_forms(
@@ -72,6 +109,35 @@ def test_auto_created_legacy_database_gains_priority_without_losing_forms(
     assert form is not None
     assert form.priority == 0
     assert "review_drafts" in inspect(services.engine).get_table_names()
+
+
+def test_auto_created_database_backfills_template_names(tmp_path: Path) -> None:
+    database_path = tmp_path / "database" / "demo.db"
+    database_path.parent.mkdir(parents=True)
+    engine = create_engine(f"sqlite:///{database_path}")
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "CREATE TABLE template_versions ("
+                "version_id VARCHAR PRIMARY KEY, template_key VARCHAR NOT NULL, "
+                "version INTEGER NOT NULL, status VARCHAR NOT NULL, page JSON NOT NULL, "
+                "parent_version_id VARCHAR, UNIQUE (template_key, version))"
+            )
+        )
+        connection.execute(
+            text(
+                "INSERT INTO template_versions VALUES ("
+                "'TPL-1', 'PAYROLL_HOURLY', 1, 'PUBLISHED', '{}', NULL)"
+            )
+        )
+    engine.dispose()
+
+    services = build_services(Settings(data_root=tmp_path))
+
+    assert services.template_repository.get_template_metadata("PAYROLL_HOURLY") == (
+        "计时考核单",
+        "适用于按工时统计的生产岗位",
+    )
 
 
 def test_production_mode_requires_current_alembic_revision(tmp_path: Path) -> None:

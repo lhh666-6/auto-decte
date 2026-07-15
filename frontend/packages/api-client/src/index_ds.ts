@@ -28,6 +28,8 @@ export {
   type RecognitionCandidate,
   type RecordVersion,
   type ReviewField,
+  type ReviewFieldRules,
+  type ReviewRuleFailure,
   type ReviewDraft,
   type ReviewHistory,
   type ReviewLease,

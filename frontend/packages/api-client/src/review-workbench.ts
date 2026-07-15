@@ -22,7 +22,10 @@ export interface RecognitionCandidate {
 export interface ReviewField {
   field_id: string;
   field_name: string;
+  display_name: string | null;
+  data_type: string | null;
   recognition_engine: string | null;
+  rules: ReviewFieldRules | null;
   source_region: Record<string, number>;
   current_value: unknown;
   current_value_source: string | null;
@@ -66,6 +69,19 @@ export interface WorkbenchDetail {
   evidence: EvidenceItem[];
   current_record: RecordVersion | null;
   draft: ReviewDraft | null;
+}
+
+export interface ReviewFieldRules {
+  required: boolean;
+  minimum_value: number | null;
+  maximum_value: number | null;
+  allowed_values: string[];
+}
+
+export interface ReviewRuleFailure {
+  code: string;
+  field_key: string;
+  message: string;
 }
 
 export interface ReviewDraft {
@@ -115,6 +131,7 @@ export class ApiRequestError extends Error {
     public readonly status: number,
     public readonly code: string,
     message: string,
+    public readonly failures: ReviewRuleFailure[] = [],
   ) {
     super(message);
     this.name = "ApiRequestError";
@@ -294,11 +311,13 @@ export class ReviewWorkbenchApi {
       const problem = (await response.json().catch(() => ({}))) as {
         code?: string;
         detail?: string;
+        failures?: ReviewRuleFailure[];
       };
       throw new ApiRequestError(
         response.status,
         problem.code ?? "REQUEST_FAILED",
         problem.detail ?? `Request failed with status ${response.status}`,
+        problem.failures ?? [],
       );
     }
     return (await response.json()) as T;

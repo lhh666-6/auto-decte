@@ -52,6 +52,14 @@ class TemplateVersionRepository(Protocol):
 
     def list_template_keys(self) -> list[str]: ...
 
+    def get_template_metadata(self, template_key: str) -> tuple[str, str] | None: ...
+
+    def update_template_metadata(
+        self, template_key: str, display_name: str, description: str
+    ) -> None: ...
+
+    def delete_version(self, version_id: str) -> None: ...
+
 
 @dataclass(frozen=True, slots=True)
 class PreflightIssue:
@@ -74,7 +82,13 @@ class TemplateVersions:
     def __init__(self, repository: TemplateVersionRepository) -> None:
         self._repository = repository
 
-    def create_draft(self, template_key: str, page: PageSpec) -> TemplateVersion:
+    def create_draft(
+        self,
+        template_key: str,
+        page: PageSpec,
+        display_name: str | None = None,
+        description: str = "",
+    ) -> TemplateVersion:
         prior_versions = self._repository.list_versions(template_key)
         next_version = max((item.version for item in prior_versions), default=0) + 1
         version = TemplateVersion.draft(
@@ -84,7 +98,63 @@ class TemplateVersions:
             page=page,
         )
         self._repository.add_version(version)
+        if display_name is not None:
+            self.update_metadata(template_key, display_name, description)
         return version
+
+    def get_metadata(self, template_key: str) -> tuple[str, str]:
+        metadata = self._repository.get_template_metadata(template_key)
+        if metadata is None:
+            raise KeyError(f"Unknown template: {template_key}")
+        return metadata
+
+    def update_metadata(
+        self, template_key: str, display_name: str, description: str
+    ) -> tuple[str, str]:
+        cleaned_name = display_name.strip()
+        cleaned_description = description.strip()
+        if not cleaned_name:
+            raise ValueError("template display name is required")
+        if len(cleaned_name) > 100:
+            raise ValueError("template display name must not exceed 100 characters")
+        if len(cleaned_description) > 500:
+            raise ValueError("template description must not exceed 500 characters")
+        self._repository.update_template_metadata(
+            template_key, cleaned_name, cleaned_description
+        )
+        return cleaned_name, cleaned_description
+
+    def discard_draft(self, version_id: str) -> None:
+        version = self.get(version_id)
+        if version.status not in {
+            TemplateStatus.DRAFT,
+            TemplateStatus.PREFLIGHT_FAILED,
+            TemplateStatus.READY_TO_PUBLISH,
+        }:
+            raise ValueError("only editable template drafts can be discarded")
+        self._repository.delete_version(version_id)
+
+    def retire_template(self, template_key: str) -> None:
+        versions = self._repository.list_versions(template_key)
+        if not versions:
+            raise KeyError(f"Unknown template: {template_key}")
+        editable = {
+            TemplateStatus.DRAFT,
+            TemplateStatus.PREFLIGHT_FAILED,
+            TemplateStatus.READY_TO_PUBLISH,
+        }
+        if any(version.status in editable for version in versions):
+            raise ValueError("discard active drafts before retiring the template")
+        candidates = [
+            version
+            for version in versions
+            if version.status in {TemplateStatus.PUBLISHED, TemplateStatus.DEPRECATED}
+        ]
+        if not candidates:
+            raise ValueError("template has no active published versions to retire")
+        for version in candidates:
+            version.retire()
+            self._repository.replace_version(version)
 
     def get(self, version_id: str) -> TemplateVersion:
         version = self._repository.get_version(version_id)

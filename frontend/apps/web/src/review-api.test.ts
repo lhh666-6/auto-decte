@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { ReviewWorkbenchApi } from "../../../packages/api-client/src/review-workbench";
+import { ApiRequestError, ReviewWorkbenchApi } from "../../../packages/api-client/src/review-workbench";
 
 describe("ReviewWorkbenchApi", () => {
   it("loads a workbench record from the versioned form endpoint", async () => {
@@ -79,5 +79,28 @@ describe("ReviewWorkbenchApi", () => {
       "/api/v1/forms/FORM-4/classification-options",
       "/api/v1/forms/FORM-4/assign-template",
     ]);
+  });
+
+  it("preserves field-level template rule failures", async () => {
+    const failures = [{ code: "NOT_ALLOWED", field_key: "shift", message: "字段值不在模板允许范围内" }];
+    const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      code: "REVIEW_RULE_BLOCKED",
+      detail: "模板规则已阻止审核确认",
+      failures,
+    }), { status: 422, headers: { "content-type": "application/problem+json" } }));
+
+    const request = new ReviewWorkbenchApi("/api/v1", fetcher).confirmAndClaimNext("FORM-1", {
+      expectedVersion: 0,
+      leaseToken: "lease-a",
+      values: { shift: "1" },
+      reason: "确认",
+      evidenceIds: [],
+      queueKey: "review",
+    });
+
+    await expect(request).rejects.toEqual(expect.objectContaining({
+      code: "REVIEW_RULE_BLOCKED",
+      failures,
+    } satisfies Partial<ApiRequestError>));
   });
 });

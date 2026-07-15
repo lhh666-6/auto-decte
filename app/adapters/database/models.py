@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import JSON, DateTime, ForeignKey, Index, Integer, String, UniqueConstraint
+from sqlalchemy import JSON, DateTime, ForeignKey, Index, Integer, String, UniqueConstraint, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -44,6 +44,14 @@ class TemplateVersionRow(Base):
     status: Mapped[str] = mapped_column(String, nullable=False)
     page: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
     parent_version_id: Mapped[str | None] = mapped_column(String)
+
+
+class TemplateMetadataRow(Base):
+    __tablename__ = "template_metadata"
+
+    template_key: Mapped[str] = mapped_column(String, primary_key=True)
+    display_name: Mapped[str] = mapped_column(String, nullable=False)
+    description: Mapped[str] = mapped_column(String, nullable=False, default="")
 
 
 class TemplateFieldRow(Base):
@@ -116,13 +124,21 @@ class RecognitionAttemptRow(Base):
 
 class EvidenceFileRow(Base):
     __tablename__ = "evidence_files"
+    __table_args__ = (
+        Index(
+            "ux_evidence_files_original_sha256",
+            "sha256",
+            unique=True,
+            sqlite_where=text("type = 'ORIGINAL_IMAGE'"),
+        ),
+    )
 
     file_id: Mapped[str] = mapped_column(String, primary_key=True)
     form_id: Mapped[str] = mapped_column(ForeignKey("forms.form_id"), nullable=False, index=True)
     related_field_id: Mapped[str | None] = mapped_column(String)
     type: Mapped[str] = mapped_column(String, nullable=False)
     uri: Mapped[str] = mapped_column(String, nullable=False, unique=True)
-    sha256: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True)
+    sha256: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     immutable: Mapped[bool] = mapped_column(nullable=False, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 

@@ -155,6 +155,56 @@ def test_template_library_exposes_latest_editable_draft_alongside_published_vers
     }
 
 
+def test_admin_renames_discards_and_retires_templates_without_deleting_history(
+    tmp_path: Path,
+) -> None:
+    client = _client(tmp_path)
+    published_id = _published_template(client)
+
+    renamed = client.patch(
+        "/api/v1/templates/PAYROLL_HOURLY",
+        headers=_headers(),
+        json={"display_name": "新版计时工资单", "description": "车间计时记录"},
+    )
+    clone = client.post(
+        f"/api/v1/template-versions/{published_id}/clone", headers=_headers()
+    )
+    blocked_retire = client.post(
+        "/api/v1/templates/PAYROLL_HOURLY/retire", headers=_headers()
+    )
+    blocked_delete = client.delete(
+        f"/api/v1/template-versions/{published_id}", headers=_headers()
+    )
+    discarded = client.delete(
+        f"/api/v1/template-versions/{clone.json()['version_id']}", headers=_headers()
+    )
+    retired = client.post(
+        "/api/v1/templates/PAYROLL_HOURLY/retire", headers=_headers()
+    )
+    library = client.get("/api/v1/templates", headers=_headers())
+    historical = client.get(
+        f"/api/v1/template-versions/{published_id}", headers=_headers()
+    )
+
+    assert renamed.status_code == 200
+    assert renamed.json() == {
+        "template_key": "PAYROLL_HOURLY",
+        "display_name": "新版计时工资单",
+        "description": "车间计时记录",
+    }
+    assert blocked_retire.status_code == 409
+    assert blocked_delete.status_code == 409
+    assert discarded.status_code == 204
+    assert retired.status_code == 204
+    assert library.json()[0]["display_name"] == "新版计时工资单"
+    assert library.json()[0]["description"] == "车间计时记录"
+    assert library.json()[0]["status"] == "RETIRED"
+    assert library.json()[0]["active_draft"] is None
+    assert historical.status_code == 200
+    assert historical.json()["status"] == "RETIRED"
+    assert historical.json()["artifacts"]
+
+
 def test_template_library_api_maps_lifecycle_missing_and_permission_errors(tmp_path: Path) -> None:
     client = _client(tmp_path)
     version_id = _published_template(client)

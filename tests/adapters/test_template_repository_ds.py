@@ -81,3 +81,18 @@ def test_repository_lists_distinct_template_keys_in_lexical_order(tmp_path: Path
     )
 
     assert repository.list_template_keys() == ["PAYROLL_HOURLY", "PAYROLL_STANDARD_PIECE"]
+
+
+def test_repository_persists_metadata_and_removes_draft_only_family(tmp_path: Path) -> None:
+    engine = create_sqlite_engine(tmp_path / "template.db")
+    Base.metadata.create_all(engine)
+    repository = SqlAlchemyTemplateRepository(engine)
+    draft = TemplateVersion.draft("TPL-DRAFT", "CUSTOM_FORM", 1, PageSpec.a4_portrait())
+    repository.add_version(draft)
+
+    repository.update_template_metadata("CUSTOM_FORM", "自定义表单", "测试用途")
+
+    assert repository.get_template_metadata("CUSTOM_FORM") == ("自定义表单", "测试用途")
+    repository.delete_version(draft.version_id)
+    assert repository.get_version(draft.version_id) is None
+    assert repository.get_template_metadata("CUSTOM_FORM") is None
