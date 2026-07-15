@@ -79,6 +79,19 @@ describe("TemplateApi", () => {
       input_type: "text_box",
       recognition_engine: "manual",
       minimum_prefill_confidence: 0.97,
+      rules: {
+        required: false,
+        minimum_value: null,
+        maximum_value: null,
+        allowed_values: [],
+        master_data_source: null,
+        allow_exception_reason: false,
+      },
+      export_target: {
+        workbook: "records.xlsx",
+        worksheet: "records",
+        business_column: "worker_name",
+      },
       region: { x: 0.1, y: 0.2, width: 0.22, height: 0.05 },
     };
 

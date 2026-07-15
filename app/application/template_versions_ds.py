@@ -8,7 +8,37 @@ from uuid import uuid4
 
 from app.domain.templates_ds import FieldDefinition, PageSpec, Rect, TemplateStatus, TemplateVersion
 
-_TEMPLATE_QR_SAFE_ZONE = Rect(0.80, 0.02, 0.16, 0.12)
+_TEMPLATE_QR_SAFE_ZONE = Rect(0.78, 0.02, 0.16, 0.12)
+_SHEET_CODE_SAFE_ZONE = Rect(0.62, 0.02, 0.14, 0.12)
+_PRINT_EDGE = 0.025
+_CORNER_MARKER = 0.07
+_OTHER_PROTECTED_ZONES = (
+    (
+        "SHEET_SAFE_ZONE_OVERLAP",
+        "sheet-instance QR safe zone",
+        _SHEET_CODE_SAFE_ZONE,
+    ),
+    ("CORNER_MARKER_OVERLAP", "top-left ArUco marker", Rect(0, 0, _CORNER_MARKER, _CORNER_MARKER)),
+    (
+        "CORNER_MARKER_OVERLAP",
+        "top-right ArUco marker",
+        Rect(1 - _CORNER_MARKER, 0, _CORNER_MARKER, _CORNER_MARKER),
+    ),
+    (
+        "CORNER_MARKER_OVERLAP",
+        "bottom-left ArUco marker",
+        Rect(0, 1 - _CORNER_MARKER, _CORNER_MARKER, _CORNER_MARKER),
+    ),
+    (
+        "CORNER_MARKER_OVERLAP",
+        "bottom-right ArUco marker",
+        Rect(1 - _CORNER_MARKER, 1 - _CORNER_MARKER, _CORNER_MARKER, _CORNER_MARKER),
+    ),
+    ("PRINT_EDGE_OVERLAP", "top print edge", Rect(0, 0, 1, _PRINT_EDGE)),
+    ("PRINT_EDGE_OVERLAP", "bottom print edge", Rect(0, 1 - _PRINT_EDGE, 1, _PRINT_EDGE)),
+    ("PRINT_EDGE_OVERLAP", "left print edge", Rect(0, 0, _PRINT_EDGE, 1)),
+    ("PRINT_EDGE_OVERLAP", "right print edge", Rect(1 - _PRINT_EDGE, 0, _PRINT_EDGE, 1)),
+)
 
 
 class TemplateVersionRepository(Protocol):
@@ -103,6 +133,10 @@ class TemplateVersions:
             for field in version.fields
             if _overlaps(field.region, _TEMPLATE_QR_SAFE_ZONE)
         ) + tuple(
+            issue
+            for field in version.fields
+            for issue in _protected_zone_issues(field)
+        ) + tuple(
             PreflightIssue(
                 code="RECOGNITION_ENGINE_MISMATCH",
                 detail=(
@@ -155,3 +189,17 @@ def _recognition_configuration_is_valid(field: FieldDefinition) -> bool:
     if field.recognition_engine == "omr":
         return field.input_type == "checkbox" and field.data_type == "boolean"
     return False
+
+
+def _protected_zone_issues(field: FieldDefinition) -> tuple[PreflightIssue, ...]:
+    if _overlaps(field.region, _TEMPLATE_QR_SAFE_ZONE):
+        return ()
+    for code, label, zone in _OTHER_PROTECTED_ZONES:
+        if _overlaps(field.region, zone):
+            return (
+                PreflightIssue(
+                    code=code,
+                    detail=f"Field {field.field_key} overlaps the {label}.",
+                ),
+            )
+    return ()

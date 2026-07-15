@@ -14,9 +14,10 @@
 - 唯一集成分支：`modular-architecture`；不要在 `main` 或历史 `phase-*` 分支继续当前任务。
 - 已完成：React 审核工作台基础、真实队列、模板识别后端、模板中心 Task 1–5（模板库、只读预览、复制调优、草稿恢复、预检发布）。
 - 已完成：实施计划 Task 6，字段选择、拖动、缩放、键盘移动和右侧属性编辑器已落地。
-- 下一任务：四个企业模板的幂等 seed；当前只有 MD 映射，不能在 React 中伪造已发布模板。
+- 已完成：四个企业模板已通过幂等安装流程真实落库，包含字段、规则、导出目标和打印产物。
+- 下一任务：审核工作台保存草稿、退回/作废、人工分类与原子 `confirm-and-claim-next`。
 - 仍未产品闭环：审核草稿/退回/作废/确认并下一张、主数据 CRUD、模板化导出与重导、模板包和纸张实例、Tauri。
-- 验证边界：2026-07-15 全量复测已通过；Python `147 passed`，Ruff、mypy、前端
+- 验证边界：2026-07-15 全量复测已通过；Python `154 passed`，Ruff、mypy、前端
   `19 passed` 与生产构建均通过。
 
 ## 队友开始前必须执行
@@ -34,8 +35,8 @@ git status --short
 
 ```text
 完整阅读 docs/CODEX_HANDOFF.md、PROGRESS.md 和模板中心实施计划。
-只在 modular-architecture 分支工作，从 Task 6 开始。
-不要重新实现 Task 1–5，不要修改 main 或删除历史分支。
+只在 modular-architecture 分支工作，从审核工作台闭环开始。
+不要重新实现模板中心与 seed，不要修改 main 或删除历史分支。
 完成后运行定向验证、更新 PROGRESS.md、提交并推送 modular-architecture。
 ```
 
@@ -116,33 +117,25 @@ git status --short
 
 ## 当前明确未完成
 
-### A. Task 6/7 已在本地完成，待远端同步
+### A. 模板中心 Task 6/7 与四模板 seed 已在本地完成，待远端同步
 
 - Task 6 提交：`a8374b6`；新增真实 A4/A5 可编辑画布和字段属性检查器。
 - 支持字段选择、拖动、缩放、键盘移动、显式保存和确认删除。
 - QR、SHEET、ArUco 与打印边缘保护区会阻止非法落点；坐标输入使用同一保护规则。
 - 字段变化重置预检状态，只有 `READY_TO_PUBLISH` 可发布，发布后编辑控件只读。
-- 2026-07-15 本地全量质量门与浏览器生命周期验收通过；尚未推送远端。
+- 四个模板由 FastAPI/Streamlit 组合根幂等安装为真实 `PUBLISHED` V1，首次生成 PNG/PDF；
+  重复执行不新增版本，内容冲突整体拒绝，基础打印产物缺失或损坏时自动修复。
+- 字段规则与稳定 XLSX 导出目标已纳入领域、存储、API 和设计器属性检查器。
+- 2026-07-15 本地全量质量门与新数据库浏览器验收通过；尚未推送远端。
 
-### B. 四个通用模板尚未作为安装数据真正落库
-
-文档已经定义四类模板：
-
-- `PAYROLL_HOURLY`
-- `PAYROLL_STANDARD_PIECE`
-- `PAYROLL_FIXED_PRODUCTION_GRID`
-- `PAYROLL_EQUIPMENT_PROCESS`
-
-但新安装数据库不会自动拥有四个已发布模板。需要实现幂等 seed/import 命令或安装初始化流程，并配置真实字段、坐标、规则、导出映射和打印预览。不得在 React 中伪造已发布卡片。
-
-### C. 模板包与打印批次未闭环
+### B. 模板包与打印批次未闭环
 
 - 安全 ZIP 模板包导入/导出；
 - manifest schema/hash/冲突检查和 ZIP Slip/压缩炸弹防护；
 - print_batch 与每张纸唯一 sheet_instance_id 的实际生成、存储和重复提交拦截；
 - 模板版本差异与效果对比。
 
-### D. 审核工作台仍有功能缺口
+### C. 审核工作台仍有功能缺口
 
 - 保存草稿 API 与按钮；
 - 退回、作废、更正原因；
@@ -154,11 +147,11 @@ git status --short
 - 人工分类页面和模板选择交互；
 - 当前“规则异常”队列主要依赖现有状态，尚未接完整三阶段规则结果。
 
-### E. 主数据仍是只读骨架
+### D. 主数据仍是只读骨架
 
 员工、工单、产品、工序没有 SQLite 持久化 CRUD/API/编辑页。当前入口只明确提示缺口。需要迁移、权限、审计、禁用/版本策略，并接入字段枚举和规则。
 
-### F. 导出中心尚未产品化
+### E. 导出中心尚未产品化
 
 - `export-map.json` 模板映射；
 - 导出预览和 `XLSX_EXPORT` 真实任务 Handler；
@@ -166,7 +159,7 @@ git status --short
 - 不可变导出批次、授权下载、重导关系和导出状态队列；
 - 数据表、统计图和筛选联动。
 
-### G. 任务/桌面/生产化
+### F. 任务/桌面/生产化
 
 - FORM_IMPORT、FORM_RECOGNITION、XLSX_EXPORT 尚未全部成为真实持久化 Handler；
 - Tauri v2 壳、File/Camera/Scanner/Audio Ports 和 Windows 安装包；
@@ -175,13 +168,12 @@ git status --short
 
 ## 队友建议执行顺序
 
-1. 将本地 Task 6/7 提交推送到 `modular-architecture`；
-2. 实现四个模板的幂等安装 seed，并用企业历史表格校准字段/坐标；
-3. 补审核草稿、退回/作废、人工分类和 `confirm-and-claim-next`；
-4. 实现主数据 CRUD；
-5. 实现模板化导出中心与重导闭环；
-6. 实现模板包、打印批次/纸张实例；
-7. 最后做 Tauri、真实设备和生产 Adapter。
+1. 将本地 Task 6/7 与四模板 seed 提交推送到 `modular-architecture`；
+2. 补审核草稿、退回/作废、人工分类和 `confirm-and-claim-next`；
+3. 实现主数据 CRUD；
+4. 实现模板化导出中心与重导闭环；
+5. 实现模板包、打印批次/纸张实例；
+6. 最后做 Tauri、真实设备和生产 Adapter。
 
 每个步骤都要：定向测试 → 需求审查 → 代码质量审查 → 更新 `PROGRESS.md` → 小提交 → 推送 `modular-architecture`。
 

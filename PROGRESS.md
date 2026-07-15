@@ -353,4 +353,23 @@
   →预检→发布→只读→确认PNG/PDF打印件入口→克隆V2→确认删除；浏览器控制台无错误。
 - 自动化验证：Python `147 passed`；Ruff 全部通过；mypy检查120个源文件无问题；
   前端5个测试文件共`19 passed`；TypeScript类型检查和Web生产构建通过。
-- 明确未实现：四个企业模板幂等seed、ZIP模板包、多页模板、动态明细行和Tauri桌面壳。
+- 明确未实现：ZIP模板包、多页模板、动态明细行和Tauri桌面壳。
+
+## 四个企业模板幂等安装 seed（2026-07-15）
+
+- 状态：实现、全量质量门与真实新数据库浏览器验收均已完成，待本地提交和远端推送。
+- 新安装的 FastAPI/Streamlit 组合根会幂等写入 4 个 `PUBLISHED` V1 模板：
+  `PAYROLL_HOURLY`、`PAYROLL_STANDARD_PIECE`、
+  `PAYROLL_FIXED_PRODUCTION_GRID`、`PAYROLL_EQUIPMENT_PROCESS`。
+- 每个模板包含公共字段、岗位专属字段、固定 `line_01`–`line_10`、归一化坐标、
+  识别策略、必填/范围/枚举规则及稳定 `workbook/worksheet/business_column` 导出目标；
+  不含历史姓名、工资或业务记录。
+- 首次安装生成 PNG/PDF；重复安装保持版本和完整产物不变，缺失/损坏的基础打印产物会修复；
+  相同 `template_key + version` 的不同内容会在写入任何其他 seed 前整体拒绝。
+- 补齐字段规则/导出目标 API 持久化及设计器属性编辑；后端发布预检现在同步阻止
+  SHEET、四角 ArUco 和打印边缘冲突。模板 QR 向左调整，实测生成打印件可被 OpenCV 解码。
+- 浏览器验收：全新数据库首次打开模板中心显示 4 个已发布模板；计时模板 V1 有 24 个字段、
+  PNG/PDF 入口；克隆 V2 后规则与导出映射可见且可编辑；控制台无错误。
+- 最终验证：Python `154 passed`；Ruff 全部通过；mypy 检查 121 个源文件无问题；
+  前端 5 个测试文件共 `19 passed`；TypeScript 类型检查和 Web 生产构建通过。
+- 下一步：审核工作台保存草稿、退回/作废、人工分类与原子 `confirm-and-claim-next`。

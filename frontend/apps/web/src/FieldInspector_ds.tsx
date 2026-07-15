@@ -67,6 +67,17 @@ export function FieldInspector({ field, editable, onSave, onDelete }: Props) {
         <label>输入类型<select value={draft.input_type} disabled={disabled} onChange={(event) => setDraft({ ...draft, input_type: event.target.value })}><option value="text_box">文本框</option><option value="digit_boxes">数字格</option><option value="checkbox">勾选框</option></select></label>
         <label>识别引擎<select value={draft.recognition_engine} disabled={disabled} onChange={(event) => setDraft({ ...draft, recognition_engine: event.target.value })}><option value="manual">人工填写</option><option value="digit_template">数字格识别</option><option value="omr">OMR 勾选</option></select></label>
         <label>自动预填阈值<input type="number" min="0" max="1" step="0.01" value={draft.minimum_prefill_confidence} disabled={disabled} onChange={(event) => setDraft({ ...draft, minimum_prefill_confidence: Number(event.target.value) })} /></label>
+        <label className="checkbox-label"><input type="checkbox" checked={draft.rules.required} disabled={disabled} onChange={(event) => setDraft({ ...draft, rules: { ...draft.rules, required: event.target.checked } })} />必填字段</label>
+        <div className="coordinate-grid">
+          <label>最小值<input type="number" step="any" value={draft.rules.minimum_value ?? ""} disabled={disabled || !["integer", "decimal"].includes(draft.data_type)} onChange={(event) => setDraft({ ...draft, rules: { ...draft.rules, minimum_value: optionalNumber(event.target.value) } })} /></label>
+          <label>最大值<input type="number" step="any" value={draft.rules.maximum_value ?? ""} disabled={disabled || !["integer", "decimal"].includes(draft.data_type)} onChange={(event) => setDraft({ ...draft, rules: { ...draft.rules, maximum_value: optionalNumber(event.target.value) } })} /></label>
+        </div>
+        <label>允许值（逗号分隔）<input value={draft.rules.allowed_values.join(",")} disabled={disabled} onChange={(event) => setDraft({ ...draft, rules: { ...draft.rules, allowed_values: event.target.value.split(",").map((item) => item.trim()).filter(Boolean) } })} /></label>
+        <label>主数据源<input value={draft.rules.master_data_source ?? ""} disabled={disabled} placeholder="可留空" onChange={(event) => setDraft({ ...draft, rules: { ...draft.rules, master_data_source: event.target.value.trim() || null } })} /></label>
+        <label className="checkbox-label"><input type="checkbox" checked={draft.rules.allow_exception_reason} disabled={disabled} onChange={(event) => setDraft({ ...draft, rules: { ...draft.rules, allow_exception_reason: event.target.checked } })} />允许填写异常说明</label>
+        <label>导出工作簿<input value={draft.export_target.workbook} disabled={disabled} onChange={(event) => setDraft({ ...draft, export_target: { ...draft.export_target, workbook: event.target.value } })} /></label>
+        <label>导出工作表<input value={draft.export_target.worksheet} disabled={disabled} onChange={(event) => setDraft({ ...draft, export_target: { ...draft.export_target, worksheet: event.target.value } })} /></label>
+        <label>业务列键<input value={draft.export_target.business_column} disabled={disabled} onChange={(event) => setDraft({ ...draft, export_target: { ...draft.export_target, business_column: event.target.value } })} /></label>
         <div className="coordinate-grid">
           {COORDINATES.map((name) => <label key={name}>{name}<input type="number" min="0" max="1" step="0.005" value={draft.region[name]} disabled={disabled} onChange={(event) => setDraft({ ...draft, region: { ...draft.region, [name]: Number(event.target.value) } })} /></label>)}
         </div>
@@ -77,4 +88,8 @@ export function FieldInspector({ field, editable, onSave, onDelete }: Props) {
       </form>
     </aside>
   );
+}
+
+function optionalNumber(value: string): number | null {
+  return value.trim() === "" ? null : Number(value);
 }

@@ -374,7 +374,7 @@ git commit -m "feat: add template studio"
 - Create: `tests/modules/test_seed_templates_ds.py`
 - Create: `docs/design/legacy-payroll-template-inventory.md`
 
-- [ ] **Step 1: Write failing seed tests**
+- [x] **Step 1: Write failing seed tests**
 
 ```python
 def test_seed_templates_cover_each_historical_form_family() -> None:
@@ -385,18 +385,18 @@ def test_seed_templates_cover_each_historical_form_family() -> None:
         "PAYROLL_FIXED_PRODUCTION_GRID",
         "PAYROLL_EQUIPMENT_PROCESS",
     }
-    assert all(template.status is TemplateStatus.DRAFT for template in legacy_payroll_seed_templates())
+    assert all(template.status is TemplateStatus.PUBLISHED for template in legacy_payroll_seed_templates())
 ```
 
-- [ ] **Step 2: Run and verify failure**
+- [x] **Step 2: Run and verify failure**
 
 Run: `pytest tests/modules/test_seed_templates_ds.py -q`
 
 Expected: import failure for `legacy_payroll_seed_templates`.
 
-- [ ] **Step 3: Implement definitions and the legacy inventory**
+- [x] **Step 3: Implement definitions and the legacy inventory**
 
-Define the four drafts with only fixed regions and fields supported by Phase A.  Include common fields `work_date`, `shift`, `worker_name`, `remarks`, `assessment_result`; add fixed line keys (`line_01` through `line_10`) rather than dynamic rows.  The inventory must record this factual mapping:
+Define four immutable installed V1 templates with only fixed regions and fields supported by Phase A. Include common fields `work_date`, `shift`, `worker_name`, `remarks`, `assessment_result`; add fixed line keys (`line_01` through `line_10`) rather than dynamic rows. The installer must be idempotent, reject conflicting V1 content before partial writes, and repair missing base print artifacts. The inventory must record this factual mapping:
 
 | Seed key | Historical source files |
 |---|---|
@@ -407,13 +407,13 @@ Define the four drafts with only fixed regions and fields supported by Phase A. 
 
 State explicitly that the current analysis found no formulas in the operational form sheets, and that the original `.xls` files remain untouched.  Do not copy wages, names or historical records into seed data.
 
-- [ ] **Step 4: Run seed tests**
+- [x] **Step 4: Run seed tests**
 
 Run: `pytest tests/modules/test_seed_templates_ds.py -q`
 
 Expected: pass.
 
-- [ ] **Step 5: Commit mappings**
+- [x] **Step 5: Commit mappings**
 
 ```bash
 git add app/modules/templates/seed_templates_ds.py tests/modules/test_seed_templates_ds.py \
@@ -427,25 +427,25 @@ git commit -m "docs: map legacy payroll forms to template seeds"
 - Modify: `PROGRESS.md`
 - Modify: `docs/CODEX_HANDOFF.md`
 
-- [ ] **Step 1: Run focused backend checks**
+- [x] **Step 1: Run focused backend checks**
 
 Run: `pytest tests/templates tests/adapters/test_template_repository_ds.py tests/application/test_template_versions_ds.py tests/adapters/test_template_print_renderer_ds.py tests/api/test_templates_api_ds.py tests/modules/test_seed_templates_ds.py -q`
 
 Expected: all listed tests pass.
 
-- [ ] **Step 2: Run repository quality checks**
+- [x] **Step 2: Run repository quality checks**
 
 Run: `pytest -q && ruff check . && mypy app config`
 
 Expected: exit code `0` for each command.
 
-- [ ] **Step 3: Run frontend checks**
+- [x] **Step 3: Run frontend checks**
 
 Run: `npm run test && npm run build:web`
 
 Expected: Vitest, TypeScript and Vite production build pass.
 
-- [ ] **Step 4: Perform visual smoke validation**
+- [x] **Step 4: Perform visual smoke validation**
 
 Start the local API and Vite app using the project’s isolated runtime data.  Open Template Studio, create a draft, add one field, show failed preflight, add the missing marker declarations, publish, and open the generated PNG/PDF.  Record only the outcome and local URL in `PROGRESS.md`; do not commit runtime databases, evidence or logs.
 

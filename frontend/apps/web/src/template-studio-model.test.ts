@@ -37,7 +37,7 @@ describe("template studio canvas model", () => {
   });
 
   it("protects the instance code, corner markers, and printable page edge", () => {
-    const nearInstanceCode = { x: 0.64, y: 0.16, width: 0.12, height: 0.04 };
+    const nearInstanceCode = { x: 0.50, y: 0.05, width: 0.10, height: 0.04 };
     const nearTopEdge = { x: 0.2, y: 0.04, width: 0.2, height: 0.04 };
     const nearBottomMarker = { x: 0.1, y: 0.89, width: 0.1, height: 0.05 };
 

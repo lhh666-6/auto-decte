@@ -48,6 +48,25 @@ def test_preflight_blocks_field_overlapping_template_qr_safe_zone() -> None:
     assert service.get(draft.version_id).status is TemplateStatus.PREFLIGHT_FAILED
 
 
+def test_preflight_blocks_sheet_code_corner_markers_and_print_edges() -> None:
+    protected_regions = (
+        ("sheet_code", Rect(0.64, 0.04, 0.08, 0.06), "SHEET_SAFE_ZONE_OVERLAP"),
+        ("corner_marker", Rect(0.03, 0.04, 0.03, 0.03), "CORNER_MARKER_OVERLAP"),
+        ("print_edge", Rect(0.40, 0.005, 0.10, 0.01), "PRINT_EDGE_OVERLAP"),
+    )
+    for field_key, region, expected_code in protected_regions:
+        service = TemplateVersions(InMemoryTemplateRepository())
+        draft = service.create_draft("PAYROLL_HOURLY", PageSpec.a4_portrait())
+        service.add_field(
+            draft.version_id,
+            FieldDefinition(field_key, field_key, "text", "text_box", region, draft.page),
+        )
+
+        report = service.preflight(draft.version_id)
+
+        assert expected_code in {issue.code for issue in report.issues}
+
+
 def test_preflight_then_publish_and_clone_preserves_immutable_parent() -> None:
     service = TemplateVersions(InMemoryTemplateRepository())
     draft = service.create_draft("PAYROLL_HOURLY", PageSpec.a4_portrait())

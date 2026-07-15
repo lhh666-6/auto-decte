@@ -76,7 +76,7 @@ class TemplatePrintRenderer:
         image = Image.new("RGB", (page.canonical_width_px, page.canonical_height_px), "white")
         draw = ImageDraw.Draw(image)
         draw.text((96, 96), f"{version.template_key} / V{version.version}", fill="black")
-        self._paste_qr(image, template_payload, 0.80, 0.02, 0.16, 0.12)
+        self._paste_qr(image, template_payload, 0.78, 0.02, 0.16, 0.12)
         if sheet_payload is not None:
             self._paste_qr(image, sheet_payload, 0.62, 0.02, 0.14, 0.12)
         self._draw_corner_markers(image)

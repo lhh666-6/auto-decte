@@ -64,6 +64,49 @@ class Rect:
 
 
 @dataclass(frozen=True, slots=True)
+class FieldRules:
+    """Deterministic validation policy carried by a template field."""
+
+    required: bool = False
+    minimum_value: float | None = None
+    maximum_value: float | None = None
+    allowed_values: tuple[str, ...] = ()
+    master_data_source: str | None = None
+    allow_exception_reason: bool = False
+
+    def __post_init__(self) -> None:
+        if (
+            self.minimum_value is not None
+            and self.maximum_value is not None
+            and self.minimum_value > self.maximum_value
+        ):
+            raise ValueError("minimum_value must not exceed maximum_value")
+        if any(not item.strip() for item in self.allowed_values):
+            raise ValueError("allowed_values must not contain blank values")
+        if len(set(self.allowed_values)) != len(self.allowed_values):
+            raise ValueError("allowed_values must be unique")
+        if self.master_data_source is not None and not self.master_data_source.strip():
+            raise ValueError("master_data_source must not be blank")
+
+
+@dataclass(frozen=True, slots=True)
+class ExportTarget:
+    """Stable field-to-workbook mapping independent of the display label."""
+
+    workbook: str
+    worksheet: str
+    business_column: str
+
+    def __post_init__(self) -> None:
+        if not self.workbook.strip().lower().endswith(".xlsx"):
+            raise ValueError("export workbook must be an .xlsx file")
+        if not self.worksheet.strip():
+            raise ValueError("export worksheet is required")
+        if not self.business_column.strip():
+            raise ValueError("export business_column is required")
+
+
+@dataclass(frozen=True, slots=True)
 class FieldDefinition:
     """A stable, rectangular field declared by a template version."""
 
@@ -75,6 +118,8 @@ class FieldDefinition:
     page: PageSpec
     recognition_engine: str = "manual"
     minimum_prefill_confidence: float = 1.0
+    rules: FieldRules = field(default_factory=FieldRules)
+    export_target: ExportTarget | None = None
 
     def __post_init__(self) -> None:
         if not self.field_key or not re.fullmatch(r"[a-z][a-z0-9_]*", self.field_key):
@@ -87,6 +132,16 @@ class FieldDefinition:
             raise ValueError("recognition_engine is required")
         if not 0 <= self.minimum_prefill_confidence <= 1:
             raise ValueError("minimum_prefill_confidence must be between 0 and 1")
+        if self.data_type not in {"integer", "decimal"} and (
+            self.rules.minimum_value is not None or self.rules.maximum_value is not None
+        ):
+            raise ValueError("numeric range rules require an integer or decimal field")
+        if self.export_target is None:
+            object.__setattr__(
+                self,
+                "export_target",
+                ExportTarget("records.xlsx", "records", self.field_key),
+            )
 
 
 @dataclass(slots=True)

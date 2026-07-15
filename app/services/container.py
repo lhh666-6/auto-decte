@@ -28,6 +28,7 @@ from app.modules.review.facade_ds import ReviewFacade
 from app.modules.review.lease_service_ds import ReviewLeaseService
 from app.modules.review.repository_ds import SqlAlchemyReviewLeaseRepository
 from app.modules.tasks.service_ds import TaskService
+from app.modules.templates.seed_templates_ds import install_legacy_payroll_seed_templates
 from config.settings import Settings
 
 
@@ -52,7 +53,7 @@ class Services:
     tasks: TaskService
 
 
-def build_services(settings: Settings) -> Services:
+def build_services(settings: Settings, *, install_seed_templates: bool = False) -> Services:
     settings.database_path.parent.mkdir(parents=True, exist_ok=True)
     engine = create_sqlite_engine(settings.database_path)
     if settings.auto_create_schema:
@@ -71,7 +72,7 @@ def build_services(settings: Settings) -> Services:
         audits=repository,
     )
     task_store = SqliteTaskStore(engine)
-    return Services(
+    services = Services(
         settings=settings,
         engine=engine,
         repository=repository,
@@ -100,3 +101,6 @@ def build_services(settings: Settings) -> Services:
         task_store=task_store,
         tasks=TaskService(task_store),
     )
+    if install_seed_templates:
+        install_legacy_payroll_seed_templates(template_repository, template_renderer)
+    return services

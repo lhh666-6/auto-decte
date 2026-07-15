@@ -28,6 +28,19 @@ def _field(display_name: str = "Worker name") -> dict[str, object]:
         "input_type": "text_box",
         "recognition_engine": "manual",
         "minimum_prefill_confidence": 0.98,
+        "rules": {
+            "required": False,
+            "minimum_value": None,
+            "maximum_value": None,
+            "allowed_values": [],
+            "master_data_source": None,
+            "allow_exception_reason": False,
+        },
+        "export_target": {
+            "workbook": "records.xlsx",
+            "worksheet": "records",
+            "business_column": "worker_name",
+        },
         "region": {"x": 0.1, "y": 0.2, "width": 0.2, "height": 0.05},
     }
 

@@ -13,7 +13,7 @@ type StatusFilter = "ALL" | "PUBLISHED" | "EDITABLE";
 
 const templateNames: Record<string, { name: string; purpose: string }> = {
   PAYROLL_HOURLY: { name: "计时考核单", purpose: "适用于按工时统计的生产岗位" },
-  PAYROLL_STANDARD_PIECE_RATE: { name: "标准计件单", purpose: "适用于标准计件生产记录" },
+  PAYROLL_STANDARD_PIECE: { name: "标准计件单", purpose: "适用于标准计件生产记录" },
   PAYROLL_FIXED_PRODUCTION_GRID: { name: "固定生产明细单", purpose: "适用于固定生产明细岗位" },
   PAYROLL_EQUIPMENT_PROCESS: { name: "设备工序单", purpose: "适用于设备与工序计件岗位" },
 };

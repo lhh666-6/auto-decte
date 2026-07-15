@@ -29,6 +29,19 @@ const INITIAL_FIELD: TemplateField = {
   input_type: "text_box",
   recognition_engine: "manual",
   minimum_prefill_confidence: 0.97,
+  rules: {
+    required: false,
+    minimum_value: null,
+    maximum_value: null,
+    allowed_values: [],
+    master_data_source: null,
+    allow_exception_reason: false,
+  },
+  export_target: {
+    workbook: "records.xlsx",
+    worksheet: "records",
+    business_column: "worker_name",
+  },
   region: { x: 0.1, y: 0.2, width: 0.22, height: 0.05 },
 };
 
@@ -134,6 +147,10 @@ function TemplateEditor({
         ...INITIAL_FIELD,
         field_key: `field_${updated.fields.length + 1}`,
         display_name: `新字段 ${updated.fields.length + 1}`,
+        export_target: {
+          ...INITIAL_FIELD.export_target,
+          business_column: `field_${updated.fields.length + 1}`,
+        },
       });
     } catch (cause) {
       setError(message(cause));

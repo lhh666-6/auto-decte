@@ -15,6 +15,21 @@ export interface TemplateRect {
   height: number;
 }
 
+export interface TemplateFieldRules {
+  required: boolean;
+  minimum_value: number | null;
+  maximum_value: number | null;
+  allowed_values: string[];
+  master_data_source: string | null;
+  allow_exception_reason: boolean;
+}
+
+export interface TemplateExportTarget {
+  workbook: string;
+  worksheet: string;
+  business_column: string;
+}
+
 export interface TemplateField {
   field_key: string;
   display_name: string;
@@ -22,6 +37,8 @@ export interface TemplateField {
   input_type: string;
   recognition_engine: string;
   minimum_prefill_confidence: number;
+  rules: TemplateFieldRules;
+  export_target: TemplateExportTarget;
   region: TemplateRect;
 }
 

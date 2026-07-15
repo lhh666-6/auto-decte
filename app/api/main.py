@@ -14,4 +14,4 @@ from config.settings import Settings
 
 def create_app(services: Services | None = None) -> FastAPI:
     """Build the API using injected services or the configured local defaults."""
-    return _create_app(services or build_services(Settings()))
+    return _create_app(services or build_services(Settings(), install_seed_templates=True))

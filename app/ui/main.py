@@ -20,7 +20,7 @@ st.title("工业级产量数据采集 Demo")
 
 @st.cache_resource
 def services() -> Services:
-    return build_services(Settings())
+    return build_services(Settings(), install_seed_templates=True)
 
 
 import_tab, classification_tab, review_tab, rules_tab, search_tab, ai_tab, export_tab = st.tabs(

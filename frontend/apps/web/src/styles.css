@@ -135,6 +135,8 @@ button { cursor: pointer; }
 .inspector-heading h2 { margin-top: 3px; }
 .field-inspector form { min-width: 0; }
 .field-inspector input:read-only { color: #64748b; background: #f1f5f9; }
+.studio-card .checkbox-label { grid-template-columns: auto 1fr; align-items: center; }
+.studio-card .checkbox-label input { width: auto; }
 .inspector-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 4px; }
 .button-danger { border-color: #fecaca; color: #b91c1c; background: #fff; }
 .button-danger:hover:not(:disabled) { background: #fef2f2; }

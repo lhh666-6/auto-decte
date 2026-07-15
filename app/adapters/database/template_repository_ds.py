@@ -12,7 +12,9 @@ from app.adapters.database.models import (
     TemplateVersionRow,
 )
 from app.domain.templates_ds import (
+    ExportTarget,
     FieldDefinition,
+    FieldRules,
     PageSpec,
     Rect,
     TemplateArtifact,
@@ -170,6 +172,18 @@ class SqlAlchemyTemplateRepository:
                 for row in rows
             ]
 
+    def remove_artifacts(self, version_id: str, download_names: set[str]) -> None:
+        """Remove selected generated artifacts so an idempotent installer can repair them."""
+        if not download_names:
+            return
+        with self._transaction() as session:
+            session.execute(
+                delete(TemplateArtifactRow).where(
+                    TemplateArtifactRow.version_id == version_id,
+                    TemplateArtifactRow.download_name.in_(download_names),
+                )
+            )
+
     def get_artifact(self, artifact_id: str) -> TemplateArtifact | None:
         with self._read_session() as session:
             row = session.get(TemplateArtifactRow, artifact_id)
@@ -216,6 +230,23 @@ def _field_to_dict(field: FieldDefinition) -> dict[str, object]:
         "input_type": field.input_type,
         "recognition_engine": field.recognition_engine,
         "minimum_prefill_confidence": field.minimum_prefill_confidence,
+        "rules": {
+            "required": field.rules.required,
+            "minimum_value": field.rules.minimum_value,
+            "maximum_value": field.rules.maximum_value,
+            "allowed_values": list(field.rules.allowed_values),
+            "master_data_source": field.rules.master_data_source,
+            "allow_exception_reason": field.rules.allow_exception_reason,
+        },
+        "export_target": (
+            {
+                "workbook": field.export_target.workbook,
+                "worksheet": field.export_target.worksheet,
+                "business_column": field.export_target.business_column,
+            }
+            if field.export_target is not None
+            else None
+        ),
         "region": {
             "x": field.region.x,
             "y": field.region.y,
@@ -229,6 +260,17 @@ def _field_from_dict(field_key: str, value: dict[str, object], page: PageSpec) -
     region = value["region"]
     if not isinstance(region, dict):
         raise ValueError("template field region must be an object")
+    rules = value.get("rules", {})
+    if not isinstance(rules, dict):
+        raise ValueError("template field rules must be an object")
+    raw_allowed_values = rules.get("allowed_values", [])
+    if not isinstance(raw_allowed_values, list) or not all(
+        isinstance(item, str) for item in raw_allowed_values
+    ):
+        raise ValueError("template field allowed_values must be a string array")
+    raw_export_target = value.get("export_target")
+    if raw_export_target is not None and not isinstance(raw_export_target, dict):
+        raise ValueError("template field export_target must be an object")
     return FieldDefinition(
         field_key=field_key,
         display_name=str(value["display_name"]),
@@ -243,6 +285,23 @@ def _field_from_dict(field_key: str, value: dict[str, object], page: PageSpec) -
         page=page,
         recognition_engine=str(value.get("recognition_engine", "manual")),
         minimum_prefill_confidence=_as_float(value.get("minimum_prefill_confidence", 1.0)),
+        rules=FieldRules(
+            required=bool(rules.get("required", False)),
+            minimum_value=_as_optional_float(rules.get("minimum_value")),
+            maximum_value=_as_optional_float(rules.get("maximum_value")),
+            allowed_values=tuple(raw_allowed_values),
+            master_data_source=_as_optional_string(rules.get("master_data_source")),
+            allow_exception_reason=bool(rules.get("allow_exception_reason", False)),
+        ),
+        export_target=(
+            ExportTarget(
+                workbook=str(raw_export_target["workbook"]),
+                worksheet=str(raw_export_target["worksheet"]),
+                business_column=str(raw_export_target["business_column"]),
+            )
+            if isinstance(raw_export_target, dict)
+            else None
+        ),
     )
 
 
@@ -256,3 +315,17 @@ def _as_float(value: object) -> float:
     if isinstance(value, (int, float)):
         return float(value)
     raise ValueError("template confidence must be numeric")
+
+
+def _as_optional_float(value: object) -> float | None:
+    if value is None:
+        return None
+    return _as_float(value)
+
+
+def _as_optional_string(value: object) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return value
+    raise ValueError("template field string setting must be a string")

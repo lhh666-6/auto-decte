@@ -5,11 +5,14 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
+from pydantic import Field as PydanticField
 
 from app.api.dependencies_ds import get_current_actor, get_services
 from app.application.template_versions_ds import PreflightReport
 from app.domain.templates_ds import (
+    ExportTarget,
     FieldDefinition,
+    FieldRules,
     PageSpec,
     Rect,
     TemplateArtifact,
@@ -35,6 +38,21 @@ class RegionRequest(BaseModel):
     height: float
 
 
+class FieldRulesRequest(BaseModel):
+    required: bool = False
+    minimum_value: float | None = None
+    maximum_value: float | None = None
+    allowed_values: list[str] = PydanticField(default_factory=list)
+    master_data_source: str | None = None
+    allow_exception_reason: bool = False
+
+
+class ExportTargetRequest(BaseModel):
+    workbook: str = "records.xlsx"
+    worksheet: str = "records"
+    business_column: str | None = None
+
+
 class FieldRequest(BaseModel):
     field_key: str
     display_name: str
@@ -43,6 +61,8 @@ class FieldRequest(BaseModel):
     region: RegionRequest
     recognition_engine: str = "manual"
     minimum_prefill_confidence: float = 1.0
+    rules: FieldRulesRequest = PydanticField(default_factory=FieldRulesRequest)
+    export_target: ExportTargetRequest = PydanticField(default_factory=ExportTargetRequest)
 
 
 def _actor(request: Request, services: Services) -> Actor:
@@ -264,6 +284,19 @@ def _field_definition(body: FieldRequest, page: PageSpec) -> FieldDefinition:
         page,
         body.recognition_engine,
         body.minimum_prefill_confidence,
+        FieldRules(
+            required=body.rules.required,
+            minimum_value=body.rules.minimum_value,
+            maximum_value=body.rules.maximum_value,
+            allowed_values=tuple(body.rules.allowed_values),
+            master_data_source=body.rules.master_data_source,
+            allow_exception_reason=body.rules.allow_exception_reason,
+        ),
+        ExportTarget(
+            body.export_target.workbook,
+            body.export_target.worksheet,
+            body.export_target.business_column or body.field_key,
+        ),
     )
 
 
@@ -330,6 +363,23 @@ def _version_payload(
                 "input_type": field.input_type,
                 "recognition_engine": field.recognition_engine,
                 "minimum_prefill_confidence": field.minimum_prefill_confidence,
+                "rules": {
+                    "required": field.rules.required,
+                    "minimum_value": field.rules.minimum_value,
+                    "maximum_value": field.rules.maximum_value,
+                    "allowed_values": list(field.rules.allowed_values),
+                    "master_data_source": field.rules.master_data_source,
+                    "allow_exception_reason": field.rules.allow_exception_reason,
+                },
+                "export_target": (
+                    {
+                        "workbook": field.export_target.workbook,
+                        "worksheet": field.export_target.worksheet,
+                        "business_column": field.export_target.business_column,
+                    }
+                    if field.export_target is not None
+                    else None
+                ),
                 "region": {
                     "x": field.region.x,
                     "y": field.region.y,

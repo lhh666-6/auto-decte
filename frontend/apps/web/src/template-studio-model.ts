@@ -1,7 +1,7 @@
 import type { TemplateRect } from "../../../packages/api-client/src/templates_ds";
 
-export const QR_SAFE_ZONE: TemplateRect = { x: 0.8, y: 0.02, width: 0.16, height: 0.12 };
-export const SHEET_CODE_SAFE_ZONE: TemplateRect = { x: 0.8, y: 0.15, width: 0.16, height: 0.07 };
+export const QR_SAFE_ZONE: TemplateRect = { x: 0.78, y: 0.02, width: 0.16, height: 0.12 };
+export const SHEET_CODE_SAFE_ZONE: TemplateRect = { x: 0.62, y: 0.02, width: 0.14, height: 0.12 };
 export const PROTECTED_PLACEMENT_MESSAGE = "该位置属于二维码、实例码、定位标记或打印安全区，不能放置字段。";
 
 const PAGE_EDGE = 0.025;
