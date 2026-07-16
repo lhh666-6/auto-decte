@@ -59,6 +59,25 @@ def test_recovery_marks_running_tasks_interrupted(tmp_path: Path) -> None:
     assert store.get(task.task_id).status is TaskStatus.INTERRUPTED  # type: ignore[union-attr]
 
 
+def test_restart_releases_crashed_recovery_claim_for_another_worker(
+    tmp_path: Path,
+) -> None:
+    service, store = build_service(tmp_path)
+    task = service.submit(
+        TaskCommand("XLSX_EXPORT", "exports", "finance", "crashed-recovery", {})
+    )
+    service.start(task.task_id)
+    assert service.claim_recovery(task.task_id) is not None
+    assert store.get(task.task_id).status is TaskStatus.RECOVERING  # type: ignore[union-attr]
+
+    recovered = service.recover_interrupted()
+
+    assert recovered == [task.task_id]
+    assert store.get(task.task_id).status is TaskStatus.INTERRUPTED  # type: ignore[union-attr]
+    assert service.claim_recovery(task.task_id) is not None
+    assert store.get(task.task_id).status is TaskStatus.RECOVERING  # type: ignore[union-attr]
+
+
 def test_runner_reports_progress_and_marks_task_succeeded(tmp_path: Path) -> None:
     service, store = build_service(tmp_path)
     runner = InProcessTaskRunner(service, max_workers=1, queue_capacity=1)

@@ -1,7 +1,7 @@
 from concurrent.futures import ThreadPoolExecutor
 from hashlib import sha256
 from pathlib import Path
-from threading import Event, Lock
+from threading import Barrier, Event, Lock
 from typing import Any
 
 import pytest
@@ -470,6 +470,87 @@ def test_publish_failure_keeps_prepared_task_running_until_recovery(
     assert final.exists()
     assert not pending.exists()
     assert exporter.write_calls == 1
+
+
+def test_only_one_recovery_handler_claims_a_running_prepared_export(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.modules.reporting.handler_ds import ExportHandler
+
+    _, repository, templates, _, tasks, _ = _build_export_services(tmp_path)
+    exporter = _TrackingExporter()
+    exports = ExportForms(
+        repository,
+        exporter,
+        QueryForms(repository),
+        template_repository=templates,
+    )
+    handler_a = ExportHandler(exports, tasks, repository, tmp_path / "exports")
+    handler_b = ExportHandler(exports, tasks, repository, tmp_path / "exports")
+    task = tasks.submit(
+        TaskCommand(
+            "XLSX_EXPORT",
+            "exports",
+            "finance",
+            "concurrent-recovery-claim",
+            {"export_type": "OUTPUT", "filters": {}},
+        )
+    )
+    original_replace = Path.replace
+
+    def interrupt_publish(source: Path, target: Path) -> Path:
+        if source.name.endswith(".pending") and Path(target).suffix == ".xlsx":
+            raise OSError("leave export prepared")
+        return original_replace(source, target)
+
+    monkeypatch.setattr(Path, "replace", interrupt_publish)
+    with pytest.raises(OSError, match="leave export prepared"):
+        handler_a.handle(task.task_id)
+    monkeypatch.undo()
+
+    candidates_barrier = Barrier(2)
+    original_list = tasks.list_operation_tasks
+
+    def synchronized_list(
+        operation: str, statuses: tuple[TaskStatus, ...]
+    ) -> list[object]:
+        candidates = original_list(operation, statuses)
+        candidates_barrier.wait(timeout=2)
+        return candidates
+
+    monkeypatch.setattr(tasks, "list_operation_tasks", synchronized_list)
+    publish_lock = Lock()
+    second_publish = Event()
+    publish_calls = 0
+    original_publish = exports.publish
+
+    def synchronized_publish(batch: ExportBatch) -> None:
+        nonlocal publish_calls
+        with publish_lock:
+            publish_calls += 1
+            call_number = publish_calls
+            if call_number == 2:
+                second_publish.set()
+        if call_number == 1:
+            second_publish.wait(timeout=1)
+        original_publish(batch)
+
+    monkeypatch.setattr(exports, "publish", synchronized_publish)
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        futures = [
+            executor.submit(handler.recover_prepared)
+            for handler in (handler_a, handler_b)
+        ]
+        results = [future.result(timeout=5) for future in futures]
+
+    batch = repository.get_export_batch_by_task(task.task_id)
+    assert sum(len(result) for result in results) == 1
+    assert publish_calls == 1
+    assert exporter.write_calls == 1
+    assert batch is not None
+    assert tasks.get(task.task_id).status is TaskStatus.SUCCEEDED
+    assert Path(batch.file_path).exists()
+    assert repository.list_export_batches() == [batch]
 
 
 def test_build_services_automatically_recovers_prepared_export_without_rewrite(

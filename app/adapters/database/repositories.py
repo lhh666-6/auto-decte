@@ -546,9 +546,12 @@ class SqlAlchemyFormRepository:
                 task = session.get(TaskRow, batch.task_id)
                 if task is None:
                     raise KeyError(f"Unknown task: {batch.task_id}")
-                if task.status != TaskStatus.RUNNING.value:
+                if task.status not in {
+                    TaskStatus.RUNNING.value,
+                    TaskStatus.RECOVERING.value,
+                }:
                     raise ValueError(
-                        f"Export task is not running: {batch.task_id}"
+                        f"Export task is not active: {batch.task_id}"
                     )
                 task.status = TaskStatus.SUCCEEDED.value
                 task.progress = 100

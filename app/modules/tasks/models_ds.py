@@ -16,6 +16,7 @@ class TaskStatus(StrEnum):
     CANCEL_REQUESTED = "CANCEL_REQUESTED"
     CANCELLED = "CANCELLED"
     INTERRUPTED = "INTERRUPTED"
+    RECOVERING = "RECOVERING"
 
 
 class InvalidTaskTransition(RuntimeError):
@@ -38,11 +39,15 @@ _TRANSITIONS: dict[TaskStatus, frozenset[TaskStatus]] = {
             TaskStatus.FAILED,
             TaskStatus.CANCEL_REQUESTED,
             TaskStatus.INTERRUPTED,
+            TaskStatus.RECOVERING,
         }
     ),
     TaskStatus.CANCEL_REQUESTED: frozenset({TaskStatus.CANCELLED}),
     TaskStatus.FAILED: frozenset({TaskStatus.PENDING}),
-    TaskStatus.INTERRUPTED: frozenset({TaskStatus.PENDING}),
+    TaskStatus.INTERRUPTED: frozenset({TaskStatus.PENDING, TaskStatus.RECOVERING}),
+    TaskStatus.RECOVERING: frozenset(
+        {TaskStatus.SUCCEEDED, TaskStatus.FAILED, TaskStatus.INTERRUPTED}
+    ),
     TaskStatus.SUCCEEDED: frozenset(),
     TaskStatus.CANCELLED: frozenset(),
 }

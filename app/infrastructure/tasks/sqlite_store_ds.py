@@ -61,6 +61,32 @@ class SqliteTaskStore:
             assert row is not None
             return self._to_task(row)
 
+    def claim_recovery(self, task_id: str) -> Task | None:
+        """Atomically give one recovery worker ownership of an interrupted export."""
+        now = datetime.now(UTC)
+        with Session(self._engine) as session, session.begin():
+            result = cast(
+                CursorResult[Any],
+                session.execute(
+                    update(TaskRow)
+                    .where(
+                        TaskRow.task_id == task_id,
+                        TaskRow.status.in_(
+                            (
+                                TaskStatus.RUNNING.value,
+                                TaskStatus.INTERRUPTED.value,
+                            )
+                        ),
+                    )
+                    .values(status=TaskStatus.RECOVERING.value, updated_at=now)
+                ),
+            )
+            if result.rowcount != 1:
+                return None
+            row = session.get(TaskRow, task_id)
+            assert row is not None
+            return self._to_task(row)
+
     def reconcile_succeeded(
         self, task_id: str, detail: dict[str, object] | None = None
     ) -> Task:

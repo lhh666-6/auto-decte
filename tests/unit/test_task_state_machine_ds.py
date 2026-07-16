@@ -21,3 +21,19 @@ def test_task_rejects_terminal_transition_and_can_cancel() -> None:
     assert cancelled.status is TaskStatus.CANCELLED
     with pytest.raises(InvalidTaskTransition):
         cancelled.transition(TaskStatus.RUNNING)
+
+
+def test_recovery_owner_can_finish_fail_or_be_interrupted_again() -> None:
+    task = Task.new("XLSX_EXPORT", "exports", "finance", "recover", {})
+    running = task.transition(TaskStatus.RUNNING)
+    recovering = running.transition(TaskStatus.RECOVERING)
+
+    assert recovering.transition(TaskStatus.SUCCEEDED).status is TaskStatus.SUCCEEDED
+    assert recovering.transition(TaskStatus.FAILED).status is TaskStatus.FAILED
+    assert recovering.transition(TaskStatus.INTERRUPTED).status is TaskStatus.INTERRUPTED
+    assert (
+        running.transition(TaskStatus.INTERRUPTED)
+        .transition(TaskStatus.RECOVERING)
+        .status
+        is TaskStatus.RECOVERING
+    )

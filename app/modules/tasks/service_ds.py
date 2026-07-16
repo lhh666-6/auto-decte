@@ -44,6 +44,12 @@ class TaskService:
         self._append(task, TaskStatus.RUNNING.value)
         return task
 
+    def claim_recovery(self, task_id: str) -> Task | None:
+        task = self._store.claim_recovery(task_id)
+        if task is not None:
+            self._append(task, TaskStatus.RECOVERING.value)
+        return task
+
     def reconcile_succeeded(
         self, task_id: str, detail: dict[str, object] | None = None
     ) -> Task:
@@ -66,6 +72,9 @@ class TaskService:
 
     def retry(self, task_id: str) -> Task:
         return self._transition(task_id, TaskStatus.PENDING)
+
+    def interrupt(self, task_id: str) -> Task:
+        return self._transition(task_id, TaskStatus.INTERRUPTED)
 
     def report(self, task_id: str, progress: int, step: str | None) -> Task:
         task = self._require(task_id).report(progress, step)
@@ -97,11 +106,12 @@ class TaskService:
 
     def recover_interrupted(self) -> list[str]:
         recovered: list[str] = []
-        for task in self._store.list_by_status(TaskStatus.RUNNING.value):
-            interrupted = task.transition(TaskStatus.INTERRUPTED)
-            self._store.update(interrupted)
-            self._append(interrupted, "INTERRUPTED")
-            recovered.append(task.task_id)
+        for status in (TaskStatus.RUNNING, TaskStatus.RECOVERING):
+            for task in self._store.list_by_status(status.value):
+                interrupted = task.transition(TaskStatus.INTERRUPTED)
+                self._store.update(interrupted)
+                self._append(interrupted, "INTERRUPTED")
+                recovered.append(task.task_id)
         return recovered
 
     def _transition(self, task_id: str, target: TaskStatus) -> Task:

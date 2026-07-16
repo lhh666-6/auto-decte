@@ -109,9 +109,8 @@ class ExportHandler:
             event = self._tasks.latest_prepared(task.task_id)
             if event is None or event.detail is None:
                 continue
-            if task.status is TaskStatus.INTERRUPTED:
-                self._tasks.retry(task.task_id)
-                self._tasks.claim(task.task_id)
+            if self._tasks.claim_recovery(task.task_id) is None:
+                continue
             try:
                 batch = _batch_from_prepared_detail(event.detail)
             except Exception as error:
@@ -122,6 +121,7 @@ class ExportHandler:
                 try:
                     self._exports.publish(existing)
                 except OSError:
+                    self._tasks.interrupt(task.task_id)
                     continue
                 self._tasks.reconcile_succeeded(
                     task.task_id, {"export_batch_id": existing.export_batch_id}
@@ -135,12 +135,13 @@ class ExportHandler:
                 self._tasks.fail(task.task_id, str(error))
                 continue
             except OSError:
+                self._tasks.interrupt(task.task_id)
                 continue
             try:
                 self._exports.complete(batch)
             except Exception as error:
                 self._exports.cleanup(batch)
-                if self._tasks.get(task.task_id).status is TaskStatus.RUNNING:
+                if self._tasks.get(task.task_id).status is TaskStatus.RECOVERING:
                     self._tasks.fail(task.task_id, str(error))
                 continue
             recovered.append(batch)
