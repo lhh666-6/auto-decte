@@ -2,7 +2,7 @@
 
 from collections.abc import Iterator
 from contextlib import contextmanager
-from datetime import UTC
+from datetime import UTC, datetime
 from uuid import uuid4
 
 from sqlalchemy import Engine, delete, func, literal_column, select
@@ -553,7 +553,8 @@ class SqlAlchemyFormRepository:
                 task.status = TaskStatus.SUCCEEDED.value
                 task.progress = 100
                 task.error = None
-                task.updated_at = batch.exported_at
+                completion_time = datetime.now(UTC)
+                task.updated_at = completion_time
                 sequence = (
                     session.scalar(
                         select(func.max(TaskEventRow.sequence)).where(
@@ -571,7 +572,7 @@ class SqlAlchemyFormRepository:
                         progress=100,
                         step=task.step,
                         detail={"export_batch_id": batch.export_batch_id},
-                        created_at=batch.exported_at,
+                        created_at=completion_time,
                     )
                 )
 

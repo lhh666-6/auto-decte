@@ -136,6 +136,35 @@ def test_handler_completes_persistent_export_with_progress_and_snapshots(
     assert repository.list_audit_events("FORM-1")[-1].event_type == "EXPORT"
 
 
+def test_atomic_completion_uses_monotonic_task_and_event_timestamps(
+    tmp_path: Path,
+) -> None:
+    from app.modules.reporting.handler_ds import ExportHandler
+
+    _, repository, _, exports, tasks, store = _build_export_services(tmp_path)
+    task = tasks.submit(
+        TaskCommand(
+            "XLSX_EXPORT",
+            "exports",
+            "finance",
+            "monotonic-completion-time",
+            {"export_type": "OUTPUT", "filters": {}},
+        )
+    )
+
+    batch = ExportHandler(
+        exports, tasks, repository, tmp_path / "exports"
+    ).handle(task.task_id)
+
+    events = store.list_events(task.task_id)
+    event_times = [event.created_at for event in events]
+    last_progress = [event for event in events if event.event_type == "PROGRESS"][-1]
+    persisted_task = tasks.get(task.task_id)
+    assert event_times == sorted(event_times)
+    assert persisted_task.updated_at >= last_progress.created_at
+    assert persisted_task.updated_at >= batch.exported_at
+
+
 def test_handler_fails_when_preview_has_no_included_records(tmp_path: Path) -> None:
     from app.modules.reporting.handler_ds import ExportHandler
 
