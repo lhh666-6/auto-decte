@@ -62,36 +62,43 @@ class ExportForms:
         """Idempotently publish and verify a prepared workbook."""
         destination = Path(batch.file_path)
         pending = destination.with_name(f"{destination.name}.pending")
-        if destination.exists():
-            if _file_sha256(destination) != batch.file_sha256:
-                raise ExportIntegrityError(
-                    f"Published export hash does not match batch {batch.export_batch_id}"
-                )
-            pending.unlink(missing_ok=True)
-            return
-        if not pending.exists():
-            raise FileNotFoundError(
-                f"No pending workbook for export batch {batch.export_batch_id}"
-            )
-        if _file_sha256(pending) != batch.file_sha256:
-            raise ExportIntegrityError(
-                f"Pending export hash does not match batch {batch.export_batch_id}"
-            )
-        try:
-            pending.replace(destination)
-        except FileNotFoundError:
-            if destination.exists():
-                if _file_sha256(destination) == batch.file_sha256:
+        last_missing: FileNotFoundError | None = None
+        for _ in range(3):
+            try:
+                if self._accept_published_workbook(destination, pending, batch):
                     return
-                raise ExportIntegrityError(
-                    "Published export hash does not match batch "
-                    f"{batch.export_batch_id}"
-                ) from None
-            raise
+                if not pending.exists():
+                    continue
+                if _file_sha256(pending) != batch.file_sha256:
+                    raise ExportIntegrityError(
+                        "Pending export hash does not match batch "
+                        f"{batch.export_batch_id}"
+                    )
+                pending.replace(destination)
+            except FileNotFoundError as error:
+                last_missing = error
+                continue
+        try:
+            if self._accept_published_workbook(destination, pending, batch):
+                return
+        except FileNotFoundError as error:
+            last_missing = error
+        raise FileNotFoundError(
+            f"No pending workbook for export batch {batch.export_batch_id}"
+        ) from last_missing
+
+    @staticmethod
+    def _accept_published_workbook(
+        destination: Path, pending: Path, batch: ExportBatch
+    ) -> bool:
+        if not destination.exists():
+            return False
         if _file_sha256(destination) != batch.file_sha256:
             raise ExportIntegrityError(
                 f"Published export hash does not match batch {batch.export_batch_id}"
             )
+        pending.unlink(missing_ok=True)
+        return True
 
     def complete(self, batch: ExportBatch) -> None:
         """Commit an already-published and verified export."""

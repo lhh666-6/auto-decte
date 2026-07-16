@@ -840,6 +840,44 @@ def test_publish_tolerates_other_worker_moving_pending_file_first(
     assert tasks.get(task.task_id).status is TaskStatus.SUCCEEDED
 
 
+def test_publish_rechecks_final_when_pending_disappears_during_hash_read(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import app.application.export_forms as export_module
+
+    _, repository, templates, _, _, _ = _build_export_services(tmp_path)
+    exports = ExportForms(
+        repository,
+        XlsxExporter(),
+        QueryForms(repository),
+        template_repository=templates,
+    )
+    batch = exports.prepare(
+        "OUTPUT", FormFilters(), tmp_path / "exports", "finance"
+    )
+    final = Path(batch.file_path)
+    pending = Path(f"{batch.file_path}.pending")
+    original_file_sha256 = export_module._file_sha256
+    moved_during_hash_read = False
+
+    def concurrent_file_sha256(path: Path) -> str:
+        nonlocal moved_during_hash_read
+        if path == pending and not moved_during_hash_read:
+            moved_during_hash_read = True
+            pending.replace(final)
+        return original_file_sha256(path)
+
+    monkeypatch.setattr(export_module, "_file_sha256", concurrent_file_sha256)
+
+    exports.publish(batch)
+
+    assert moved_during_hash_read
+    assert final.exists()
+    assert not pending.exists()
+    assert original_file_sha256(final) == batch.file_sha256
+    exports.cleanup(batch)
+
+
 def test_publish_race_rejects_mismatched_final_hash(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
