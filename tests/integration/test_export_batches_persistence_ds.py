@@ -8,7 +8,7 @@ from sqlalchemy import create_engine
 
 from app.adapters.database.models import Base
 from app.adapters.database.repositories import SqlAlchemyFormRepository
-from app.domain.models import ExportBatch
+from app.domain.models import ExportBatch, stable_json_sha256
 
 
 def _mapping_hash(snapshot: tuple[dict[str, object], ...]) -> str:
@@ -86,6 +86,81 @@ def test_export_batch_mapping_hash_ignores_dictionary_key_order() -> None:
 
     assert first.mapping_hash == second.mapping_hash
     assert len(first.mapping_hash) == 64
+
+
+def test_export_batch_recursively_freezes_and_detaches_json_snapshots() -> None:
+    filters = {
+        "form_ids": ["FORM-1"],
+        "options": {"include_voided": False},
+    }
+    template_snapshot = {
+        "templates": [{"template_id": "T1", "field_keys": ["employee_id"]}],
+    }
+    mapping = {
+        "field_key": "employee_id",
+        "target": {"worksheet": "employees", "columns": ["employee_code"]},
+    }
+    batch = ExportBatch(
+        "EXPORT-FROZEN",
+        "OUTPUT",
+        filters,
+        (("FORM-1", 1),),
+        "internal/frozen.xlsx",
+        "f" * 64,
+        "finance",
+        mapping_snapshot=(mapping,),
+        template_snapshot=template_snapshot,
+    )
+    original_hash = batch.mapping_hash
+
+    filters["form_ids"].append("FORM-2")  # type: ignore[union-attr]
+    filters["options"]["include_voided"] = True  # type: ignore[index]
+    template_snapshot["templates"][0]["field_keys"].append("total")  # type: ignore[index,union-attr]
+    mapping["target"]["worksheet"] = "mutated"  # type: ignore[index]
+
+    assert batch.filters["form_ids"] == ("FORM-1",)
+    assert batch.filters["options"]["include_voided"] is False
+    assert batch.template_snapshot["templates"][0]["field_keys"] == ("employee_id",)
+    assert batch.mapping_snapshot[0]["target"]["worksheet"] == "employees"
+    assert batch.mapping_hash == original_hash
+    assert batch.mapping_hash == stable_json_sha256(batch.mapping_snapshot)
+    with pytest.raises(TypeError):
+        batch.filters["new_filter"] = True  # type: ignore[index]
+    with pytest.raises(TypeError):
+        batch.mapping_snapshot[0]["target"]["worksheet"] = "mutated"  # type: ignore[index]
+
+
+def test_reloaded_export_batch_snapshots_remain_recursively_frozen() -> None:
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    repository = SqlAlchemyFormRepository(engine)
+    repository.add_export_batch(
+        ExportBatch(
+            "EXPORT-RELOADED-FROZEN",
+            "OUTPUT",
+            {"form_ids": ["FORM-1"]},
+            (("FORM-1", 1),),
+            "internal/reloaded-frozen.xlsx",
+            "0" * 64,
+            "finance",
+            template_snapshot={"templates": [{"template_id": "T1"}]},
+            mapping_snapshot=(
+                {
+                    "field_key": "employee_id",
+                    "target": {"worksheet": "employees"},
+                },
+            ),
+        )
+    )
+
+    reloaded = repository.get_export_batch("EXPORT-RELOADED-FROZEN")
+
+    assert reloaded is not None
+    assert reloaded.mapping_hash == stable_json_sha256(reloaded.mapping_snapshot)
+    with pytest.raises(TypeError):
+        reloaded.template_snapshot["templates"][0]["template_id"] = "MUTATED"  # type: ignore[index]
+    with pytest.raises(TypeError):
+        reloaded.mapping_snapshot[0]["target"]["worksheet"] = "MUTATED"  # type: ignore[index]
 
 
 def test_export_batch_history_is_newest_first_and_preserves_replacement() -> None:

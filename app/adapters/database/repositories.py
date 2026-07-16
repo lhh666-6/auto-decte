@@ -36,6 +36,7 @@ from app.domain.models import (
     RecordVersion,
     ReviewStatus,
     ValueSource,
+    thaw_json,
 )
 
 
@@ -466,10 +467,10 @@ class SqlAlchemyFormRepository:
                     export_batch_id=batch.export_batch_id,
                     export_type=batch.export_type,
                     task_id=batch.task_id,
-                    template_snapshot=batch.template_snapshot,
-                    mapping_snapshot=list(batch.mapping_snapshot),
+                    template_snapshot=thaw_json(batch.template_snapshot),
+                    mapping_snapshot=thaw_json(batch.mapping_snapshot),
                     mapping_hash=batch.mapping_hash,
-                    filters=batch.filters,
+                    filters=thaw_json(batch.filters),
                     included_records=[list(item) for item in batch.included_records],
                     file_path=batch.file_path,
                     download_name=batch.download_name,

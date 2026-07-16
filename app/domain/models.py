@@ -2,10 +2,13 @@
 
 import hashlib
 import json
+import math
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Any
+from types import MappingProxyType
+from typing import Any, cast
 
 
 def utc_now() -> datetime:
@@ -135,10 +138,42 @@ class AuditEvent:
     timestamp: datetime = field(default_factory=utc_now)
 
 
+def freeze_json(value: Any) -> Any:
+    """Detach and recursively freeze one JSON-compatible value."""
+    if isinstance(value, Mapping):
+        frozen: dict[str, Any] = {}
+        for key, item in value.items():
+            if not isinstance(key, str):
+                raise TypeError("JSON object keys must be strings")
+            frozen[key] = freeze_json(item)
+        return MappingProxyType(frozen)
+    if isinstance(value, list | tuple):
+        return tuple(freeze_json(item) for item in value)
+    if value is None or isinstance(value, str | bool | int):
+        return value
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            raise TypeError("JSON numbers must be finite")
+        return value
+    raise TypeError(f"Unsupported JSON snapshot value: {type(value).__name__}")
+
+
+def thaw_json(value: Any) -> Any:
+    """Recursively copy a frozen JSON value to plain dictionaries and lists."""
+    if isinstance(value, Mapping):
+        return {key: thaw_json(item) for key, item in value.items()}
+    if isinstance(value, list | tuple):
+        return [thaw_json(item) for item in value]
+    if value is None or isinstance(value, str | bool | int | float):
+        return value
+    raise TypeError(f"Unsupported frozen JSON value: {type(value).__name__}")
+
+
 def stable_json_sha256(value: Any) -> str:
     """Hash a JSON-compatible value independently of dictionary key order."""
     serialized = json.dumps(
-        value,
+        thaw_json(value),
+        allow_nan=False,
         ensure_ascii=False,
         sort_keys=True,
         separators=(",", ":"),
@@ -150,7 +185,7 @@ def stable_json_sha256(value: Any) -> str:
 class ExportBatch:
     export_batch_id: str
     export_type: str
-    filters: dict[str, Any]
+    filters: Mapping[str, Any]
     included_records: tuple[tuple[str, int], ...]
     file_path: str
     file_sha256: str
@@ -158,12 +193,30 @@ class ExportBatch:
     exported_at: datetime = field(default_factory=utc_now)
     supersedes_batch_id: str | None = None
     task_id: str | None = None
-    template_snapshot: dict[str, Any] = field(default_factory=dict)
-    mapping_snapshot: tuple[dict[str, Any], ...] = ()
+    template_snapshot: Mapping[str, Any] = field(default_factory=dict)
+    mapping_snapshot: tuple[Mapping[str, Any], ...] = ()
     mapping_hash: str = ""
     download_name: str = "export.xlsx"
 
     def __post_init__(self) -> None:
+        frozen_filters = freeze_json(self.filters)
+        frozen_template = freeze_json(self.template_snapshot)
+        frozen_mapping = freeze_json(self.mapping_snapshot)
+        if not isinstance(frozen_filters, Mapping):
+            raise TypeError("filters must be a JSON object")
+        if not isinstance(frozen_template, Mapping):
+            raise TypeError("template_snapshot must be a JSON object")
+        if not isinstance(frozen_mapping, tuple) or any(
+            not isinstance(item, Mapping) for item in frozen_mapping
+        ):
+            raise TypeError("mapping_snapshot must be a sequence of JSON objects")
+        object.__setattr__(self, "filters", frozen_filters)
+        object.__setattr__(self, "template_snapshot", frozen_template)
+        object.__setattr__(
+            self,
+            "mapping_snapshot",
+            cast(tuple[Mapping[str, Any], ...], frozen_mapping),
+        )
         expected_hash = stable_json_sha256(self.mapping_snapshot)
         if self.mapping_hash and self.mapping_hash != expected_hash:
             raise ValueError("mapping_hash does not match mapping_snapshot")
