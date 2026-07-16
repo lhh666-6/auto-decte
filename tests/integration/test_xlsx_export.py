@@ -383,6 +383,44 @@ def test_template_export_rejects_multiple_workbooks(tmp_path: Path) -> None:
         )
 
 
+def test_template_export_rejects_case_insensitive_worksheet_collisions(
+    tmp_path: Path,
+) -> None:
+    mappings = (
+        ExportMapping("T1", "1", "first", "one.xlsx", "data", "first"),
+        ExportMapping("T1", "1", "second", "one.xlsx", "DATA", "second"),
+    )
+
+    with pytest.raises(ValueError, match="worksheet names must be unique ignoring case"):
+        XlsxExporter().write(
+            tmp_path / "worksheet-collision.xlsx",
+            "BATCH-1",
+            "OUTPUT",
+            [_search_result({"first": "one", "second": "two"})],
+            {},
+            mappings=mappings,
+        )
+
+
+def test_template_export_rejects_duplicate_business_column_for_template_sheet(
+    tmp_path: Path,
+) -> None:
+    mappings = (
+        ExportMapping("T1", "1", "first", "one.xlsx", "data", "duplicate"),
+        ExportMapping("T1", "1", "second", "one.xlsx", "data", "duplicate"),
+    )
+
+    with pytest.raises(ValueError, match="business columns must be unique"):
+        XlsxExporter().write(
+            tmp_path / "column-collision.xlsx",
+            "BATCH-1",
+            "OUTPUT",
+            [_search_result({"first": "one", "second": "two"})],
+            {},
+            mappings=mappings,
+        )
+
+
 @pytest.mark.parametrize(
     ("unsafe", "expected"),
     [
@@ -391,6 +429,8 @@ def test_template_export_rejects_multiple_workbooks(tmp_path: Path) -> None:
         ("-2+3", "'-2+3"),
         ("@cmd", "'@cmd"),
         ("\ufeff=hidden", "'=hidden"),
+        ("#N/A", "#N/A"),
+        ("#REF!", "#REF!"),
     ],
 )
 def test_template_export_neutralizes_formula_like_text(
@@ -408,7 +448,7 @@ def test_template_export_neutralizes_formula_like_text(
 
     cell = load_workbook(destination, data_only=False)["data"]["D2"]
     assert cell.value == expected
-    assert cell.data_type != "f"
+    assert cell.data_type == "s"
 
 
 @pytest.mark.parametrize(

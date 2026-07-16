@@ -80,6 +80,7 @@ class XlsxExporter:
         rows: list[SearchResult],
         mappings: tuple[ExportMapping, ...],
     ) -> None:
+        _validate_mappings(mappings)
         workbooks = {mapping.workbook for mapping in mappings}
         if len(workbooks) > 1:
             raise ValueError("an export mapping snapshot must target exactly one workbook")
@@ -148,3 +149,31 @@ def _neutralize_text_cells(workbook: Workbook) -> None:
                     continue
                 text = cell.value.lstrip("\ufeff")
                 cell.value = f"'{text}" if text.startswith(("=", "+", "-", "@")) else text
+                cell.data_type = "s"
+
+
+def _validate_mappings(mappings: tuple[ExportMapping, ...]) -> None:
+    worksheet_names: dict[str, str] = {}
+    fields_by_column: dict[tuple[str, str, str, str], str] = {}
+    for mapping in mappings:
+        worksheet_key = mapping.worksheet.casefold()
+        existing_name = worksheet_names.setdefault(worksheet_key, mapping.worksheet)
+        if existing_name != mapping.worksheet:
+            raise ValueError(
+                "worksheet names must be unique ignoring case: "
+                f"{existing_name!r} conflicts with {mapping.worksheet!r}"
+            )
+
+        column_key = (
+            mapping.template_id,
+            mapping.template_version,
+            worksheet_key,
+            mapping.business_column,
+        )
+        existing_field = fields_by_column.setdefault(column_key, mapping.field_key)
+        if existing_field != mapping.field_key:
+            raise ValueError(
+                "business columns must be unique per template worksheet: "
+                f"{mapping.business_column!r} maps both {existing_field!r} "
+                f"and {mapping.field_key!r}"
+            )
