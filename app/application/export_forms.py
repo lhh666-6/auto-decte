@@ -174,6 +174,16 @@ class ExportForms:
     ) -> ExportBatch:
         confirmed_filters = replace(filters, review_status=ReviewStatus.CONFIRMED)
         results = self._queries.search(confirmed_filters)
+        if self._template_repository is not None:
+            included_records = {
+                (item.form_id, item.record_version)
+                for item in self.preview(filters, actor_id).included
+            }
+            results = [
+                result
+                for result in results
+                if (result.form.form_id, result.current_record.version) in included_records
+            ]
         batch_id = f"EXPORT-{uuid4().hex}"
         timestamp = datetime.now(UTC)
         destination = output_directory / f"{export_type}-{timestamp:%Y%m%dT%H%M%S}-{batch_id}.xlsx"

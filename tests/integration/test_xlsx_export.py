@@ -199,6 +199,13 @@ def test_preview_excludes_confirmed_record_that_fails_basic_final_validation(
     ]
     assert preview.mapping_snapshot == ()
 
+    batch = service.export("OUTPUT", FormFilters(), tmp_path / "exports", "finance")
+
+    assert batch.included_records == tuple(
+        (item.form_id, item.record_version) for item in preview.included
+    )
+    assert repository.get_form("FORM-INVALID").export_status is ExportStatus.NOT_EXPORTED  # type: ignore[union-attr]
+
 
 def test_reporting_facade_preview_explains_missing_template(tmp_path: Path) -> None:
     _, _, repository = setup_confirmed_form(tmp_path)
