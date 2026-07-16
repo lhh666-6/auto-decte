@@ -1,11 +1,13 @@
 """Programmatic Alembic migration entrypoints for local deployments and tests."""
 
+import json
 from pathlib import Path
 
 from alembic.config import Config
 from sqlalchemy import Engine, inspect, text
 
 from alembic import command
+from app.domain.models import stable_json_sha256
 
 HEAD_REVISION = "007"
 
@@ -64,6 +66,7 @@ def ensure_auto_created_schema_compatibility(engine: Engine) -> None:
         export_columns = {
             column["name"] for column in inspector.get_columns("export_batches")
         }
+        mapping_hash_was_missing = "mapping_hash" not in export_columns
         missing_columns = {
             "task_id": "VARCHAR",
             "template_snapshot": "JSON NOT NULL DEFAULT '{}'",
@@ -94,13 +97,45 @@ def ensure_auto_created_schema_compatibility(engine: Engine) -> None:
                     "WHERE mapping_snapshot IS NULL"
                 )
             )
-            connection.execute(
+            rows = connection.execute(
                 text(
-                    "UPDATE export_batches SET mapping_hash = :mapping_hash "
-                    "WHERE mapping_hash IS NULL OR mapping_hash = ''"
-                ),
-                {"mapping_hash": _EMPTY_MAPPING_HASH},
-            )
+                    "SELECT export_batch_id, mapping_snapshot, mapping_hash "
+                    "FROM export_batches"
+                )
+            ).mappings().all()
+            for row in rows:
+                if (
+                    not mapping_hash_was_missing
+                    and row["mapping_hash"] not in {None, ""}
+                ):
+                    continue
+                raw_snapshot = row["mapping_snapshot"]
+                try:
+                    snapshot = (
+                        json.loads(raw_snapshot)
+                        if isinstance(raw_snapshot, str | bytes | bytearray)
+                        else raw_snapshot
+                    )
+                    if not isinstance(snapshot, list) or any(
+                        not isinstance(item, dict) for item in snapshot
+                    ):
+                        raise TypeError("mapping snapshot must be a list of objects")
+                    mapping_hash = stable_json_sha256(snapshot)
+                except (TypeError, UnicodeDecodeError, ValueError) as error:
+                    batch_id = row["export_batch_id"]
+                    raise SchemaRevisionError(
+                        f"Export batch {batch_id!r} has invalid mapping_snapshot JSON"
+                    ) from error
+                connection.execute(
+                    text(
+                        "UPDATE export_batches SET mapping_hash = :mapping_hash "
+                        "WHERE export_batch_id = :batch_id"
+                    ),
+                    {
+                        "mapping_hash": mapping_hash,
+                        "batch_id": row["export_batch_id"],
+                    },
+                )
             connection.execute(
                 text(
                     "UPDATE export_batches SET download_name = 'export.xlsx' "

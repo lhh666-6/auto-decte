@@ -1,14 +1,16 @@
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+import pytest
 from alembic.config import Config
 from sqlalchemy import create_engine, inspect, text
 
 from alembic import command
 from app.adapters.database.repositories import SqlAlchemyFormRepository
+from app.domain.models import stable_json_sha256
 from app.infrastructure.backup.integrity_ds import IntegrityChecker
 from app.infrastructure.backup.service_ds import BackupService
-from app.infrastructure.database.migrations import upgrade_database
+from app.infrastructure.database.migrations import SchemaRevisionError, upgrade_database
 from app.services.container import build_services
 from config.settings import Settings
 
@@ -339,6 +341,126 @@ def test_auto_created_legacy_export_batches_gain_snapshot_columns_without_data_l
         item["name"]
         for item in inspect(services.engine).get_columns("export_batches")
     }
+
+
+def test_partial_export_batch_schema_backfills_actual_mapping_hash_idempotently(
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "database" / "demo.db"
+    database_path.parent.mkdir(parents=True)
+    mapping_snapshot = [
+        {
+            "field_key": "employee_id",
+            "target": {"worksheet": "employees", "business_column": "employee_code"},
+        }
+    ]
+    engine = create_engine(f"sqlite:///{database_path}")
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "CREATE TABLE forms ("
+                "form_id VARCHAR PRIMARY KEY, template_id VARCHAR NOT NULL, "
+                "template_version VARCHAR NOT NULL, coordinate_version VARCHAR NOT NULL, "
+                "review_status VARCHAR NOT NULL, export_status VARCHAR NOT NULL, "
+                "current_record_version INTEGER NOT NULL, created_at DATETIME NOT NULL)"
+            )
+        )
+        connection.execute(
+            text(
+                "CREATE TABLE export_batches ("
+                "export_batch_id VARCHAR PRIMARY KEY, export_type VARCHAR NOT NULL, "
+                "filters JSON NOT NULL, included_records JSON NOT NULL, "
+                "file_path VARCHAR NOT NULL UNIQUE, file_sha256 VARCHAR(64) NOT NULL, "
+                "exported_by VARCHAR NOT NULL, exported_at DATETIME NOT NULL, "
+                "supersedes_batch_id VARCHAR, mapping_snapshot JSON NOT NULL)"
+            )
+        )
+        connection.execute(
+            text(
+                "INSERT INTO export_batches "
+                "(export_batch_id, export_type, filters, included_records, file_path, "
+                "file_sha256, exported_by, exported_at, supersedes_batch_id, "
+                "mapping_snapshot) VALUES ("
+                "'EXPORT-PARTIAL', 'OUTPUT', '{}', '[]', "
+                "'internal/partial.xlsx', :sha256, 'finance', CURRENT_TIMESTAMP, "
+                "NULL, :mapping_snapshot)"
+            ),
+            {
+                "sha256": "1" * 64,
+                "mapping_snapshot": (
+                    '[{"field_key":"employee_id","target":'
+                    '{"worksheet":"employees","business_column":"employee_code"}}]'
+                ),
+            },
+        )
+    engine.dispose()
+    expected_hash = stable_json_sha256(mapping_snapshot)
+
+    services = build_services(Settings(data_root=tmp_path))
+
+    batch = services.repository.get_export_batch("EXPORT-PARTIAL")
+    assert batch is not None
+    assert batch.mapping_snapshot == tuple(mapping_snapshot)
+    assert batch.mapping_hash == expected_hash
+    with services.engine.connect() as connection:
+        persisted_hash = connection.execute(
+            text(
+                "SELECT mapping_hash FROM export_batches "
+                "WHERE export_batch_id = 'EXPORT-PARTIAL'"
+            )
+        ).scalar_one()
+    assert persisted_hash == expected_hash
+    services.engine.dispose()
+
+    rebuilt = build_services(Settings(data_root=tmp_path))
+
+    reloaded = rebuilt.repository.get_export_batch("EXPORT-PARTIAL")
+    assert reloaded is not None
+    assert reloaded.mapping_hash == expected_hash
+
+
+def test_partial_export_batch_schema_rejects_invalid_mapping_json_clearly(
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "database" / "demo.db"
+    database_path.parent.mkdir(parents=True)
+    engine = create_engine(f"sqlite:///{database_path}")
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "CREATE TABLE forms ("
+                "form_id VARCHAR PRIMARY KEY, template_id VARCHAR NOT NULL, "
+                "template_version VARCHAR NOT NULL, coordinate_version VARCHAR NOT NULL, "
+                "review_status VARCHAR NOT NULL, export_status VARCHAR NOT NULL, "
+                "current_record_version INTEGER NOT NULL, created_at DATETIME NOT NULL)"
+            )
+        )
+        connection.execute(
+            text(
+                "CREATE TABLE export_batches ("
+                "export_batch_id VARCHAR PRIMARY KEY, export_type VARCHAR NOT NULL, "
+                "filters JSON NOT NULL, included_records JSON NOT NULL, "
+                "file_path VARCHAR NOT NULL UNIQUE, file_sha256 VARCHAR(64) NOT NULL, "
+                "exported_by VARCHAR NOT NULL, exported_at DATETIME NOT NULL, "
+                "supersedes_batch_id VARCHAR, mapping_snapshot JSON NOT NULL)"
+            )
+        )
+        connection.execute(
+            text(
+                "INSERT INTO export_batches "
+                "(export_batch_id, export_type, filters, included_records, file_path, "
+                "file_sha256, exported_by, exported_at, supersedes_batch_id, "
+                "mapping_snapshot) VALUES ("
+                "'EXPORT-INVALID', 'OUTPUT', '{}', '[]', "
+                "'internal/invalid.xlsx', :sha256, 'finance', CURRENT_TIMESTAMP, "
+                "NULL, 'not-json')"
+            ),
+            {"sha256": "2" * 64},
+        )
+    engine.dispose()
+
+    with pytest.raises(SchemaRevisionError, match="EXPORT-INVALID"):
+        build_services(Settings(data_root=tmp_path))
 
 
 def test_backup_restores_to_staging_and_detects_missing_evidence(tmp_path: Path) -> None:
