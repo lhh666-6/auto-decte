@@ -9,7 +9,21 @@ from uuid import uuid4
 
 from app.adapters.export.xlsx import XlsxExporter
 from app.application.query_forms import FormFilters, QueryForms
-from app.domain.models import AuditEvent, ExportBatch, ExportStatus, ReviewStatus
+from app.domain.models import (
+    AuditEvent,
+    ExportBatch,
+    ExportStatus,
+    RecordStatus,
+    RecordVersion,
+    ReviewStatus,
+)
+from app.domain.templates_ds import TemplateVersion
+from app.modules.reporting.models_ds import (
+    ExportExclusionReason,
+    ExportMapping,
+    ExportPreview,
+    ExportPreviewItem,
+)
 
 
 class ExportRepository(Protocol):
@@ -18,16 +32,138 @@ class ExportRepository(Protocol):
     def add_audit_event(self, event: AuditEvent) -> None: ...
 
 
+class ExportTemplateRepository(Protocol):
+    def get_version_by_key_version(
+        self, template_key: str, version: int
+    ) -> TemplateVersion | None: ...
+
+
 class ExportForms:
     def __init__(
         self,
         repository: ExportRepository,
         exporter: XlsxExporter,
         queries: QueryForms,
+        template_repository: ExportTemplateRepository | None = None,
     ) -> None:
         self._repository = repository
         self._exporter = exporter
         self._queries = queries
+        self._template_repository = template_repository
+
+    def preview(self, filters: FormFilters, actor_id: str | None = None) -> ExportPreview:
+        """Classify filtered forms for export without mutating persisted state."""
+        del actor_id
+        included: list[ExportPreviewItem] = []
+        excluded: list[ExportPreviewItem] = []
+        mappings: dict[tuple[str, str, str], ExportMapping] = {}
+        results_by_id = {result.form.form_id: result for result in self._queries.search(filters)}
+        candidates = [
+            form
+            for form in self._queries.list_forms()
+            if (filters.form_id is None or form.form_id == filters.form_id)
+            and (filters.review_status is None or form.review_status is filters.review_status)
+            and (filters.export_status is None or form.export_status is filters.export_status)
+            and (
+                (filters.employee_id is None and filters.work_order_id is None)
+                or form.form_id in results_by_id
+            )
+        ]
+        for form in sorted(candidates, key=lambda candidate: candidate.form_id):
+            result = results_by_id.get(form.form_id)
+            item = ExportPreviewItem(form.form_id, form.current_record_version)
+            if form.review_status is not ReviewStatus.CONFIRMED:
+                excluded.append(
+                    replace(item, reason=ExportExclusionReason.NOT_CONFIRMED)
+                )
+                continue
+            if result is None:
+                excluded.append(
+                    replace(item, reason=ExportExclusionReason.FINAL_VALIDATION_FAILED)
+                )
+                continue
+            template = self._resolve_template(
+                form.template_id, form.template_version
+            )
+            if template is None:
+                excluded.append(
+                    replace(item, reason=ExportExclusionReason.TEMPLATE_NOT_FOUND)
+                )
+                continue
+            template_mappings = self._template_mappings(template)
+            if not template_mappings:
+                excluded.append(
+                    replace(item, reason=ExportExclusionReason.NO_VALID_MAPPING)
+                )
+                continue
+            if not self._passes_final_validation(result.current_record, template):
+                excluded.append(
+                    replace(item, reason=ExportExclusionReason.FINAL_VALIDATION_FAILED)
+                )
+                continue
+            included.append(item)
+            for mapping in template_mappings:
+                key = (mapping.template_id, mapping.template_version, mapping.field_key)
+                mappings[key] = mapping
+        return ExportPreview(
+            included=tuple(included),
+            excluded=tuple(excluded),
+            mapping_snapshot=tuple(mappings[key] for key in sorted(mappings)),
+        )
+
+    def _resolve_template(
+        self, template_id: str, template_version: str
+    ) -> TemplateVersion | None:
+        if self._template_repository is None:
+            return None
+        try:
+            version = int(template_version)
+        except ValueError:
+            return None
+        return self._template_repository.get_version_by_key_version(template_id, version)
+
+    @staticmethod
+    def _template_mappings(template: TemplateVersion) -> tuple[ExportMapping, ...]:
+        mappings: list[ExportMapping] = []
+        for field in template.fields:
+            target = field.export_target
+            if target is None:
+                continue
+            mappings.append(
+                ExportMapping(
+                    template_id=template.template_key,
+                    template_version=str(template.version),
+                    field_key=field.field_key,
+                    workbook=target.workbook,
+                    worksheet=target.worksheet,
+                    business_column=target.business_column,
+                )
+            )
+        return tuple(mappings)
+
+    @staticmethod
+    def _passes_final_validation(record: RecordVersion, template: TemplateVersion) -> bool:
+        if record.status not in {RecordStatus.CONFIRMED, RecordStatus.CORRECTED}:
+            return False
+        values = record.values
+        for field in template.fields:
+            value = values.get(field.field_key)
+            empty = value is None or (isinstance(value, str) and not value.strip())
+            rules = field.rules
+            if rules.required and empty:
+                return False
+            if empty:
+                continue
+            if rules.allowed_values and str(value) not in rules.allowed_values:
+                return False
+            if rules.minimum_value is not None or rules.maximum_value is not None:
+                if isinstance(value, bool) or not isinstance(value, int | float):
+                    return False
+                if rules.minimum_value is not None and value < rules.minimum_value:
+                    return False
+                if rules.maximum_value is not None and value > rules.maximum_value:
+                    return False
+        return True
 
     def export(
         self,

@@ -3,10 +3,12 @@
 from pathlib import Path
 
 from app.adapters.database.repositories import SqlAlchemyFormRepository
+from app.adapters.database.template_repository_ds import SqlAlchemyTemplateRepository
 from app.adapters.export.xlsx import XlsxExporter
 from app.application.export_forms import ExportForms
 from app.application.query_forms import FormFilters, QueryForms, SearchResult
 from app.domain.models import ExportBatch
+from app.modules.reporting.models_ds import ExportPreview
 
 
 class ReportingFacade:
@@ -17,6 +19,7 @@ class ReportingFacade:
         repository: SqlAlchemyFormRepository,
         queries: QueryForms,
         exporter: XlsxExporter | None = None,
+        template_repository: SqlAlchemyTemplateRepository | None = None,
     ) -> None:
         self._repository = repository
         self._exporter = exporter or XlsxExporter()
@@ -24,7 +27,14 @@ class ReportingFacade:
             repository=repository,
             exporter=self._exporter,
             queries=queries,
+            template_repository=template_repository,
         )
+
+    def preview(
+        self, filters: FormFilters, actor_id: str | None = None
+    ) -> ExportPreview:
+        """Return a read-only export eligibility and mapping preview."""
+        return self._service.preview(filters, actor_id)
 
     def export(
         self,
