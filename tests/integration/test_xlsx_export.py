@@ -1,3 +1,4 @@
+from datetime import date
 from pathlib import Path
 
 import pytest
@@ -11,9 +12,9 @@ from app.adapters.export.xlsx import XlsxExporter
 from app.adapters.storage.local import LocalEvidenceStorage
 from app.application.export_forms import ExportForms
 from app.application.import_forms import ImportForms
-from app.application.query_forms import FormFilters, QueryForms
+from app.application.query_forms import FormFilters, QueryForms, SearchResult
 from app.application.review_forms import ReviewForms
-from app.domain.models import ExportStatus
+from app.domain.models import ExportStatus, Form, RecordStatus, RecordVersion, ReviewStatus
 from app.domain.templates_ds import (
     ExportTarget,
     FieldDefinition,
@@ -23,6 +24,7 @@ from app.domain.templates_ds import (
     TemplateVersion,
 )
 from app.modules.reporting.facade_ds import ReportingFacade
+from app.modules.reporting.models_ds import ExportMapping
 
 
 def setup_confirmed_form(tmp_path: Path):  # type: ignore[no-untyped-def]
@@ -265,3 +267,185 @@ def test_preview_excludes_template_without_any_export_mapping(tmp_path: Path) ->
     assert [(item.form_id, item.reason) for item in preview.excluded] == [
         ("FORM-UNMAPPED", "NO_VALID_MAPPING")
     ]
+
+
+def test_template_export_groups_mappings_and_uses_only_each_forms_template(
+    tmp_path: Path,
+) -> None:
+    engine = create_engine(f"sqlite:///{tmp_path / 'mapped-export.db'}")
+    Base.metadata.create_all(engine)
+    repository = SqlAlchemyFormRepository(engine)
+    templates = SqlAlchemyTemplateRepository(engine)
+    imports = ImportForms(
+        repository, repository, repository, LocalEvidenceStorage(tmp_path / "mapped-evidence")
+    )
+    reviews = ReviewForms(repository, repository)
+
+    template_one = TemplateVersion.draft("TPL-T1-V1", "T1", 1, PageSpec.a4_portrait())
+    template_one.add_field(
+        FieldDefinition(
+            "employee_id",
+            "This display name must never become a column",
+            "text",
+            "text_box",
+            Rect(0.1, 0.1, 0.2, 0.05),
+            template_one.page,
+            export_target=ExportTarget("企业工资记录.xlsx", "人员", "员工编号"),
+        )
+    )
+    template_one.add_field(
+        FieldDefinition(
+            "total_quantity",
+            "Another ignored display name",
+            "integer",
+            "number",
+            Rect(0.1, 0.2, 0.2, 0.05),
+            template_one.page,
+            export_target=ExportTarget("企业工资记录.xlsx", "产量", "总产量"),
+        )
+    )
+    template_two = TemplateVersion.draft("TPL-T2-V1", "T2", 1, PageSpec.a4_portrait())
+    template_two.add_field(
+        FieldDefinition(
+            "employee_id",
+            "Also ignored",
+            "text",
+            "text_box",
+            Rect(0.1, 0.1, 0.2, 0.05),
+            template_two.page,
+            export_target=ExportTarget("企业工资记录.xlsx", "人员", "外部人员编号"),
+        )
+    )
+    templates.add_version(template_one)
+    templates.add_version(template_two)
+
+    for form_id, template_id, values in (
+        ("FORM-T1", "T1", {"employee_id": "E001", "total_quantity": 10}),
+        ("FORM-T2", "T2", {"employee_id": "EXT-2"}),
+    ):
+        image = tmp_path / f"{form_id}.png"
+        image.write_bytes(form_id.encode())
+        evidence = imports.import_image(image, form_id, template_id, "1", "operator")
+        reviews.confirm(form_id, 0, values, "reviewer", "confirmed", (evidence.file_id,))
+
+    service = ExportForms(
+        repository,
+        XlsxExporter(),
+        QueryForms(repository),
+        template_repository=templates,
+    )
+
+    batch = service.export("OUTPUT", FormFilters(), tmp_path / "exports", "finance")
+
+    workbook = load_workbook(batch.file_path, read_only=True)
+    assert workbook.sheetnames == ["人员", "产量"]
+    people_rows = list(workbook["人员"].iter_rows(values_only=True))
+    people = [dict(zip(people_rows[0], row, strict=True)) for row in people_rows[1:]]
+    assert people == [
+        {
+            "export_batch_id": batch.export_batch_id,
+            "form_id": "FORM-T1",
+            "record_version": 1,
+            "员工编号": "E001",
+            "外部人员编号": None,
+        },
+        {
+            "export_batch_id": batch.export_batch_id,
+            "form_id": "FORM-T2",
+            "record_version": 1,
+            "员工编号": None,
+            "外部人员编号": "EXT-2",
+        },
+    ]
+    production_rows = list(workbook["产量"].iter_rows(values_only=True))
+    assert production_rows == [
+        ("export_batch_id", "form_id", "record_version", "总产量"),
+        (batch.export_batch_id, "FORM-T1", 1, 10),
+    ]
+    assert "This display name must never become a column" not in people_rows[0]
+
+
+def test_template_export_rejects_multiple_workbooks(tmp_path: Path) -> None:
+    result = _search_result({"first": "one", "second": "two"})
+    mappings = (
+        ExportMapping("T1", "1", "first", "first.xlsx", "data", "first"),
+        ExportMapping("T1", "1", "second", "second.xlsx", "data", "second"),
+    )
+
+    with pytest.raises(ValueError, match="one workbook"):
+        XlsxExporter().write(
+            tmp_path / "multiple.xlsx",
+            "BATCH-1",
+            "OUTPUT",
+            [result],
+            {},
+            mappings=mappings,
+        )
+
+
+@pytest.mark.parametrize(
+    ("unsafe", "expected"),
+    [
+        ("=1+1", "'=1+1"),
+        ("+SUM(A1:A2)", "'+SUM(A1:A2)"),
+        ("-2+3", "'-2+3"),
+        ("@cmd", "'@cmd"),
+        ("\ufeff=hidden", "'=hidden"),
+    ],
+)
+def test_template_export_neutralizes_formula_like_text(
+    tmp_path: Path, unsafe: str, expected: str
+) -> None:
+    destination = tmp_path / "safe.xlsx"
+    XlsxExporter().write(
+        destination,
+        "BATCH-SAFE",
+        "OUTPUT",
+        [_search_result({"value": unsafe})],
+        {},
+        mappings=(ExportMapping("T1", "1", "value", "safe.xlsx", "data", "value"),),
+    )
+
+    cell = load_workbook(destination, data_only=False)["data"]["D2"]
+    assert cell.value == expected
+    assert cell.data_type != "f"
+
+
+@pytest.mark.parametrize(
+    ("value", "expected_data_type"),
+    [(42, "n"), (True, "b"), (date(2026, 7, 16), "d"), (None, "n")],
+)
+def test_template_export_preserves_non_text_cell_types(
+    tmp_path: Path, value: object, expected_data_type: str
+) -> None:
+    destination = tmp_path / "typed.xlsx"
+    XlsxExporter().write(
+        destination,
+        "BATCH-TYPED",
+        "OUTPUT",
+        [_search_result({"value": value})],
+        {},
+        mappings=(ExportMapping("T1", "1", "value", "typed.xlsx", "data", "value"),),
+    )
+
+    cell = load_workbook(destination, data_only=False)["data"]["D2"]
+    assert cell.data_type == expected_data_type
+
+
+def _search_result(values: dict[str, object]) -> SearchResult:
+    form = Form(
+        "FORM-SAFE",
+        "T1",
+        "1",
+        review_status=ReviewStatus.CONFIRMED,
+        current_record_version=1,
+    )
+    record = RecordVersion(
+        "RECORD-SAFE",
+        form.form_id,
+        1,
+        RecordStatus.CONFIRMED,
+        values,
+        confirmed_by="reviewer",
+    )
+    return SearchResult(form, record)

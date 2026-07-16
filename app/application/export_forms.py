@@ -176,16 +176,19 @@ class ExportForms:
     ) -> ExportBatch:
         confirmed_filters = replace(filters, review_status=ReviewStatus.CONFIRMED)
         results = self._queries.search(confirmed_filters)
+        mapping_snapshot: tuple[ExportMapping, ...] | None = None
         if self._template_repository is not None:
+            preview = self.preview(filters, actor_id)
             included_records = {
                 (item.form_id, item.record_version)
-                for item in self.preview(filters, actor_id).included
+                for item in preview.included
             }
             results = [
                 result
                 for result in results
                 if (result.form.form_id, result.current_record.version) in included_records
             ]
+            mapping_snapshot = preview.mapping_snapshot
         batch_id = f"EXPORT-{uuid4().hex}"
         timestamp = datetime.now(UTC)
         destination = output_directory / f"{export_type}-{timestamp:%Y%m%dT%H%M%S}-{batch_id}.xlsx"
@@ -194,7 +197,14 @@ class ExportForms:
             for key, value in asdict(confirmed_filters).items()
             if value is not None
         }
-        self._exporter.write(destination, batch_id, export_type, results, serialized_filters)
+        self._exporter.write(
+            destination,
+            batch_id,
+            export_type,
+            results,
+            serialized_filters,
+            mappings=mapping_snapshot,
+        )
         digest = hashlib.sha256(destination.read_bytes()).hexdigest()
         batch = ExportBatch(
             export_batch_id=batch_id,
