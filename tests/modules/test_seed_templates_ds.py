@@ -134,3 +134,23 @@ def test_application_composition_can_install_seeds_into_a_new_database(tmp_path:
     assert sum(
         len(second.template_repository.list_versions(key)) for key in EXPECTED_KEYS
     ) == 4
+
+
+def test_application_startup_preserves_conflicting_legacy_template(tmp_path: Path) -> None:
+    existing = build_services(Settings(data_root=tmp_path))
+    existing.template_repository.add_version(
+        TemplateVersion.draft(
+            "TPL-LEGACY-HOURLY",
+            "PAYROLL_HOURLY",
+            1,
+            PageSpec.a4_portrait(),
+        )
+    )
+
+    restarted = build_services(Settings(data_root=tmp_path), install_seed_templates=True)
+
+    assert restarted.template_repository.list_template_keys() == ["PAYROLL_HOURLY"]
+    assert (
+        restarted.template_repository.list_versions("PAYROLL_HOURLY")[0].version_id
+        == "TPL-LEGACY-HOURLY"
+    )

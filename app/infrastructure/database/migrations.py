@@ -15,8 +15,14 @@ class SchemaRevisionError(RuntimeError):
 
 
 def is_alembic_managed(engine: Engine) -> bool:
-    """Return whether this database has an Alembic revision ledger."""
-    return "alembic_version" in inspect(engine).get_table_names()
+    """Return whether this database has a populated Alembic revision ledger."""
+    if "alembic_version" not in inspect(engine).get_table_names():
+        return False
+    with engine.connect() as connection:
+        revision = connection.execute(
+            text("SELECT version_num FROM alembic_version LIMIT 1")
+        ).scalar()
+    return bool(revision)
 
 
 def ensure_auto_created_schema_compatibility(engine: Engine) -> None:

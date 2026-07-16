@@ -125,6 +125,40 @@ def test_auto_created_legacy_database_gains_priority_without_losing_forms(
     assert "review_drafts" in inspect(services.engine).get_table_names()
 
 
+def test_interrupted_empty_alembic_ledger_recovers_as_legacy_schema(
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "database" / "demo.db"
+    database_path.parent.mkdir(parents=True)
+    engine = create_engine(f"sqlite:///{database_path}")
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "CREATE TABLE forms ("
+                "form_id VARCHAR PRIMARY KEY, template_id VARCHAR NOT NULL, "
+                "template_version VARCHAR NOT NULL, coordinate_version VARCHAR NOT NULL, "
+                "review_status VARCHAR NOT NULL, export_status VARCHAR NOT NULL, "
+                "current_record_version INTEGER NOT NULL, created_at DATETIME NOT NULL)"
+            )
+        )
+        connection.execute(
+            text(
+                "INSERT INTO forms VALUES ("
+                "'FORM-INTERRUPTED', 'T1', '1', '1', 'NEEDS_REVIEW', "
+                "'NOT_EXPORTED', 0, CURRENT_TIMESTAMP)"
+            )
+        )
+        connection.execute(
+            text("CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL)")
+        )
+    engine.dispose()
+
+    services = build_services(Settings(data_root=tmp_path))
+
+    assert services.repository.get_form("FORM-INTERRUPTED") is not None
+    assert "review_drafts" in inspect(services.engine).get_table_names()
+
+
 def test_auto_created_database_backfills_template_names(tmp_path: Path) -> None:
     database_path = tmp_path / "database" / "demo.db"
     database_path.parent.mkdir(parents=True)
