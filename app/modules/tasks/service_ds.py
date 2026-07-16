@@ -6,6 +6,7 @@ from app.modules.tasks.models_ds import (
     Task,
     TaskClaimConflict,
     TaskCommand,
+    TaskEvent,
     TaskStatus,
 )
 
@@ -71,6 +72,22 @@ class TaskService:
         self._store.update(task)
         self._append(task, "PROGRESS")
         return task
+
+    def record_prepared(self, task_id: str, detail: dict[str, object]) -> None:
+        task = self._require(task_id)
+        if task.status is not TaskStatus.RUNNING:
+            raise ValueError("Only running tasks can record a prepared export")
+        self._store.append_next_event(task, "EXPORT_PREPARED", detail)
+
+    def latest_prepared(self, task_id: str) -> TaskEvent | None:
+        return self._store.latest_event(task_id, "EXPORT_PREPARED")
+
+    def list_operation_tasks(
+        self, operation: str, statuses: tuple[TaskStatus, ...]
+    ) -> list[Task]:
+        return self._store.list_by_operation_statuses(
+            operation, tuple(status.value for status in statuses)
+        )
 
     def get(self, task_id: str) -> Task:
         return self._require(task_id)

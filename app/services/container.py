@@ -160,6 +160,8 @@ def build_services(settings: Settings, *, install_seed_templates: bool = False) 
         master_data_repository=master_data_repository,
         master_data=master_data,
     )
+    tasks.recover_interrupted()
+    services.export_handler.recover_prepared()
     if install_seed_templates:
         try:
             install_legacy_payroll_seed_templates(template_repository, template_renderer)

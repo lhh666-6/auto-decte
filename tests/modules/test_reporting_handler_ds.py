@@ -1,4 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor
+from hashlib import sha256
 from pathlib import Path
 from threading import Event, Lock
 from typing import Any
@@ -12,7 +13,7 @@ from app.adapters.database.repositories import SqlAlchemyFormRepository
 from app.adapters.database.template_repository_ds import SqlAlchemyTemplateRepository
 from app.adapters.export.xlsx import XlsxExporter
 from app.adapters.storage.local import LocalEvidenceStorage
-from app.application.export_forms import ExportForms
+from app.application.export_forms import ExportForms, ExportIntegrityError
 from app.application.import_forms import ImportForms
 from app.application.query_forms import FormFilters, QueryForms
 from app.application.review_forms import ReviewForms
@@ -369,7 +370,9 @@ def test_database_failure_rolls_back_batch_and_form_then_removes_final_file(
     assert list((tmp_path / "exports").glob("*")) == []
 
 
-def test_final_xlsx_is_not_visible_before_database_commit(tmp_path: Path) -> None:
+def test_database_completion_only_runs_after_final_xlsx_is_verified(
+    tmp_path: Path,
+) -> None:
     from app.modules.reporting.handler_ds import ExportHandler
 
     _, repository, _, exports, tasks, _ = _build_export_services(tmp_path)
@@ -380,8 +383,9 @@ def test_final_xlsx_is_not_visible_before_database_commit(tmp_path: Path) -> Non
         nonlocal inspected
         final = Path(batch.file_path)
         pending = final.with_name(f"{final.name}.pending")
-        assert not final.exists()
-        assert pending.exists()
+        assert final.exists()
+        assert not pending.exists()
+        assert sha256(final.read_bytes()).hexdigest() == batch.file_sha256
         inspected = True
         original_complete(batch)
 
@@ -406,12 +410,12 @@ def test_final_xlsx_is_not_visible_before_database_commit(tmp_path: Path) -> Non
     assert tasks.get(task.task_id).status is TaskStatus.SUCCEEDED
 
 
-def test_existing_batch_recovers_pending_file_after_post_commit_publish_failure(
+def test_publish_failure_keeps_prepared_task_running_until_recovery(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from app.modules.reporting.handler_ds import ExportHandler
 
-    _, repository, templates, _, tasks, _ = _build_export_services(tmp_path)
+    _, repository, templates, _, tasks, store = _build_export_services(tmp_path)
     exporter = _TrackingExporter()
     exports = ExportForms(
         repository,
@@ -440,20 +444,112 @@ def test_existing_batch_recovers_pending_file_after_post_commit_publish_failure(
     with pytest.raises(OSError, match="publish interrupted"):
         handler.handle(task.task_id)
 
-    batch = repository.get_export_batch_by_task(task.task_id)
-    assert batch is not None
-    final = Path(batch.file_path)
-    pending = Path(f"{batch.file_path}.pending")
-    assert tasks.get(task.task_id).status is TaskStatus.SUCCEEDED
+    prepared = [
+        event
+        for event in store.list_events(task.task_id)
+        if event.event_type == "EXPORT_PREPARED"
+    ]
+    assert len(prepared) == 1
+    assert prepared[0].detail is not None
+    batch_detail = prepared[0].detail["batch"]
+    assert isinstance(batch_detail, dict)
+    final = Path(str(batch_detail["file_path"]))
+    pending = Path(f"{final}.pending")
+    assert tasks.get(task.task_id).status is TaskStatus.RUNNING
+    assert repository.get_export_batch_by_task(task.task_id) is None
     assert not final.exists()
     assert pending.exists()
     assert exporter.write_calls == 1
 
     monkeypatch.undo()
-    assert handler.handle(task.task_id) == batch
+    recovered = handler.recover_prepared()
+    assert len(recovered) == 1
+    batch = recovered[0]
+    assert repository.get_export_batch_by_task(task.task_id) == batch
+    assert tasks.get(task.task_id).status is TaskStatus.SUCCEEDED
     assert final.exists()
     assert not pending.exists()
     assert exporter.write_calls == 1
+
+
+def test_build_services_automatically_recovers_prepared_export_without_rewrite(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    settings = Settings(data_root=tmp_path / "runtime")
+    services = build_services(settings)
+    template = TemplateVersion.draft("TPL-T1-V1", "T1", 1, PageSpec.a4_portrait())
+    template.add_field(
+        FieldDefinition(
+            "employee_id",
+            "Employee",
+            "text",
+            "text_box",
+            Rect(0.1, 0.1, 0.2, 0.05),
+            template.page,
+            export_target=ExportTarget(
+                "payroll.xlsx", "employees", "employee_code"
+            ),
+        )
+    )
+    services.template_repository.add_version(template)
+    image = tmp_path / "restart-scan.png"
+    image.write_bytes(b"restart scan")
+    evidence = services.imports.import_image(
+        image, "FORM-RESTART", "T1", "1", "operator"
+    )
+    services.reviews.confirm(
+        "FORM-RESTART",
+        0,
+        {"employee_id": "E001"},
+        "reviewer",
+        "confirmed",
+        (evidence.file_id,),
+    )
+    task = services.tasks.submit(
+        TaskCommand(
+            "XLSX_EXPORT",
+            "exports",
+            "finance",
+            "restart-recovery",
+            {"export_type": "OUTPUT", "filters": {}},
+        )
+    )
+    original_write = XlsxExporter.write
+    original_replace = Path.replace
+    write_calls = 0
+
+    def counting_write(self: XlsxExporter, *args: Any, **kwargs: Any) -> None:
+        nonlocal write_calls
+        write_calls += 1
+        original_write(self, *args, **kwargs)
+
+    def interrupt_publish(source: Path, target: Path) -> Path:
+        if source.name.endswith(".pending") and Path(target).suffix == ".xlsx":
+            raise OSError("restart before publish")
+        return original_replace(source, target)
+
+    monkeypatch.setattr(XlsxExporter, "write", counting_write)
+    monkeypatch.setattr(Path, "replace", interrupt_publish)
+    with pytest.raises(OSError, match="restart before publish"):
+        services.export_handler.handle(task.task_id)
+    assert write_calls == 1
+    assert services.tasks.get(task.task_id).status is TaskStatus.RUNNING
+    services.engine.dispose()
+
+    monkeypatch.setattr(Path, "replace", original_replace)
+    restarted = build_services(settings)
+    batch = restarted.repository.get_export_batch_by_task(task.task_id)
+
+    assert batch is not None
+    assert restarted.tasks.get(task.task_id).status is TaskStatus.SUCCEEDED
+    assert Path(batch.file_path).exists()
+    assert write_calls == 1
+    prepared_events = [
+        event
+        for event in restarted.task_store.list_events(task.task_id)
+        if event.event_type == "EXPORT_PREPARED"
+    ]
+    assert len(prepared_events) == 1
 
 
 class _SucceedMustNotBeCalled(TaskService):
@@ -550,6 +646,81 @@ def test_two_workers_write_once_and_loser_can_read_winning_batch(
     assert handler.handle(task.task_id) == batch
     assert exporter.write_calls == 1
     assert tasks.get(task.task_id).status is TaskStatus.SUCCEEDED
+
+
+def test_publish_tolerates_other_worker_moving_pending_file_first(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.modules.reporting.handler_ds import ExportHandler
+
+    _, repository, templates, _, tasks, _ = _build_export_services(tmp_path)
+    exporter = _TrackingExporter()
+    exports = ExportForms(
+        repository,
+        exporter,
+        QueryForms(repository),
+        template_repository=templates,
+    )
+    handler = ExportHandler(exports, tasks, repository, tmp_path / "exports")
+    task = tasks.submit(
+        TaskCommand(
+            "XLSX_EXPORT",
+            "exports",
+            "finance",
+            "publish-race",
+            {"export_type": "OUTPUT", "filters": {}},
+        )
+    )
+    original_replace = Path.replace
+    moved_by_other_worker = False
+
+    def concurrent_replace(source: Path, target: Path) -> Path:
+        nonlocal moved_by_other_worker
+        if source.name.endswith(".pending") and not moved_by_other_worker:
+            moved_by_other_worker = True
+            original_replace(source, target)
+            raise FileNotFoundError("pending was moved concurrently")
+        return original_replace(source, target)
+
+    monkeypatch.setattr(Path, "replace", concurrent_replace)
+
+    batch = handler.handle(task.task_id)
+
+    assert moved_by_other_worker
+    assert exporter.write_calls == 1
+    assert Path(batch.file_path).exists()
+    assert repository.get_export_batch_by_task(task.task_id) == batch
+    assert tasks.get(task.task_id).status is TaskStatus.SUCCEEDED
+
+
+def test_publish_race_rejects_mismatched_final_hash(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _, repository, templates, _, _, _ = _build_export_services(tmp_path)
+    exports = ExportForms(
+        repository,
+        XlsxExporter(),
+        QueryForms(repository),
+        template_repository=templates,
+    )
+    batch = exports.prepare(
+        "OUTPUT", FormFilters(), tmp_path / "exports", "finance"
+    )
+    original_replace = Path.replace
+
+    def replace_with_corrupt_final(source: Path, target: Path) -> Path:
+        if source.name.endswith(".pending"):
+            source.unlink()
+            Path(target).write_bytes(b"corrupt workbook")
+            raise FileNotFoundError("pending was moved concurrently")
+        return original_replace(source, target)
+
+    monkeypatch.setattr(Path, "replace", replace_with_corrupt_final)
+
+    with pytest.raises(ExportIntegrityError, match="hash does not match"):
+        exports.publish(batch)
+
+    exports.cleanup(batch)
 
 
 def test_existing_batch_reconciles_legacy_pending_task_to_succeeded(

@@ -37,6 +37,10 @@ class ExportTemplateRepository(Protocol):
     ) -> TemplateVersion | None: ...
 
 
+class ExportIntegrityError(ValueError):
+    """A prepared or published workbook does not match its immutable batch."""
+
+
 class ExportForms:
     def __init__(
         self,
@@ -52,11 +56,15 @@ class ExportForms:
 
     def recover_publication(self, batch: ExportBatch) -> None:
         """Finish publishing a committed batch without rewriting its workbook."""
+        self.publish(batch)
+
+    def publish(self, batch: ExportBatch) -> None:
+        """Idempotently publish and verify a prepared workbook."""
         destination = Path(batch.file_path)
         pending = destination.with_name(f"{destination.name}.pending")
         if destination.exists():
             if _file_sha256(destination) != batch.file_sha256:
-                raise ValueError(
+                raise ExportIntegrityError(
                     f"Published export hash does not match batch {batch.export_batch_id}"
                 )
             pending.unlink(missing_ok=True)
@@ -66,10 +74,36 @@ class ExportForms:
                 f"No pending workbook for export batch {batch.export_batch_id}"
             )
         if _file_sha256(pending) != batch.file_sha256:
-            raise ValueError(
+            raise ExportIntegrityError(
                 f"Pending export hash does not match batch {batch.export_batch_id}"
             )
-        pending.replace(destination)
+        try:
+            pending.replace(destination)
+        except FileNotFoundError:
+            if destination.exists():
+                if _file_sha256(destination) == batch.file_sha256:
+                    return
+                raise ExportIntegrityError(
+                    "Published export hash does not match batch "
+                    f"{batch.export_batch_id}"
+                ) from None
+            raise
+        if _file_sha256(destination) != batch.file_sha256:
+            raise ExportIntegrityError(
+                f"Published export hash does not match batch {batch.export_batch_id}"
+            )
+
+    def complete(self, batch: ExportBatch) -> None:
+        """Commit an already-published and verified export."""
+        self._repository.complete_export(batch)
+
+    @staticmethod
+    def cleanup(batch: ExportBatch) -> None:
+        """Remove all transient and published files for an uncommitted batch."""
+        destination = Path(batch.file_path)
+        destination.with_name(f"{destination.name}.partial").unlink(missing_ok=True)
+        destination.with_name(f"{destination.name}.pending").unlink(missing_ok=True)
+        destination.unlink(missing_ok=True)
 
     def preview(self, filters: FormFilters, actor_id: str | None = None) -> ExportPreview:
         """Classify filtered forms for export without mutating persisted state."""
@@ -198,6 +232,35 @@ class ExportForms:
         supersedes_batch_id: str | None = None,
         progress: Callable[[int, str], None] | None = None,
     ) -> ExportBatch:
+        batch = self.prepare(
+            export_type,
+            filters,
+            output_directory,
+            actor_id,
+            task_id=task_id,
+            supersedes_batch_id=supersedes_batch_id,
+            progress=progress,
+        )
+        try:
+            self.publish(batch)
+            self.complete(batch)
+            return batch
+        except Exception:
+            self.cleanup(batch)
+            raise
+
+    def prepare(
+        self,
+        export_type: str,
+        filters: FormFilters,
+        output_directory: Path,
+        actor_id: str,
+        *,
+        task_id: str | None = None,
+        supersedes_batch_id: str | None = None,
+        progress: Callable[[int, str], None] | None = None,
+    ) -> ExportBatch:
+        """Validate and write an unpublished immutable workbook candidate."""
         confirmed_filters = replace(filters, review_status=ReviewStatus.CONFIRMED)
         results = self._queries.search(confirmed_filters)
         mapping_snapshot: tuple[ExportMapping, ...] | None = None
@@ -258,7 +321,6 @@ class ExportForms:
             for key, value in asdict(confirmed_filters).items()
             if value is not None
         }
-        committed = False
         try:
             if progress is not None:
                 progress(35, "writing")
@@ -296,15 +358,11 @@ class ExportForms:
             )
             if progress is not None:
                 progress(75, "persisting")
-            self._repository.complete_export(batch)
-            committed = True
-            pending.replace(destination)
             return batch
         except Exception:
             partial.unlink(missing_ok=True)
-            if not committed:
-                pending.unlink(missing_ok=True)
-                destination.unlink(missing_ok=True)
+            pending.unlink(missing_ok=True)
+            destination.unlink(missing_ok=True)
             raise
 
     def _template_snapshot(self, results: list[SearchResult]) -> dict[str, object]:

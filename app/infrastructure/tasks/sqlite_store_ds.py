@@ -184,6 +184,31 @@ class SqliteTaskStore:
                 for row in session.scalars(statement)
             ]
 
+    def latest_event(self, task_id: str, event_type: str) -> TaskEvent | None:
+        statement = (
+            select(TaskEventRow)
+            .where(
+                TaskEventRow.task_id == task_id,
+                TaskEventRow.event_type == event_type,
+            )
+            .order_by(TaskEventRow.sequence.desc())
+            .limit(1)
+        )
+        with Session(self._engine) as session:
+            row = session.scalar(statement)
+            if row is None:
+                return None
+            return TaskEvent(
+                event_id=row.event_id,
+                task_id=row.task_id,
+                sequence=row.sequence,
+                event_type=row.event_type,
+                progress=row.progress,
+                step=row.step,
+                detail=row.detail,
+                created_at=_as_utc(row.created_at),
+            )
+
     def next_event(
         self, task: Task, event_type: str, detail: dict[str, object] | None = None
     ) -> TaskEvent:
@@ -205,6 +230,22 @@ class SqliteTaskStore:
 
     def list_by_status(self, status: str) -> list[Task]:
         statement = select(TaskRow).where(TaskRow.status == status).order_by(TaskRow.created_at)
+        with Session(self._engine) as session:
+            return [self._to_task(row) for row in session.scalars(statement)]
+
+    def list_by_operation_statuses(
+        self, operation: str, statuses: tuple[str, ...]
+    ) -> list[Task]:
+        if not statuses:
+            return []
+        statement = (
+            select(TaskRow)
+            .where(
+                TaskRow.operation == operation,
+                TaskRow.status.in_(statuses),
+            )
+            .order_by(TaskRow.created_at, TaskRow.task_id)
+        )
         with Session(self._engine) as session:
             return [self._to_task(row) for row in session.scalars(statement)]
 
