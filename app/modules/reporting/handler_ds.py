@@ -32,8 +32,12 @@ class ExportHandler:
             raise ValueError(f"Unsupported task operation: {task.operation}")
         existing = self._repository.get_export_batch_by_task(task_id)
         if existing is not None:
+            self._exports.recover_publication(existing)
+            self._tasks.reconcile_succeeded(
+                task_id, {"export_batch_id": existing.export_batch_id}
+            )
             return existing
-        self._tasks.start(task_id)
+        self._tasks.claim(task_id)
         try:
             export_type = task.payload.get("export_type")
             if not isinstance(export_type, str) or not export_type.strip():
@@ -63,7 +67,6 @@ class ExportHandler:
                 supersedes_batch_id=supersedes,
                 progress=report,
             )
-            self._tasks.succeed(task_id)
             return batch
         except Exception as error:
             if self._tasks.get(task_id).status is TaskStatus.RUNNING:

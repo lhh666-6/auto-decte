@@ -1,5 +1,6 @@
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from threading import Barrier
 
 import pytest
 
@@ -99,3 +100,25 @@ def test_store_allocates_unique_event_sequences_for_concurrent_writers(tmp_path:
             future.result()
 
     assert [event.sequence for event in store.list_events(task.task_id)] == [1, 2, 3]
+
+
+def test_only_one_worker_can_atomically_claim_pending_task(tmp_path: Path) -> None:
+    from app.modules.tasks.models_ds import TaskClaimConflict
+
+    service, _ = build_service(tmp_path)
+    task = service.submit(
+        TaskCommand("XLSX_EXPORT", "exports", "finance", "claim-once", {})
+    )
+    barrier = Barrier(2)
+
+    def claim() -> str:
+        barrier.wait()
+        try:
+            return service.claim(task.task_id).status.value
+        except TaskClaimConflict:
+            return "CONFLICT"
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = [future.result() for future in [executor.submit(claim) for _ in range(2)]]
+
+    assert sorted(results) == ["CONFLICT", "RUNNING"]

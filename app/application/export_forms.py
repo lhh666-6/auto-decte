@@ -12,6 +12,7 @@ from app.adapters.export.xlsx import XlsxExporter
 from app.application.query_forms import FormFilters, QueryForms, SearchResult
 from app.domain.models import (
     ExportBatch,
+    ExportStatus,
     RecordStatus,
     RecordVersion,
     ReviewStatus,
@@ -48,6 +49,27 @@ class ExportForms:
         self._exporter = exporter
         self._queries = queries
         self._template_repository = template_repository
+
+    def recover_publication(self, batch: ExportBatch) -> None:
+        """Finish publishing a committed batch without rewriting its workbook."""
+        destination = Path(batch.file_path)
+        pending = destination.with_name(f"{destination.name}.pending")
+        if destination.exists():
+            if _file_sha256(destination) != batch.file_sha256:
+                raise ValueError(
+                    f"Published export hash does not match batch {batch.export_batch_id}"
+                )
+            pending.unlink(missing_ok=True)
+            return
+        if not pending.exists():
+            raise FileNotFoundError(
+                f"No pending workbook for export batch {batch.export_batch_id}"
+            )
+        if _file_sha256(pending) != batch.file_sha256:
+            raise ValueError(
+                f"Pending export hash does not match batch {batch.export_batch_id}"
+            )
+        pending.replace(destination)
 
     def preview(self, filters: FormFilters, actor_id: str | None = None) -> ExportPreview:
         """Classify filtered forms for export without mutating persisted state."""
@@ -195,19 +217,48 @@ class ExportForms:
             template_snapshot = self._template_snapshot(results)
         if not results:
             raise ValueError("No exportable records after final validation")
-        if supersedes_batch_id is not None and self._repository.get_export_batch(
-            supersedes_batch_id
-        ) is None:
+        reexport_results = [
+            result
+            for result in results
+            if result.form.export_status is ExportStatus.REEXPORT_REQUIRED
+        ]
+        if reexport_results and supersedes_batch_id is None:
+            raise ValueError(
+                "supersedes_batch_id is required for REEXPORT_REQUIRED records"
+            )
+        superseded_batch = (
+            self._repository.get_export_batch(supersedes_batch_id)
+            if supersedes_batch_id is not None
+            else None
+        )
+        if supersedes_batch_id is not None and superseded_batch is None:
             raise KeyError(f"Unknown export batch: {supersedes_batch_id}")
+        if superseded_batch is not None:
+            if not reexport_results:
+                raise ValueError(
+                    "supersedes_batch_id is only valid for REEXPORT_REQUIRED records"
+                )
+            previous_versions: dict[str, list[int]] = {}
+            for form_id, version in superseded_batch.included_records:
+                previous_versions.setdefault(form_id, []).append(version)
+            for result in reexport_results:
+                versions = previous_versions.get(result.form.form_id, [])
+                if not any(version < result.current_record.version for version in versions):
+                    raise ValueError(
+                        "Superseded batch must contain an older version of "
+                        f"{result.form.form_id}"
+                    )
         batch_id = f"EXPORT-{uuid4().hex}"
         timestamp = datetime.now(UTC)
         destination = output_directory / f"{export_type}-{timestamp:%Y%m%dT%H%M%S}-{batch_id}.xlsx"
         partial = destination.with_name(f"{destination.name}.partial")
+        pending = destination.with_name(f"{destination.name}.pending")
         serialized_filters = {
             key: value.value if hasattr(value, "value") else value
             for key, value in asdict(confirmed_filters).items()
             if value is not None
         }
+        committed = False
         try:
             if progress is not None:
                 progress(35, "writing")
@@ -221,7 +272,7 @@ class ExportForms:
             )
             digest = hashlib.sha256(partial.read_bytes()).hexdigest()
             destination.parent.mkdir(parents=True, exist_ok=True)
-            partial.replace(destination)
+            partial.replace(pending)
             serialized_mappings = tuple(
                 asdict(mapping) for mapping in (mapping_snapshot or ())
             )
@@ -246,10 +297,14 @@ class ExportForms:
             if progress is not None:
                 progress(75, "persisting")
             self._repository.complete_export(batch)
+            committed = True
+            pending.replace(destination)
             return batch
         except Exception:
             partial.unlink(missing_ok=True)
-            destination.unlink(missing_ok=True)
+            if not committed:
+                pending.unlink(missing_ok=True)
+                destination.unlink(missing_ok=True)
             raise
 
     def _template_snapshot(self, results: list[SearchResult]) -> dict[str, object]:
@@ -268,3 +323,7 @@ class ExportForms:
                 "fields": [asdict(field) for field in template.fields],
             }
         return {"templates": [templates[key] for key in sorted(templates)]}
+
+
+def _file_sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()

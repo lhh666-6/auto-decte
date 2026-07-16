@@ -39,6 +39,7 @@ from app.domain.models import (
     ValueSource,
     thaw_json,
 )
+from app.modules.tasks.models_ds import TaskStatus
 
 
 class SqlAlchemyFormRepository:
@@ -468,9 +469,13 @@ class SqlAlchemyFormRepository:
     def complete_export(self, batch: ExportBatch) -> None:
         """Atomically persist an export and mark its exact record versions exported."""
         with self._transaction() as session:
-            if batch.supersedes_batch_id is not None and session.get(
-                ExportBatchRow, batch.supersedes_batch_id
-            ) is None:
+            reexport_records: list[tuple[str, int]] = []
+            superseded_row = (
+                session.get(ExportBatchRow, batch.supersedes_batch_id)
+                if batch.supersedes_batch_id is not None
+                else None
+            )
+            if batch.supersedes_batch_id is not None and superseded_row is None:
                 raise KeyError(f"Unknown export batch: {batch.supersedes_batch_id}")
             for form_id, version in batch.included_records:
                 form = session.get(FormRow, form_id)
@@ -491,6 +496,31 @@ class SqlAlchemyFormRepository:
                     raise ValueError(
                         f"Record is no longer exportable: {form_id}@{version}"
                     )
+                if form.export_status == ExportStatus.REEXPORT_REQUIRED.value:
+                    reexport_records.append((form_id, version))
+            if reexport_records and batch.supersedes_batch_id is None:
+                raise ValueError(
+                    "supersedes_batch_id is required for REEXPORT_REQUIRED records"
+                )
+            if superseded_row is not None:
+                if not reexport_records:
+                    raise ValueError(
+                        "supersedes_batch_id is only valid for REEXPORT_REQUIRED records"
+                    )
+                previous_versions: dict[str, list[int]] = {}
+                for old_form_id, old_version in superseded_row.included_records:
+                    previous_versions.setdefault(str(old_form_id), []).append(
+                        int(old_version)
+                    )
+                for form_id, version in reexport_records:
+                    if not any(
+                        old_version < version
+                        for old_version in previous_versions.get(form_id, [])
+                    ):
+                        raise ValueError(
+                            "Superseded batch must contain an older version of "
+                            f"{form_id}"
+                        )
             session.add(self._export_batch_row(batch))
             for form_id, version in batch.included_records:
                 form = session.get(FormRow, form_id)
@@ -510,6 +540,38 @@ class SqlAlchemyFormRepository:
                         },
                         reason=None,
                         evidence_ids=[],
+                    )
+                )
+            if batch.task_id is not None:
+                task = session.get(TaskRow, batch.task_id)
+                if task is None:
+                    raise KeyError(f"Unknown task: {batch.task_id}")
+                if task.status != TaskStatus.RUNNING.value:
+                    raise ValueError(
+                        f"Export task is not running: {batch.task_id}"
+                    )
+                task.status = TaskStatus.SUCCEEDED.value
+                task.progress = 100
+                task.error = None
+                task.updated_at = batch.exported_at
+                sequence = (
+                    session.scalar(
+                        select(func.max(TaskEventRow.sequence)).where(
+                            TaskEventRow.task_id == batch.task_id
+                        )
+                    )
+                    or 0
+                ) + 1
+                session.add(
+                    TaskEventRow(
+                        event_id=f"TASK-EVENT-{uuid4().hex}",
+                        task_id=batch.task_id,
+                        sequence=sequence,
+                        event_type=TaskStatus.SUCCEEDED.value,
+                        progress=100,
+                        step=task.step,
+                        detail={"export_batch_id": batch.export_batch_id},
+                        created_at=batch.exported_at,
                     )
                 )
 

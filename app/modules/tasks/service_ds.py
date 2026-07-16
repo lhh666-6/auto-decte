@@ -1,7 +1,13 @@
 """Task application service for idempotency, state changes and recovery."""
 
 from app.infrastructure.tasks.sqlite_store_ds import SqliteTaskStore
-from app.modules.tasks.models_ds import IdempotencyConflict, Task, TaskCommand, TaskStatus
+from app.modules.tasks.models_ds import (
+    IdempotencyConflict,
+    Task,
+    TaskClaimConflict,
+    TaskCommand,
+    TaskStatus,
+)
 
 
 class TaskService:
@@ -29,6 +35,18 @@ class TaskService:
 
     def start(self, task_id: str) -> Task:
         return self._transition(task_id, TaskStatus.RUNNING)
+
+    def claim(self, task_id: str) -> Task:
+        task = self._store.claim(task_id)
+        if task is None:
+            raise TaskClaimConflict(f"Task is not pending: {task_id}")
+        self._append(task, TaskStatus.RUNNING.value)
+        return task
+
+    def reconcile_succeeded(
+        self, task_id: str, detail: dict[str, object] | None = None
+    ) -> Task:
+        return self._store.reconcile_succeeded(task_id, detail)
 
     def succeed(self, task_id: str) -> Task:
         return self._transition(task_id, TaskStatus.SUCCEEDED)

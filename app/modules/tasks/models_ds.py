@@ -26,6 +26,10 @@ class IdempotencyConflict(RuntimeError):
     pass
 
 
+class TaskClaimConflict(RuntimeError):
+    pass
+
+
 _TRANSITIONS: dict[TaskStatus, frozenset[TaskStatus]] = {
     TaskStatus.PENDING: frozenset({TaskStatus.RUNNING, TaskStatus.CANCEL_REQUESTED}),
     TaskStatus.RUNNING: frozenset(

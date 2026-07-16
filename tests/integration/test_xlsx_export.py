@@ -84,7 +84,14 @@ def test_correction_after_export_requires_new_export_and_old_file_remains(tmp_pa
 
     assert repository.get_form("FORM-0001").export_status is ExportStatus.REEXPORT_REQUIRED  # type: ignore[union-attr]
     assert Path(first.file_path).exists()
-    second = service.export("OUTPUT", FormFilters(), tmp_path / "exports", "finance")
+    second = service.export(
+        "OUTPUT",
+        FormFilters(),
+        tmp_path / "exports",
+        "finance",
+        supersedes_batch_id=first.export_batch_id,
+    )
+    assert second.supersedes_batch_id == first.export_batch_id
     assert second.file_path != first.file_path
     assert Path(first.file_path).exists()
     assert Path(second.file_path).exists()

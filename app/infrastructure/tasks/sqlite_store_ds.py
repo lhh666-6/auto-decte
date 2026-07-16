@@ -2,9 +2,11 @@
 
 from datetime import UTC, datetime
 from threading import Lock
+from typing import Any, cast
 from uuid import uuid4
 
-from sqlalchemy import Engine, func, select
+from sqlalchemy import Engine, func, select, update
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.orm import Session
 
 from app.adapters.database.models import TaskEventRow, TaskRow
@@ -37,6 +39,63 @@ class SqliteTaskStore:
     def create(self, task: Task) -> None:
         with Session(self._engine) as session, session.begin():
             session.add(self._to_row(task))
+
+    def claim(self, task_id: str) -> Task | None:
+        """Atomically move one pending task to running."""
+        now = datetime.now(UTC)
+        with Session(self._engine) as session, session.begin():
+            result = cast(
+                CursorResult[Any],
+                session.execute(
+                    update(TaskRow)
+                    .where(
+                        TaskRow.task_id == task_id,
+                        TaskRow.status == TaskStatus.PENDING.value,
+                    )
+                    .values(status=TaskStatus.RUNNING.value, updated_at=now)
+                ),
+            )
+            if result.rowcount != 1:
+                return None
+            row = session.get(TaskRow, task_id)
+            assert row is not None
+            return self._to_task(row)
+
+    def reconcile_succeeded(
+        self, task_id: str, detail: dict[str, object] | None = None
+    ) -> Task:
+        """Repair a task when an already-committed result is authoritative."""
+        with self._event_lock, Session(self._engine) as session, session.begin():
+            row = session.get(TaskRow, task_id)
+            if row is None:
+                raise KeyError(task_id)
+            if row.status != TaskStatus.SUCCEEDED.value or row.progress != 100:
+                now = datetime.now(UTC)
+                row.status = TaskStatus.SUCCEEDED.value
+                row.progress = 100
+                row.error = None
+                row.updated_at = now
+                sequence = (
+                    session.scalar(
+                        select(func.max(TaskEventRow.sequence)).where(
+                            TaskEventRow.task_id == task_id
+                        )
+                    )
+                    or 0
+                ) + 1
+                session.add(
+                    TaskEventRow(
+                        event_id=f"TASK-EVENT-{uuid4().hex}",
+                        task_id=task_id,
+                        sequence=sequence,
+                        event_type=TaskStatus.SUCCEEDED.value,
+                        progress=100,
+                        step=row.step,
+                        detail=detail,
+                        created_at=now,
+                    )
+                )
+            return self._to_task(row)
 
     def update(self, task: Task) -> None:
         with Session(self._engine) as session, session.begin():
