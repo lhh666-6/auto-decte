@@ -13,7 +13,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 export interface ExportCenterApi {
-  preview(filters: ExportFilters): Promise<ExportPreview>;
+  preview(filters: ExportFilters, signal?: AbortSignal): Promise<ExportPreview>;
   create(input: CreateExportInput, idempotencyKey: string): Promise<CreateExportResponse>;
   waitForTask(taskId: string, options?: WaitForExportTaskOptions): Promise<ExportTask>;
   listBatches(): Promise<ExportBatch[]>;
@@ -24,6 +24,12 @@ export interface ExportCenterApi {
 interface ExportCenterProps {
   api?: ExportCenterApi;
   onBack: () => void;
+}
+
+interface PreviewSnapshot {
+  result: ExportPreview;
+  filters: ExportFilters;
+  generation: number;
 }
 
 const EMPTY_FILTERS: ExportFilters = {
@@ -38,7 +44,7 @@ export function ExportCenter({ api, onBack }: ExportCenterProps) {
   const client = useMemo<ExportCenterApi>(() => api ?? new ExportApi("/api/v1"), [api]);
   const [filters, setFilters] = useState<ExportFilters>(EMPTY_FILTERS);
   const [exportType, setExportType] = useState("PAYROLL");
-  const [preview, setPreview] = useState<ExportPreview | null>(null);
+  const [previewSnapshot, setPreviewSnapshot] = useState<PreviewSnapshot | null>(null);
   const [batches, setBatches] = useState<ExportBatch[]>([]);
   const [batchDetail, setBatchDetail] = useState<ExportBatch | null>(null);
   const [task, setTask] = useState<ExportTask | null>(null);
@@ -49,21 +55,27 @@ export function ExportCenter({ api, onBack }: ExportCenterProps) {
   const [error, setError] = useState<string | null>(null);
   const mounted = useRef(true);
   const pollingController = useRef<AbortController | null>(null);
+  const previewController = useRef<AbortController | null>(null);
+  const previewGeneration = useRef(0);
+  const batchGeneration = useRef(0);
+  const preview = previewSnapshot?.result ?? null;
 
   useEffect(() => {
     mounted.current = true;
     return () => {
       mounted.current = false;
       pollingController.current?.abort();
+      previewController.current?.abort();
     };
   }, []);
 
   const refreshBatches = useCallback(async () => {
+    const generation = ++batchGeneration.current;
     try {
       const loaded = await client.listBatches();
-      if (mounted.current) setBatches(loaded);
+      if (mounted.current && generation === batchGeneration.current) setBatches(loaded);
     } catch (cause) {
-      if (mounted.current) setError(toMessage(cause));
+      if (mounted.current && generation === batchGeneration.current) setError(toMessage(cause));
     }
   }, [client]);
 
@@ -75,27 +87,51 @@ export function ExportCenter({ api, onBack }: ExportCenterProps) {
     const nextValue = key === "export_status"
       ? value === "REEXPORT_REQUIRED" ? value : "NOT_EXPORTED"
       : value || undefined;
+    previewController.current?.abort();
+    previewController.current = null;
+    previewGeneration.current += 1;
     setFilters((current) => ({ ...current, [key]: nextValue }));
-    setPreview(null);
+    setPreviewSnapshot(null);
+    setPreviewing(false);
     setMessage(null);
   }
 
   async function loadPreview() {
+    previewController.current?.abort();
+    const controller = new AbortController();
+    previewController.current = controller;
+    const generation = ++previewGeneration.current;
+    const filterSnapshot = normalizeFilters(filters);
     setPreviewing(true);
     setError(null);
     setMessage(null);
     try {
-      setPreview(await client.preview(withExportMode(filters)));
+      const result = await client.preview(filterSnapshot, controller.signal);
+      if (
+        mounted.current &&
+        !controller.signal.aborted &&
+        generation === previewGeneration.current
+      ) {
+        setPreviewSnapshot({ result, filters: filterSnapshot, generation });
+      }
     } catch (cause) {
-      setError(toMessage(cause));
+      if (!isAbortError(cause) && mounted.current && generation === previewGeneration.current) {
+        setError(toMessage(cause));
+      }
     } finally {
-      setPreviewing(false);
+      if (previewController.current === controller) previewController.current = null;
+      if (mounted.current && generation === previewGeneration.current) setPreviewing(false);
     }
   }
 
   async function createExport(supersedesBatchId?: string) {
-    if (!preview?.included.length || !exportType.trim()) return;
-    if (filters.export_status === "REEXPORT_REQUIRED" && !supersedesBatchId) return;
+    const activePreview = previewSnapshot;
+    if (
+      !activePreview?.result.included.length ||
+      activePreview.generation !== previewGeneration.current ||
+      !exportType.trim()
+    ) return;
+    if (activePreview.filters.export_status === "REEXPORT_REQUIRED" && !supersedesBatchId) return;
     setCreating(true);
     setError(null);
     setMessage(null);
@@ -106,7 +142,7 @@ export function ExportCenter({ api, onBack }: ExportCenterProps) {
     try {
       const created = await client.create({
         export_type: exportType.trim(),
-        filters: withExportMode(filters),
+        filters: activePreview.filters,
         ...(supersedesBatchId ? { supersedes_batch_id: supersedesBatchId } : {}),
       }, makeIdempotencyKey());
       if (!mounted.current || controller.signal.aborted) return;
@@ -363,13 +399,16 @@ function reasonLabel(reason: ExportExclusionReason): string {
   return [reason.scope, reason.field_key, reason.code].filter(Boolean).join(" · ");
 }
 
-function withExportMode(filters: ExportFilters): ExportFilters {
-  return {
-    ...filters,
-    export_status: filters.export_status === "REEXPORT_REQUIRED"
-      ? "REEXPORT_REQUIRED"
-      : "NOT_EXPORTED",
-  };
+function normalizeFilters(filters: ExportFilters): ExportFilters {
+  const normalized = Object.fromEntries(
+    Object.entries(filters)
+      .map(([key, value]) => [key, typeof value === "string" ? value.trim() : value])
+      .filter(([, value]) => value !== undefined && value !== ""),
+  ) as ExportFilters;
+  normalized.export_status = filters.export_status === "REEXPORT_REQUIRED"
+    ? "REEXPORT_REQUIRED"
+    : "NOT_EXPORTED";
+  return normalized;
 }
 
 function isEligibleSupersededBatch(

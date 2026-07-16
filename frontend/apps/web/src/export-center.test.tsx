@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type {
   ExportBatch,
+  ExportFilters,
   ExportPreview,
   ExportTask,
 } from "@form-detection/api-client";
@@ -92,6 +93,16 @@ function makeApi(overrides: Partial<ExportCenterApi> = {}): ExportCenterApi {
   };
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (cause: unknown) => void;
+  const promise = new Promise<T>((promiseResolve, promiseReject) => {
+    resolve = promiseResolve;
+    reject = promiseReject;
+  });
+  return { promise, resolve, reject };
+}
+
 describe("ExportCenter", () => {
   it("defaults preview and ordinary create to NOT_EXPORTED without an ALL bypass", async () => {
     const user = userEvent.setup();
@@ -105,9 +116,10 @@ describe("ExportCenter", () => {
     await user.clear(screen.getByLabelText("表单编号"));
     await user.click(screen.getByRole("button", { name: "预览导出范围" }));
 
-    expect(api.preview).toHaveBeenCalledWith(expect.objectContaining({
-      export_status: "NOT_EXPORTED",
-    }));
+    expect(api.preview).toHaveBeenCalledWith(
+      expect.objectContaining({ export_status: "NOT_EXPORTED" }),
+      expect.anything(),
+    );
     await user.click(await screen.findByRole("button", { name: "创建导出任务" }));
     await waitFor(() => expect(api.create).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -126,10 +138,10 @@ describe("ExportCenter", () => {
     await user.type(screen.getByLabelText("员工编号"), "E&01");
     await user.click(screen.getByRole("button", { name: "预览导出范围" }));
 
-    expect(api.preview).toHaveBeenCalledWith(expect.objectContaining({
-      form_id: "FORM/一",
-      employee_id: "E&01",
-    }));
+    expect(api.preview).toHaveBeenCalledWith(
+      expect.objectContaining({ form_id: "FORM/一", employee_id: "E&01" }),
+      expect.anything(),
+    );
     expect(await screen.findByText("FORM-1 · 记录版本 2")).toBeTruthy();
     const excluded = screen.getByRole("region", { name: "排除记录" });
     expect(within(excluded).getByText("FORM-2 · 记录版本 1")).toBeTruthy();
@@ -137,6 +149,53 @@ describe("ExportCenter", () => {
     expect(within(excluded).getByText("FIELD · shift · NOT_ALLOWED")).toBeTruthy();
     expect(within(excluded).getByText("必填；允许值：A、B；范围：1–10")).toBeTruthy();
     expect(screen.getByText("企业工资记录.xlsx / 计时考核单 / employee_id")).toBeTruthy();
+  });
+
+  it("discards an aborted stale preview and creates only from the latest filter snapshot", async () => {
+    const user = userEvent.setup();
+    const first = deferred<ExportPreview>();
+    const second = deferred<ExportPreview>();
+    let firstSignal: AbortSignal | undefined;
+    const previewRequest = vi.fn()
+      .mockImplementationOnce((_filters: ExportFilters, signal?: AbortSignal) => {
+        firstSignal = signal;
+        return first.promise;
+      })
+      .mockImplementationOnce((_filters: ExportFilters, _signal?: AbortSignal) => second.promise);
+    const api = makeApi({ preview: previewRequest });
+    render(<ExportCenter api={api} onBack={vi.fn()} />);
+
+    const formId = screen.getByLabelText("表单编号");
+    await user.type(formId, "FORM-A");
+    await user.click(screen.getByRole("button", { name: "预览导出范围" }));
+    await waitFor(() => expect(previewRequest).toHaveBeenCalledTimes(1));
+    await user.clear(formId);
+    await user.type(formId, "FORM-B");
+    expect(firstSignal?.aborted).toBe(true);
+    await act(async () => first.resolve({
+      ...preview,
+      included: [{ form_id: "FORM-A", record_version: 1, reasons: [] }],
+    }));
+
+    expect(screen.queryByText("FORM-A · 记录版本 1")).toBeNull();
+    expect(screen.queryByRole("button", { name: "创建导出任务" })).toBeNull();
+    await user.click(screen.getByRole("button", { name: "预览导出范围" }));
+    await waitFor(() => expect(previewRequest).toHaveBeenCalledTimes(2));
+    await act(async () => second.resolve({
+      ...preview,
+      included: [{ form_id: "FORM-B", record_version: 2, reasons: [] }],
+    }));
+    await user.click(await screen.findByRole("button", { name: "创建导出任务" }));
+
+    await waitFor(() => expect(api.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        filters: expect.objectContaining({
+          form_id: "FORM-B",
+          export_status: "NOT_EXPORTED",
+        }),
+      }),
+      expect.any(String),
+    ));
   });
 
   it("creates an export, renders live task progress, refreshes history and downloads a Blob", async () => {
@@ -260,6 +319,34 @@ describe("ExportCenter", () => {
     expect(pollingSignal?.aborted).toBe(true);
     await Promise.resolve();
     expect(api.listBatches).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the newest batch refresh when an older list request resolves last", async () => {
+    const user = userEvent.setup();
+    const initial = deferred<ExportBatch[]>();
+    const refreshed = deferred<ExportBatch[]>();
+    const newBatch: ExportBatch = {
+      ...oldBatch,
+      export_batch_id: "BATCH-NEW",
+      task_id: "TASK-NEW",
+      download_name: "payroll-new.xlsx",
+    };
+    const listBatches = vi.fn()
+      .mockImplementationOnce(() => initial.promise)
+      .mockImplementationOnce(() => refreshed.promise);
+    const api = makeApi({ listBatches });
+    render(<ExportCenter api={api} onBack={vi.fn()} />);
+
+    await waitFor(() => expect(listBatches).toHaveBeenCalledTimes(1));
+    await user.click(screen.getByRole("button", { name: "预览导出范围" }));
+    await user.click(await screen.findByRole("button", { name: "创建导出任务" }));
+    await waitFor(() => expect(listBatches).toHaveBeenCalledTimes(2));
+    await act(async () => refreshed.resolve([newBatch]));
+    expect(await screen.findByText("BATCH-NEW")).toBeTruthy();
+    await act(async () => initial.resolve([oldBatch]));
+
+    expect(screen.getByText("BATCH-NEW")).toBeTruthy();
+    expect(screen.queryByText("BATCH-OLD")).toBeNull();
   });
 
   it("opens the export feature from 可导出 only after unsaved review navigation is confirmed", async () => {

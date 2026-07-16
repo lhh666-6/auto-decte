@@ -40,6 +40,20 @@ describe("ExportApi", () => {
     );
   });
 
+  it("passes AbortSignal to preview fetches", async () => {
+    const fetcher = vi.fn().mockResolvedValue(jsonResponse({
+      included: [], excluded: [], mapping_snapshot: [],
+    }));
+    const controller = new AbortController();
+
+    await new ExportApi("/api/v1", fetcher).preview(
+      { export_status: "NOT_EXPORTED" },
+      controller.signal,
+    );
+
+    expect(fetcher.mock.calls[0]?.[1]?.signal).toBe(controller.signal);
+  });
+
   it("creates an export with an idempotency key and a real superseded batch id", async () => {
     const fetcher = vi.fn().mockResolvedValue(jsonResponse({
       task_id: "TASK-1",

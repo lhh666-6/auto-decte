@@ -137,7 +137,7 @@ export class ExportApi {
     private readonly defaults: ExportApiRequestDefaults = {},
   ) {}
 
-  preview(filters: ExportFilters): Promise<ExportPreview> {
+  preview(filters: ExportFilters, signal?: AbortSignal): Promise<ExportPreview> {
     const query = new URLSearchParams();
     const cleaned = cleanFilters(filters);
     for (const key of [
@@ -151,7 +151,7 @@ export class ExportApi {
       if (value !== undefined) query.set(key, value);
     }
     const suffix = query.size > 0 ? `?${query.toString()}` : "";
-    return this.request(`/exports/preview${suffix}`, { method: "GET" });
+    return this.request(`/exports/preview${suffix}`, { method: "GET", signal });
   }
 
   create(input: CreateExportInput, idempotencyKey: string): Promise<CreateExportResponse> {
