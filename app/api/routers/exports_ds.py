@@ -248,13 +248,23 @@ def _preview_item_payload(item: ExportPreviewItem) -> dict[str, object]:
     if item.reason is not None:
         payload["reason"] = item.reason.value
     if item.reasons:
-        payload["reasons"] = [
-            {
+        reasons: list[dict[str, object]] = []
+        for reason in item.reasons:
+            reason_payload: dict[str, object] = {
                 "scope": reason.scope.value,
                 "code": reason.code,
-                "field_key": reason.field_key,
                 "message": reason.message,
             }
-            for reason in item.reasons
-        ]
+            if reason.field_key is not None:
+                reason_payload["field_key"] = reason.field_key
+            if reason.required is not None:
+                reason_payload["required"] = reason.required
+            if reason.allowed_values is not None:
+                reason_payload["allowed_values"] = list(reason.allowed_values)
+            if reason.minimum_value is not None:
+                reason_payload["minimum_value"] = reason.minimum_value
+            if reason.maximum_value is not None:
+                reason_payload["maximum_value"] = reason.maximum_value
+            reasons.append(reason_payload)
+        payload["reasons"] = reasons
     return payload

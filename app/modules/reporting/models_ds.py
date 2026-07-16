@@ -32,6 +32,27 @@ class ExportReasonScope(StrEnum):
     FIELD = "FIELD"
 
 
+class ExportTaskPublicError(StrEnum):
+    """Stable task errors safe to expose through external APIs."""
+
+    FAILED = "EXPORT_FAILED: Export could not be completed."
+    STORAGE_ACCESS_FAILED = (
+        "EXPORT_STORAGE_ACCESS_FAILED: Export storage is unavailable."
+    )
+    INTEGRITY_FAILED = (
+        "EXPORT_INTEGRITY_FAILED: Export file failed integrity verification."
+    )
+    VALIDATION_FAILED = (
+        "EXPORT_VALIDATION_FAILED: Export request failed validation."
+    )
+    COMPLETION_FAILED = (
+        "EXPORT_COMPLETION_FAILED: Export source data changed before completion."
+    )
+    RECOVERY_FAILED = (
+        "EXPORT_RECOVERY_FAILED: Export recovery could not be completed."
+    )
+
+
 @dataclass(frozen=True, slots=True)
 class ExportValidationReason:
     """A safe, structured explanation for an excluded form."""
@@ -40,6 +61,10 @@ class ExportValidationReason:
     code: str
     message: str
     field_key: str | None = None
+    required: bool | None = None
+    allowed_values: tuple[str, ...] | None = None
+    minimum_value: float | None = None
+    maximum_value: float | None = None
 
 
 @dataclass(frozen=True, slots=True)

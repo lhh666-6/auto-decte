@@ -258,6 +258,7 @@ class ExportForms:
                         "REQUIRED_VALUE_MISSING",
                         "Required value is missing.",
                         field.field_key,
+                        required=True,
                     )
                 )
                 continue
@@ -270,6 +271,7 @@ class ExportForms:
                         "VALUE_NOT_ALLOWED",
                         "Value is not in the allowed set.",
                         field.field_key,
+                        allowed_values=rules.allowed_values,
                     )
                 )
             if rules.minimum_value is not None or rules.maximum_value is not None:
@@ -280,6 +282,8 @@ class ExportForms:
                             "VALUE_NOT_NUMERIC",
                             "Value must be numeric.",
                             field.field_key,
+                            minimum_value=rules.minimum_value,
+                            maximum_value=rules.maximum_value,
                         )
                     )
                     continue
@@ -290,6 +294,8 @@ class ExportForms:
                             "VALUE_BELOW_MINIMUM",
                             "Value is below the minimum.",
                             field.field_key,
+                            minimum_value=rules.minimum_value,
+                            maximum_value=rules.maximum_value,
                         )
                     )
                 if rules.maximum_value is not None and value > rules.maximum_value:
@@ -299,6 +305,8 @@ class ExportForms:
                             "VALUE_ABOVE_MAXIMUM",
                             "Value is above the maximum.",
                             field.field_key,
+                            minimum_value=rules.minimum_value,
+                            maximum_value=rules.maximum_value,
                         )
                     )
         return tuple(reasons)

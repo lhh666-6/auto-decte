@@ -11,6 +11,7 @@ from app.api.dependencies_ds import get_current_actor, get_services
 from app.api.schemas.tasks_ds import TaskCreateRequest
 from app.modules.identity_access.models_ds import Permission
 from app.modules.identity_access.policy_ds import PermissionPolicy
+from app.modules.reporting.models_ds import ExportTaskPublicError
 from app.modules.tasks.models_ds import (
     IdempotencyConflict,
     Task,
@@ -148,7 +149,7 @@ def task_status(
         "status": task.status.value,
         "progress": task.progress,
         "step": task.step,
-        "error": task.error,
+        "error": _safe_task_error(task),
     }
 
 
@@ -167,3 +168,12 @@ def _task_not_found(task_id: str) -> HTTPException:
         status_code=404,
         detail={"code": "TASK_NOT_FOUND", "detail": f"Unknown task: {task_id}"},
     )
+
+
+def _safe_task_error(task: Task) -> str | None:
+    if task.error is None or task.operation != "XLSX_EXPORT":
+        return task.error
+    public_errors = frozenset(error.value for error in ExportTaskPublicError)
+    if task.error in public_errors:
+        return task.error
+    return ExportTaskPublicError.FAILED.value

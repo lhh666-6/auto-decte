@@ -1,5 +1,6 @@
 """Persistent XLSX export task handler."""
 
+import logging
 import re
 from datetime import datetime
 from pathlib import Path
@@ -13,8 +14,11 @@ from app.domain.models import (
     ReviewStatus,
     thaw_json,
 )
+from app.modules.reporting.models_ds import ExportTaskPublicError
 from app.modules.tasks.models_ds import TaskStatus
 from app.modules.tasks.service_ds import TaskService
+
+logger = logging.getLogger(__name__)
 
 
 class ExportHandler:
@@ -79,14 +83,14 @@ class ExportHandler:
             if batch is not None:
                 self._exports.cleanup(batch)
             if self._tasks.get(task_id).status is TaskStatus.RUNNING:
-                self._tasks.fail(task_id, str(error))
+                self._record_failure(task_id, error, "preparation")
             raise
         assert batch is not None
         try:
             self._exports.publish(batch)
         except ExportIntegrityError as error:
             self._exports.cleanup(batch)
-            self._tasks.fail(task_id, str(error))
+            self._record_failure(task_id, error, "publication")
             raise
         except OSError:
             self._tasks.interrupt(task_id)
@@ -97,8 +101,12 @@ class ExportHandler:
         except Exception as error:
             self._exports.cleanup(batch)
             if self._tasks.get(task_id).status is TaskStatus.RUNNING:
-                self._tasks.fail(task_id, str(error))
+                self._record_failure(task_id, error, "completion")
             raise
+
+    def _record_failure(self, task_id: str, error: Exception, phase: str) -> None:
+        logger.exception("Export task %s failed during %s", task_id, phase)
+        self._tasks.fail(task_id, _public_task_error(error, phase))
 
     def recover_prepared(self) -> list[ExportBatch]:
         """Resume interrupted exports from append-only prepared task events."""
@@ -115,7 +123,7 @@ class ExportHandler:
             try:
                 batch = _batch_from_prepared_detail(event.detail)
             except Exception as error:
-                self._tasks.fail(task.task_id, str(error))
+                self._record_failure(task.task_id, error, "recovery")
                 continue
             existing = self._repository.get_export_batch_by_task(task.task_id)
             if existing is not None:
@@ -133,7 +141,7 @@ class ExportHandler:
                 self._exports.publish(batch)
             except ExportIntegrityError as error:
                 self._exports.cleanup(batch)
-                self._tasks.fail(task.task_id, str(error))
+                self._record_failure(task.task_id, error, "recovery")
                 continue
             except OSError:
                 self._tasks.interrupt(task.task_id)
@@ -143,10 +151,24 @@ class ExportHandler:
             except Exception as error:
                 self._exports.cleanup(batch)
                 if self._tasks.get(task.task_id).status is TaskStatus.RECOVERING:
-                    self._tasks.fail(task.task_id, str(error))
+                    self._record_failure(task.task_id, error, "recovery")
                 continue
             recovered.append(batch)
         return recovered
+
+
+def _public_task_error(error: Exception, phase: str) -> str:
+    if isinstance(error, OSError):
+        return ExportTaskPublicError.STORAGE_ACCESS_FAILED.value
+    if isinstance(error, ExportIntegrityError):
+        return ExportTaskPublicError.INTEGRITY_FAILED.value
+    if phase == "recovery":
+        return ExportTaskPublicError.RECOVERY_FAILED.value
+    if phase == "completion":
+        return ExportTaskPublicError.COMPLETION_FAILED.value
+    if isinstance(error, ValueError | KeyError):
+        return ExportTaskPublicError.VALIDATION_FAILED.value
+    return ExportTaskPublicError.FAILED.value
 
 
 def _deserialize_filters(raw: object) -> FormFilters:

@@ -21,6 +21,7 @@ from app.services.container import Services, build_services
 from config.settings import Settings
 
 FINANCE = {"X-Actor-ID": "finance-a", "X-Roles": "FINANCE"}
+ADMIN = {"X-Actor-ID": "admin-a", "X-Roles": "ADMIN"}
 OPERATOR = {"X-Actor-ID": "operator-a", "X-Roles": "OPERATOR"}
 
 
@@ -76,6 +77,9 @@ def _build_client(tmp_path: Path) -> tuple[TestClient, Services]:
             "confirmed",
             (evidence.file_id,),
         )
+    draft_image = tmp_path / "FORM-DRAFT.png"
+    draft_image.write_bytes(b"draft")
+    imports.import_image(draft_image, "FORM-DRAFT", "T1", "1", "operator-a")
     return TestClient(create_app(services), raise_server_exceptions=False), services
 
 
@@ -83,7 +87,7 @@ def test_preview_is_read_only_and_returns_field_level_exclusion_reasons(
     tmp_path: Path,
 ) -> None:
     client, services = _build_client(tmp_path)
-    form_ids = ("FORM-VALID", "FORM-INVALID", "FORM-MISSING")
+    form_ids = ("FORM-VALID", "FORM-INVALID", "FORM-MISSING", "FORM-DRAFT")
     before = [services.repository.get_form(form_id) for form_id in form_ids]
 
     response = client.get("/api/v1/exports/preview", headers=FINANCE)
@@ -91,20 +95,43 @@ def test_preview_is_read_only_and_returns_field_level_exclusion_reasons(
     assert response.status_code == 200
     body = response.json()
     assert body["included"] == [{"form_id": "FORM-VALID", "record_version": 1}]
-    assert body["excluded"][0]["form_id"] == "FORM-INVALID"
-    assert body["excluded"][0]["reason"] == "FINAL_VALIDATION_FAILED"
+    invalid = next(item for item in body["excluded"] if item["form_id"] == "FORM-INVALID")
+    assert invalid["reason"] == "FINAL_VALIDATION_FAILED"
     assert {
         (reason["scope"], reason["code"], reason.get("field_key"))
-        for reason in body["excluded"][0]["reasons"]
+        for reason in invalid["reasons"]
     } == {
         ("FIELD", "VALUE_NOT_ALLOWED", "employee_id"),
         ("FIELD", "VALUE_ABOVE_MAXIMUM", "quantity"),
     }
+    invalid_reasons = {
+        reason["code"]: reason for reason in invalid["reasons"]
+    }
+    assert invalid_reasons["VALUE_NOT_ALLOWED"]["allowed_values"] == ["E001"]
+    assert "required" not in invalid_reasons["VALUE_NOT_ALLOWED"]
+    assert "minimum_value" not in invalid_reasons["VALUE_NOT_ALLOWED"]
+    assert "maximum_value" not in invalid_reasons["VALUE_NOT_ALLOWED"]
+    assert invalid_reasons["VALUE_ABOVE_MAXIMUM"]["minimum_value"] == 1
+    assert invalid_reasons["VALUE_ABOVE_MAXIMUM"]["maximum_value"] == 10
+    assert "required" not in invalid_reasons["VALUE_ABOVE_MAXIMUM"]
+    assert "allowed_values" not in invalid_reasons["VALUE_ABOVE_MAXIMUM"]
     missing = next(item for item in body["excluded"] if item["form_id"] == "FORM-MISSING")
     assert {(reason["code"], reason["field_key"]) for reason in missing["reasons"]} == {
         ("REQUIRED_VALUE_MISSING", "employee_id"),
         ("REQUIRED_VALUE_MISSING", "quantity"),
     }
+    assert all(reason["required"] is True for reason in missing["reasons"])
+    assert all("allowed_values" not in reason for reason in missing["reasons"])
+    assert all("minimum_value" not in reason for reason in missing["reasons"])
+    assert all("maximum_value" not in reason for reason in missing["reasons"])
+    draft = next(item for item in body["excluded"] if item["form_id"] == "FORM-DRAFT")
+    assert draft["reasons"] == [
+        {
+            "scope": "FORM",
+            "code": "NOT_CONFIRMED",
+            "message": "Form is not confirmed.",
+        }
+    ]
     assert body["mapping_snapshot"][0]["field_key"] == "employee_id"
     assert [services.repository.get_form(form_id) for form_id in form_ids] == before
     assert services.repository.list_export_batches() == []
@@ -168,6 +195,46 @@ def test_export_creation_requires_permission_and_idempotency_key(tmp_path: Path)
     assert operator.json()["code"] == "PERMISSION_DENIED"
     assert missing_key.status_code == 400
     assert missing_key.json()["code"] == "IDEMPOTENCY_KEY_REQUIRED"
+
+
+def test_finance_and_admin_can_export_empty_filters_and_admin_can_download(
+    tmp_path: Path,
+) -> None:
+    client, services = _build_client(tmp_path)
+
+    finance = client.post(
+        "/api/v1/exports",
+        headers={**FINANCE, "Idempotency-Key": "finance-empty-filters"},
+        json={"export_type": "PAYROLL", "filters": {}},
+    )
+    admin = client.post(
+        "/api/v1/exports",
+        headers={**ADMIN, "Idempotency-Key": "admin-empty-filters"},
+        json={"export_type": "PAYROLL", "filters": {}},
+    )
+    admin_batch = services.repository.get_export_batch_by_task(admin.json()["task_id"])
+    assert admin_batch is not None
+    downloaded = client.get(
+        f"/api/v1/exports/batches/{admin_batch.export_batch_id}/download",
+        headers=ADMIN,
+    )
+
+    assert finance.status_code == 202
+    assert admin.status_code == 202
+    assert downloaded.status_code == 200
+    assert downloaded.content == Path(admin_batch.file_path).read_bytes()
+
+
+def test_export_creation_requires_filters_member(tmp_path: Path) -> None:
+    client, _ = _build_client(tmp_path)
+
+    response = client.post(
+        "/api/v1/exports",
+        headers={**FINANCE, "Idempotency-Key": "missing-filters"},
+        json={"export_type": "PAYROLL"},
+    )
+
+    assert response.status_code == 422
 
 
 def test_same_export_key_with_different_payload_returns_conflict(tmp_path: Path) -> None:
@@ -376,6 +443,65 @@ def test_reexport_without_superseded_batch_is_accepted_then_persistently_failed(
     assert response.status_code == 202
     task = services.tasks.get(response.json()["task_id"])
     assert task.status.value == "FAILED"
-    assert task.error is not None
-    assert "supersedes_batch_id is required" in task.error
+    assert task.error == "EXPORT_VALIDATION_FAILED: Export request failed validation."
     assert len(services.repository.list_export_batches()) == 1
+
+
+def test_failed_export_status_uses_diagnostic_public_error_without_filesystem_details(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, services = _build_client(tmp_path)
+    secret_path = services.settings.exports_root.resolve() / "private-output.xlsx"
+
+    def deny_write(*args: object, **kwargs: object) -> None:
+        del args, kwargs
+        raise PermissionError(13, "filesystem access denied", str(secret_path))
+
+    monkeypatch.setattr(services.exports._exporter, "write", deny_write)
+
+    created = client.post(
+        "/api/v1/exports",
+        headers={**FINANCE, "Idempotency-Key": "permission-failure"},
+        json={"export_type": "PAYROLL", "filters": {"form_id": "FORM-VALID"}},
+    )
+    status_response = client.get(created.json()["status_url"], headers=FINANCE)
+
+    assert created.status_code == 202
+    assert status_response.status_code == 200
+    assert status_response.json()["status"] == "FAILED"
+    assert status_response.json()["error"] == (
+        "EXPORT_STORAGE_ACCESS_FAILED: Export storage is unavailable."
+    )
+    persisted = services.tasks.get(created.json()["task_id"])
+    assert persisted.error == status_response.json()["error"]
+    assert str(secret_path) not in status_response.text
+    assert "private-output.xlsx" not in status_response.text
+    assert "filesystem access denied" not in status_response.text
+
+
+def test_status_api_replaces_legacy_raw_export_error_with_safe_public_error(
+    tmp_path: Path,
+) -> None:
+    client, services = _build_client(tmp_path)
+    secret_path = services.settings.exports_root.resolve() / "legacy-private.xlsx"
+    task = services.tasks.submit(
+        TaskCommand(
+            "XLSX_EXPORT",
+            "EXPORTS",
+            "finance-a",
+            "legacy-raw-error",
+            {"export_type": "PAYROLL", "filters": {}},
+        )
+    )
+    services.tasks.start(task.task_id)
+    services.tasks.fail(
+        task.task_id,
+        f"PermissionError: access denied while opening {secret_path}",
+    )
+
+    response = client.get(f"/api/v1/tasks/{task.task_id}", headers=FINANCE)
+
+    assert response.status_code == 200
+    assert response.json()["error"] == "EXPORT_FAILED: Export could not be completed."
+    assert str(secret_path) not in response.text
+    assert "legacy-private.xlsx" not in response.text

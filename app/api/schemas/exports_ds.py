@@ -10,6 +10,10 @@ class ExportReasonResponse(BaseModel):
     code: str
     field_key: str | None = None
     message: str
+    required: bool | None = None
+    allowed_values: list[str] | None = None
+    minimum_value: float | None = None
+    maximum_value: float | None = None
 
 
 class ExportPreviewItemResponse(BaseModel):
