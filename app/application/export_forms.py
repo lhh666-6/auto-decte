@@ -23,6 +23,8 @@ from app.modules.reporting.models_ds import (
     ExportMapping,
     ExportPreview,
     ExportPreviewItem,
+    ExportReasonScope,
+    ExportValidationReason,
 )
 
 
@@ -137,31 +139,50 @@ class ExportForms:
             item = ExportPreviewItem(form.form_id, form.current_record_version)
             if form.review_status is not ReviewStatus.CONFIRMED:
                 excluded.append(
-                    replace(item, reason=ExportExclusionReason.NOT_CONFIRMED)
+                    replace(
+                        item,
+                        reason=ExportExclusionReason.NOT_CONFIRMED,
+                        reasons=self._form_reasons(ExportExclusionReason.NOT_CONFIRMED),
+                    )
                 )
                 continue
             if result is None:
                 excluded.append(
-                    replace(item, reason=ExportExclusionReason.FINAL_VALIDATION_FAILED)
+                    replace(
+                        item,
+                        reason=ExportExclusionReason.FINAL_VALIDATION_FAILED,
+                        reasons=self._form_reasons(ExportExclusionReason.FINAL_VALIDATION_FAILED),
+                    )
                 )
                 continue
-            template = self._resolve_template(
-                form.template_id, form.template_version
-            )
+            template = self._resolve_template(form.template_id, form.template_version)
             if template is None:
                 excluded.append(
-                    replace(item, reason=ExportExclusionReason.TEMPLATE_NOT_FOUND)
+                    replace(
+                        item,
+                        reason=ExportExclusionReason.TEMPLATE_NOT_FOUND,
+                        reasons=self._form_reasons(ExportExclusionReason.TEMPLATE_NOT_FOUND),
+                    )
                 )
                 continue
             template_mappings = self._template_mappings(template)
             if not template_mappings:
                 excluded.append(
-                    replace(item, reason=ExportExclusionReason.NO_VALID_MAPPING)
+                    replace(
+                        item,
+                        reason=ExportExclusionReason.NO_VALID_MAPPING,
+                        reasons=self._form_reasons(ExportExclusionReason.NO_VALID_MAPPING),
+                    )
                 )
                 continue
-            if not self._passes_final_validation(result.current_record, template):
+            validation_reasons = self._final_validation_reasons(result.current_record, template)
+            if validation_reasons:
                 excluded.append(
-                    replace(item, reason=ExportExclusionReason.FINAL_VALIDATION_FAILED)
+                    replace(
+                        item,
+                        reason=ExportExclusionReason.FINAL_VALIDATION_FAILED,
+                        reasons=validation_reasons,
+                    )
                 )
                 continue
             included.append(item)
@@ -206,27 +227,81 @@ class ExportForms:
 
     @staticmethod
     def _passes_final_validation(record: RecordVersion, template: TemplateVersion) -> bool:
+        return not ExportForms._final_validation_reasons(record, template)
+
+    @staticmethod
+    def _form_reasons(reason: ExportExclusionReason) -> tuple[ExportValidationReason, ...]:
+        messages = {
+            ExportExclusionReason.NOT_CONFIRMED: "Form is not confirmed.",
+            ExportExclusionReason.TEMPLATE_NOT_FOUND: "Template version was not found.",
+            ExportExclusionReason.NO_VALID_MAPPING: "Template has no valid export mapping.",
+            ExportExclusionReason.FINAL_VALIDATION_FAILED: "Record failed final validation.",
+        }
+        return (ExportValidationReason(ExportReasonScope.FORM, reason.value, messages[reason]),)
+
+    @staticmethod
+    def _final_validation_reasons(
+        record: RecordVersion, template: TemplateVersion
+    ) -> tuple[ExportValidationReason, ...]:
         if record.status not in {RecordStatus.CONFIRMED, RecordStatus.CORRECTED}:
-            return False
+            return ExportForms._form_reasons(ExportExclusionReason.FINAL_VALIDATION_FAILED)
+        reasons: list[ExportValidationReason] = []
         values = record.values
         for field in template.fields:
             value = values.get(field.field_key)
             empty = value is None or (isinstance(value, str) and not value.strip())
             rules = field.rules
             if rules.required and empty:
-                return False
+                reasons.append(
+                    ExportValidationReason(
+                        ExportReasonScope.FIELD,
+                        "REQUIRED_VALUE_MISSING",
+                        "Required value is missing.",
+                        field.field_key,
+                    )
+                )
+                continue
             if empty:
                 continue
             if rules.allowed_values and str(value) not in rules.allowed_values:
-                return False
+                reasons.append(
+                    ExportValidationReason(
+                        ExportReasonScope.FIELD,
+                        "VALUE_NOT_ALLOWED",
+                        "Value is not in the allowed set.",
+                        field.field_key,
+                    )
+                )
             if rules.minimum_value is not None or rules.maximum_value is not None:
                 if isinstance(value, bool) or not isinstance(value, int | float):
-                    return False
+                    reasons.append(
+                        ExportValidationReason(
+                            ExportReasonScope.FIELD,
+                            "VALUE_NOT_NUMERIC",
+                            "Value must be numeric.",
+                            field.field_key,
+                        )
+                    )
+                    continue
                 if rules.minimum_value is not None and value < rules.minimum_value:
-                    return False
+                    reasons.append(
+                        ExportValidationReason(
+                            ExportReasonScope.FIELD,
+                            "VALUE_BELOW_MINIMUM",
+                            "Value is below the minimum.",
+                            field.field_key,
+                        )
+                    )
                 if rules.maximum_value is not None and value > rules.maximum_value:
-                    return False
-        return True
+                    reasons.append(
+                        ExportValidationReason(
+                            ExportReasonScope.FIELD,
+                            "VALUE_ABOVE_MAXIMUM",
+                            "Value is above the maximum.",
+                            field.field_key,
+                        )
+                    )
+        return tuple(reasons)
 
     def export(
         self,

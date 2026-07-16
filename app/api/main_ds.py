@@ -6,6 +6,7 @@ from fastapi.responses import JSONResponse
 from app.api.errors.problem_ds import ProblemDetails
 from app.api.middleware.request_id_ds import RequestIdMiddleware
 from app.api.routers import classification_ds as classification
+from app.api.routers import exports_ds as exports
 from app.api.routers import health_ds as health
 from app.api.routers import identity_ds as identity
 from app.api.routers import imports_ds as imports
@@ -26,6 +27,7 @@ def create_app(services: Services) -> FastAPI:
     app.include_router(imports.router)
     app.include_router(master_data.router)
     app.include_router(classification.router)
+    app.include_router(exports.router)
     app.include_router(review.router)
     app.include_router(workbench.router)
     app.include_router(templates.router)

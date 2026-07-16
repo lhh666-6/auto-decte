@@ -37,6 +37,7 @@ ROLE_PERMISSIONS: dict[Role, frozenset[Permission]] = {
             Permission.FORM_READ,
             Permission.EXPORT_PREVIEW,
             Permission.EXPORT_CREATE,
+            Permission.EXPORT_DOWNLOAD,
             Permission.AUDIT_READ,
             Permission.EVIDENCE_IMAGE_READ,
             Permission.MASTER_DATA_READ,

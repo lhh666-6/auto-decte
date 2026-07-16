@@ -25,6 +25,23 @@ class ExportExclusionReason(StrEnum):
     FINAL_VALIDATION_FAILED = "FINAL_VALIDATION_FAILED"
 
 
+class ExportReasonScope(StrEnum):
+    """The record level addressed by an export exclusion reason."""
+
+    FORM = "FORM"
+    FIELD = "FIELD"
+
+
+@dataclass(frozen=True, slots=True)
+class ExportValidationReason:
+    """A safe, structured explanation for an excluded form."""
+
+    scope: ExportReasonScope
+    code: str
+    message: str
+    field_key: str | None = None
+
+
 @dataclass(frozen=True, slots=True)
 class ExportPreviewItem:
     """One versioned candidate and its optional exclusion reason."""
@@ -32,6 +49,7 @@ class ExportPreviewItem:
     form_id: str
     record_version: int
     reason: ExportExclusionReason | None = None
+    reasons: tuple[ExportValidationReason, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)

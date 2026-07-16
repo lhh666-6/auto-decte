@@ -11,7 +11,13 @@ from app.api.dependencies_ds import get_current_actor, get_services
 from app.api.schemas.tasks_ds import TaskCreateRequest
 from app.modules.identity_access.models_ds import Permission
 from app.modules.identity_access.policy_ds import PermissionPolicy
-from app.modules.tasks.models_ds import IdempotencyConflict, TaskCommand, TaskEvent, TaskStatus
+from app.modules.tasks.models_ds import (
+    IdempotencyConflict,
+    Task,
+    TaskCommand,
+    TaskEvent,
+    TaskStatus,
+)
 from app.services.container import Services
 
 router = APIRouter(prefix="/api/v1/tasks", tags=["tasks"])
@@ -27,6 +33,31 @@ def _require_task_read(request: Request, services: Services) -> str:
             detail={"code": "PERMISSION_DENIED", "detail": str(error)},
         ) from error
     return actor.actor_id
+
+
+def _require_task_access(task_id: str, request: Request, services: Services) -> Task:
+    try:
+        task = services.tasks.get(task_id)
+    except KeyError as error:
+        raise _task_not_found(task_id) from error
+    actor = get_current_actor(request, services)
+    policy = PermissionPolicy()
+    globally_allowed = policy.allows(actor, Permission.TASK_READ)
+    owns_export = (
+        task.operation == "XLSX_EXPORT"
+        and task.resource_id == "EXPORTS"
+        and task.actor_id == actor.actor_id
+        and policy.allows(actor, Permission.EXPORT_CREATE)
+    )
+    if not globally_allowed and not owns_export:
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "code": "PERMISSION_DENIED",
+                "detail": f"Actor {actor.actor_id} cannot read task {task_id}",
+            },
+        )
+    return task
 
 
 @router.post("", status_code=status.HTTP_202_ACCEPTED)
@@ -65,7 +96,7 @@ def task_events(
     request: Request,
     services: Services = Depends(get_services),  # noqa: B008
 ) -> StreamingResponse:
-    _require_task_read(request, services)
+    _require_task_access(task_id, request, services)
     after = int(request.headers.get("Last-Event-ID", "0"))
 
     async def stream() -> AsyncIterator[str]:
@@ -109,14 +140,7 @@ def task_status(
     request: Request,
     services: Services = Depends(get_services),  # noqa: B008
 ) -> dict[str, object]:
-    _require_task_read(request, services)
-    try:
-        task = services.tasks.get(task_id)
-    except KeyError as error:
-        raise HTTPException(
-            status_code=404,
-            detail={"code": "TASK_NOT_FOUND", "detail": f"Unknown task: {task_id}"},
-        ) from error
+    task = _require_task_access(task_id, request, services)
     return {
         "task_id": task.task_id,
         "operation": task.operation,
@@ -135,4 +159,11 @@ def _event_payload(event: TaskEvent) -> str:
             "progress": event.progress,
             "step": event.step,
         }
+    )
+
+
+def _task_not_found(task_id: str) -> HTTPException:
+    return HTTPException(
+        status_code=404,
+        detail={"code": "TASK_NOT_FOUND", "detail": f"Unknown task: {task_id}"},
     )

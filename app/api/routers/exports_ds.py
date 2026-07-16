@@ -1,0 +1,260 @@
+"""Authorized template-driven XLSX export endpoints."""
+
+import re
+from dataclasses import asdict
+from hashlib import sha256
+from pathlib import Path
+
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Request, status
+from fastapi.responses import FileResponse
+
+from app.api.dependencies_ds import get_current_actor, get_services
+from app.api.schemas.exports_ds import (
+    ExportBatchResponse,
+    ExportCreateRequest,
+    ExportPreviewResponse,
+)
+from app.application.query_forms import FormFilters
+from app.domain.models import ExportBatch, ExportStatus, ReviewStatus, thaw_json
+from app.modules.identity_access.models_ds import Actor, Permission
+from app.modules.identity_access.policy_ds import PermissionPolicy
+from app.modules.reporting.models_ds import ExportPreview, ExportPreviewItem
+from app.modules.tasks.models_ds import IdempotencyConflict, TaskCommand, TaskStatus
+from app.services.container import Services
+
+router = APIRouter(prefix="/api/v1/exports", tags=["exports"])
+
+
+def _require(actor: Actor, permission: Permission) -> None:
+    try:
+        PermissionPolicy().require(actor, permission)
+    except PermissionError as error:
+        raise HTTPException(
+            status_code=403,
+            detail={"code": "PERMISSION_DENIED", "detail": str(error)},
+        ) from error
+
+
+@router.get(
+    "/preview",
+    response_model=ExportPreviewResponse,
+    response_model_exclude_defaults=True,
+    response_model_exclude_none=True,
+)
+def preview_exports(
+    request: Request,
+    form_id: str | None = None,
+    employee_id: str | None = None,
+    work_order_id: str | None = None,
+    review_status: ReviewStatus | None = None,
+    export_status: ExportStatus | None = None,
+    services: Services = Depends(get_services),  # noqa: B008
+) -> dict[str, object]:
+    actor = get_current_actor(request, services)
+    _require(actor, Permission.EXPORT_PREVIEW)
+    preview = services.reporting.preview(
+        FormFilters(
+            form_id=form_id,
+            employee_id=employee_id,
+            work_order_id=work_order_id,
+            review_status=review_status,
+            export_status=export_status,
+        ),
+        actor.actor_id,
+    )
+    return _preview_payload(preview)
+
+
+@router.post("", status_code=status.HTTP_202_ACCEPTED)
+def create_export(
+    body: ExportCreateRequest,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    services: Services = Depends(get_services),  # noqa: B008
+) -> dict[str, object]:
+    actor = get_current_actor(request, services)
+    _require(actor, Permission.EXPORT_CREATE)
+    if not idempotency_key:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "IDEMPOTENCY_KEY_REQUIRED",
+                "detail": "Idempotency-Key is required.",
+            },
+        )
+    payload = body.model_dump(mode="json", exclude_none=True)
+    try:
+        task = services.tasks.submit(
+            TaskCommand(
+                "XLSX_EXPORT",
+                "EXPORTS",
+                actor.actor_id,
+                idempotency_key,
+                payload,
+            )
+        )
+    except IdempotencyConflict as error:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "IDEMPOTENCY_CONFLICT", "detail": str(error)},
+        ) from error
+    if task.status is TaskStatus.PENDING:
+        background_tasks.add_task(_run_export_task_safely, services, task.task_id)
+    return {
+        "task_id": task.task_id,
+        "status": task.status.value,
+        "status_url": f"/api/v1/tasks/{task.task_id}",
+        "events_url": f"/api/v1/tasks/{task.task_id}/events",
+    }
+
+
+def _run_export_task_safely(services: Services, task_id: str) -> None:
+    """Run a persisted task without surfacing post-response failures."""
+    try:
+        services.export_handler.handle(task_id)
+    except Exception:
+        return
+
+
+@router.get("/batches", response_model=list[ExportBatchResponse])
+def list_export_batches(
+    request: Request,
+    services: Services = Depends(get_services),  # noqa: B008
+) -> list[dict[str, object]]:
+    actor = get_current_actor(request, services)
+    _require(actor, Permission.EXPORT_PREVIEW)
+    return [_batch_payload(batch) for batch in services.reporting.list_batches()]
+
+
+@router.get(
+    "/batches/{batch_id}",
+    response_model=ExportBatchResponse,
+    response_model_exclude_none=True,
+)
+def get_export_batch(
+    batch_id: str,
+    request: Request,
+    services: Services = Depends(get_services),  # noqa: B008
+) -> dict[str, object]:
+    actor = get_current_actor(request, services)
+    _require(actor, Permission.EXPORT_PREVIEW)
+    batch = _require_batch(batch_id, services)
+    return _batch_payload(batch)
+
+
+@router.get("/batches/{batch_id}/download")
+def download_export_batch(
+    batch_id: str,
+    request: Request,
+    services: Services = Depends(get_services),  # noqa: B008
+) -> FileResponse:
+    actor = get_current_actor(request, services)
+    _require(actor, Permission.EXPORT_DOWNLOAD)
+    batch = _require_batch(batch_id, services)
+    root = services.settings.exports_root.resolve()
+    path = Path(batch.file_path).resolve()
+    if not path.is_relative_to(root):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "EXPORT_PATH_INVALID",
+                "detail": "Export file location is invalid.",
+            },
+        )
+    if not path.is_file():
+        raise HTTPException(
+            status_code=410,
+            detail={"code": "EXPORT_FILE_GONE", "detail": "Export file is unavailable."},
+        )
+    try:
+        actual_sha256 = sha256(path.read_bytes()).hexdigest()
+    except OSError as error:
+        raise HTTPException(
+            status_code=410,
+            detail={"code": "EXPORT_FILE_GONE", "detail": "Export file is unavailable."},
+        ) from error
+    if actual_sha256 != batch.file_sha256:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "EXPORT_HASH_MISMATCH",
+                "detail": "Export file failed integrity verification.",
+            },
+        )
+    return FileResponse(
+        path,
+        filename=_safe_download_name(batch.download_name),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
+
+def _require_batch(batch_id: str, services: Services) -> ExportBatch:
+    batch = services.repository.get_export_batch(batch_id)
+    if batch is None:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "EXPORT_BATCH_NOT_FOUND", "detail": "Export batch was not found."},
+        )
+    return batch
+
+
+def _batch_payload(batch: ExportBatch) -> dict[str, object]:
+    return {
+        "export_batch_id": batch.export_batch_id,
+        "export_type": batch.export_type,
+        "task_id": batch.task_id,
+        "template_snapshot": thaw_json(batch.template_snapshot),
+        "mapping_snapshot": thaw_json(batch.mapping_snapshot),
+        "mapping_hash": batch.mapping_hash,
+        "filters": thaw_json(batch.filters),
+        "included_records": [
+            {"form_id": form_id, "record_version": version}
+            for form_id, version in batch.included_records
+        ],
+        "file_sha256": batch.file_sha256,
+        "exported_by": batch.exported_by,
+        "exported_at": batch.exported_at.isoformat(),
+        "supersedes_batch_id": batch.supersedes_batch_id,
+        "download_url": f"/api/v1/exports/batches/{batch.export_batch_id}/download",
+        "download_name": _safe_download_name(batch.download_name),
+    }
+
+
+def _safe_download_name(name: str) -> str:
+    candidate = Path(name).name
+    if (
+        candidate != name
+        or re.fullmatch(r"[A-Za-z0-9_.-]+", candidate) is None
+        or not candidate.lower().endswith(".xlsx")
+    ):
+        return "export.xlsx"
+    return candidate
+
+
+def _preview_payload(preview: ExportPreview) -> dict[str, object]:
+    return {
+        "included": [_preview_item_payload(item) for item in preview.included],
+        "excluded": [_preview_item_payload(item) for item in preview.excluded],
+        "mapping_snapshot": [asdict(mapping) for mapping in preview.mapping_snapshot],
+    }
+
+
+def _preview_item_payload(item: ExportPreviewItem) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "form_id": item.form_id,
+        "record_version": item.record_version,
+    }
+    if item.reason is not None:
+        payload["reason"] = item.reason.value
+    if item.reasons:
+        payload["reasons"] = [
+            {
+                "scope": reason.scope.value,
+                "code": reason.code,
+                "field_key": reason.field_key,
+                "message": reason.message,
+            }
+            for reason in item.reasons
+        ]
+    return payload

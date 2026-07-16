@@ -19,6 +19,8 @@ def test_auditor_is_read_only_and_finance_can_export() -> None:
     assert policy.allows(auditor, Permission.AUDIT_READ) is True
     assert policy.allows(auditor, Permission.REVIEW_CORRECT) is False
     assert policy.allows(finance, Permission.EXPORT_CREATE) is True
+    assert policy.allows(finance, Permission.EXPORT_DOWNLOAD) is True
+    assert policy.allows(auditor, Permission.EXPORT_DOWNLOAD) is False
     assert policy.allows(finance, Permission.REVIEW_VOID) is False
 
 

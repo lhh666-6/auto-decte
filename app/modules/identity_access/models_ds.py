@@ -30,6 +30,7 @@ class Permission(StrEnum):
     MASTER_DATA_WRITE = "master_data.write"
     EXPORT_PREVIEW = "export.preview"
     EXPORT_CREATE = "export.create"
+    EXPORT_DOWNLOAD = "export.download"
     AUDIT_READ = "audit.read"
     EVIDENCE_IMAGE_READ = "evidence.image.read"
     EVIDENCE_AUDIO_READ = "evidence.audio.read"
