@@ -237,6 +237,29 @@ def test_export_creation_requires_filters_member(tmp_path: Path) -> None:
     assert response.status_code == 422
 
 
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"export_type": "PAYROLL", "filters": {"form_idd": "FORM-VALID"}},
+        {"export_type": "PAYROLL", "filters": {}, "export_typo": "ignored"},
+    ],
+)
+def test_export_creation_rejects_unknown_body_fields(
+    tmp_path: Path,
+    body: dict[str, object],
+) -> None:
+    client, services = _build_client(tmp_path)
+
+    response = client.post(
+        "/api/v1/exports",
+        headers={**FINANCE, "Idempotency-Key": "unknown-body-field"},
+        json=body,
+    )
+
+    assert response.status_code == 422
+    assert services.repository.list_export_batches() == []
+
+
 def test_same_export_key_with_different_payload_returns_conflict(tmp_path: Path) -> None:
     client, _ = _build_client(tmp_path)
     headers = {**FINANCE, "Idempotency-Key": "conflicting-export"}
@@ -365,6 +388,54 @@ def test_batch_download_checks_permission_content_filename_and_integrity(
     assert downloaded.content == Path(batch.file_path).read_bytes()
     assert batch.download_name in downloaded.headers["content-disposition"]
     assert denied.status_code == 403
+
+
+def test_batch_download_returns_the_exact_bytes_used_for_integrity_check(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client, services = _build_client(tmp_path)
+    path = services.settings.exports_root / "snapshot.xlsx"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b"bytes a deferred response would reopen")
+    verified_bytes = b"bytes read and verified exactly once"
+    services.repository.add_export_batch(
+        ExportBatch(
+            export_batch_id="EXPORT-SNAPSHOT",
+            export_type="PAYROLL",
+            filters={},
+            included_records=(),
+            file_path=str(path),
+            file_sha256=sha256(verified_bytes).hexdigest(),
+            exported_by="finance-a",
+            download_name="../unsafe.xlsx",
+        )
+    )
+    original_read_bytes = Path.read_bytes
+    read_count = 0
+
+    def read_verified_snapshot(candidate: Path) -> bytes:
+        nonlocal read_count
+        if candidate == path:
+            read_count += 1
+            return verified_bytes
+        return original_read_bytes(candidate)
+
+    monkeypatch.setattr(Path, "read_bytes", read_verified_snapshot)
+
+    response = client.get(
+        "/api/v1/exports/batches/EXPORT-SNAPSHOT/download",
+        headers=FINANCE,
+    )
+
+    assert response.status_code == 200
+    assert response.content == verified_bytes
+    assert read_count == 1
+    assert response.headers["content-type"] == (
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+    assert response.headers["content-disposition"] == 'attachment; filename="export.xlsx"'
+    assert response.headers["content-length"] == str(len(verified_bytes))
 
 
 def test_batch_download_rejects_escape_missing_and_hash_mismatch_without_path_leak(

@@ -6,7 +6,7 @@ from hashlib import sha256
 from pathlib import Path
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Header, HTTPException, Request, status
-from fastapi.responses import FileResponse
+from fastapi.responses import Response
 
 from app.api.dependencies_ds import get_current_actor, get_services
 from app.api.schemas.exports_ds import (
@@ -148,7 +148,7 @@ def download_export_batch(
     batch_id: str,
     request: Request,
     services: Services = Depends(get_services),  # noqa: B008
-) -> FileResponse:
+) -> Response:
     actor = get_current_actor(request, services)
     _require(actor, Permission.EXPORT_DOWNLOAD)
     batch = _require_batch(batch_id, services)
@@ -168,13 +168,13 @@ def download_export_batch(
             detail={"code": "EXPORT_FILE_GONE", "detail": "Export file is unavailable."},
         )
     try:
-        actual_sha256 = sha256(path.read_bytes()).hexdigest()
+        content = path.read_bytes()
     except OSError as error:
         raise HTTPException(
             status_code=410,
             detail={"code": "EXPORT_FILE_GONE", "detail": "Export file is unavailable."},
         ) from error
-    if actual_sha256 != batch.file_sha256:
+    if sha256(content).hexdigest() != batch.file_sha256:
         raise HTTPException(
             status_code=409,
             detail={
@@ -182,10 +182,11 @@ def download_export_batch(
                 "detail": "Export file failed integrity verification.",
             },
         )
-    return FileResponse(
-        path,
-        filename=_safe_download_name(batch.download_name),
+    download_name = _safe_download_name(batch.download_name)
+    return Response(
+        content=content,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{download_name}"'},
     )
 
 

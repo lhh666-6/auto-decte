@@ -1,6 +1,6 @@
 """Safe HTTP DTOs for template-driven exports."""
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.domain.models import ExportStatus, ReviewStatus
 
@@ -39,6 +39,8 @@ class ExportPreviewResponse(BaseModel):
 
 
 class ExportFiltersRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     form_id: str | None = None
     employee_id: str | None = None
     work_order_id: str | None = None
@@ -47,6 +49,8 @@ class ExportFiltersRequest(BaseModel):
 
 
 class ExportCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     export_type: str = Field(min_length=1, pattern=r"^[A-Za-z0-9_-]+$")
     filters: ExportFiltersRequest
     supersedes_batch_id: str | None = Field(default=None, min_length=1)
