@@ -39,7 +39,6 @@ _TRANSITIONS: dict[TaskStatus, frozenset[TaskStatus]] = {
             TaskStatus.FAILED,
             TaskStatus.CANCEL_REQUESTED,
             TaskStatus.INTERRUPTED,
-            TaskStatus.RECOVERING,
         }
     ),
     TaskStatus.CANCEL_REQUESTED: frozenset({TaskStatus.CANCELLED}),

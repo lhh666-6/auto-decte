@@ -410,7 +410,7 @@ def test_database_completion_only_runs_after_final_xlsx_is_verified(
     assert tasks.get(task.task_id).status is TaskStatus.SUCCEEDED
 
 
-def test_publish_failure_keeps_prepared_task_running_until_recovery(
+def test_publish_failure_interrupts_prepared_task_until_recovery(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from app.modules.reporting.handler_ds import ExportHandler
@@ -455,7 +455,7 @@ def test_publish_failure_keeps_prepared_task_running_until_recovery(
     assert isinstance(batch_detail, dict)
     final = Path(str(batch_detail["file_path"]))
     pending = Path(f"{final}.pending")
-    assert tasks.get(task.task_id).status is TaskStatus.RUNNING
+    assert tasks.get(task.task_id).status is TaskStatus.INTERRUPTED
     assert repository.get_export_batch_by_task(task.task_id) is None
     assert not final.exists()
     assert pending.exists()
@@ -472,7 +472,73 @@ def test_publish_failure_keeps_prepared_task_running_until_recovery(
     assert exporter.write_calls == 1
 
 
-def test_only_one_recovery_handler_claims_a_running_prepared_export(
+def test_recovery_skips_a_running_handler_blocked_during_publish(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.modules.reporting.handler_ds import ExportHandler
+
+    _, repository, templates, _, tasks, _ = _build_export_services(tmp_path)
+    exporter = _TrackingExporter()
+    exports = ExportForms(
+        repository,
+        exporter,
+        QueryForms(repository),
+        template_repository=templates,
+    )
+    handler = ExportHandler(exports, tasks, repository, tmp_path / "exports")
+    recovery_handler = ExportHandler(
+        exports, tasks, repository, tmp_path / "exports"
+    )
+    task = tasks.submit(
+        TaskCommand(
+            "XLSX_EXPORT",
+            "exports",
+            "finance",
+            "skip-active-publisher",
+            {"export_type": "OUTPUT", "filters": {}},
+        )
+    )
+    active_publish_started = Event()
+    release_active_publish = Event()
+    publish_lock = Lock()
+    publish_calls = 0
+    original_publish = exports.publish
+
+    def block_first_publish(batch: ExportBatch) -> None:
+        nonlocal publish_calls
+        with publish_lock:
+            publish_calls += 1
+            call_number = publish_calls
+        if call_number == 1:
+            active_publish_started.set()
+            if not release_active_publish.wait(timeout=5):
+                raise TimeoutError("test did not release active publisher")
+        original_publish(batch)
+
+    monkeypatch.setattr(exports, "publish", block_first_publish)
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        active = executor.submit(handler.handle, task.task_id)
+        assert active_publish_started.wait(timeout=2)
+        recovered = recovery_handler.recover_prepared()
+        release_active_publish.set()
+        active_error: Exception | None = None
+        try:
+            batch = active.result(timeout=5)
+        except Exception as error:
+            active_error = error
+            batch = repository.get_export_batch_by_task(task.task_id)
+
+    assert recovered == []
+    assert active_error is None
+    assert publish_calls == 1
+    assert exporter.write_calls == 1
+    assert batch is not None
+    assert repository.get_export_batch_by_task(task.task_id) == batch
+    assert tasks.get(task.task_id).status is TaskStatus.SUCCEEDED
+    assert Path(batch.file_path).exists()
+
+
+def test_only_one_recovery_handler_claims_an_interrupted_prepared_export(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from app.modules.reporting.handler_ds import ExportHandler
@@ -614,7 +680,7 @@ def test_build_services_automatically_recovers_prepared_export_without_rewrite(
     with pytest.raises(OSError, match="restart before publish"):
         services.export_handler.handle(task.task_id)
     assert write_calls == 1
-    assert services.tasks.get(task.task_id).status is TaskStatus.RUNNING
+    assert services.tasks.get(task.task_id).status is TaskStatus.INTERRUPTED
     services.engine.dispose()
 
     monkeypatch.setattr(Path, "replace", original_replace)

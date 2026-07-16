@@ -89,6 +89,7 @@ class ExportHandler:
             self._tasks.fail(task_id, str(error))
             raise
         except OSError:
+            self._tasks.interrupt(task_id)
             raise
         try:
             self._exports.complete(batch)
@@ -103,7 +104,7 @@ class ExportHandler:
         """Resume interrupted exports from append-only prepared task events."""
         recovered: list[ExportBatch] = []
         candidates = self._tasks.list_operation_tasks(
-            "XLSX_EXPORT", (TaskStatus.RUNNING, TaskStatus.INTERRUPTED)
+            "XLSX_EXPORT", (TaskStatus.INTERRUPTED,)
         )
         for task in candidates:
             event = self._tasks.latest_prepared(task.task_id)

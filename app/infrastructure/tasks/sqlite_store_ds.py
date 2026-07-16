@@ -71,12 +71,7 @@ class SqliteTaskStore:
                     update(TaskRow)
                     .where(
                         TaskRow.task_id == task_id,
-                        TaskRow.status.in_(
-                            (
-                                TaskStatus.RUNNING.value,
-                                TaskStatus.INTERRUPTED.value,
-                            )
-                        ),
+                        TaskRow.status == TaskStatus.INTERRUPTED.value,
                     )
                     .values(status=TaskStatus.RECOVERING.value, updated_at=now)
                 ),

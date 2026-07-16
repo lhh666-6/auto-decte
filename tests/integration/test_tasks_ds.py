@@ -67,6 +67,8 @@ def test_restart_releases_crashed_recovery_claim_for_another_worker(
         TaskCommand("XLSX_EXPORT", "exports", "finance", "crashed-recovery", {})
     )
     service.start(task.task_id)
+    assert service.claim_recovery(task.task_id) is None
+    service.interrupt(task.task_id)
     assert service.claim_recovery(task.task_id) is not None
     assert store.get(task.task_id).status is TaskStatus.RECOVERING  # type: ignore[union-attr]
 
