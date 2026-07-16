@@ -1,19 +1,18 @@
 # Codex 跨账户协作交接
 
-最后更新：2026-07-15
+最后更新：2026-07-16
 
 仓库：`https://github.com/lhh666-6/auto-decte.git`
 
 工作分支：`modular-architecture`
 
-本地功能基线：`5b9de49 feat: add versioned master data center`
-当前工作目录：`E:\codex\auto-decte`
+当前集成基线：`modular-architecture` 最新远程提交；用 `git log -8 --oneline` 核对具体提交号。
+工作目录：以各协作者自己的 clone/worktree 为准，不依赖固定盘符。
 
-## 当前目标终止与转接状态
+## 队友推送与复核状态
 
-- 2026-07-15，用户要求终止当前目标，后续任务转交另一位协作者；本协作者不再继续实现新功能。
-- 功能代码停在主数据阶段完成后：模板化导出与重导阶段只做了只读现状审计，**没有新增测试、迁移、API 或页面代码**。
-- 本次交接包含以下 7 个功能/修复提交，以及最后一个纯文档交接提交；用户已授权在总结完成后将它们全部推送到 `origin/modular-architecture`：
+- 2026-07-16 已从 `origin/modular-architecture` 快进拉取并复核队友提交，本地与远程当时均指向 `2a634d6`，无冲突、无遗漏提交。
+- 队友完成了以下 7 个功能/修复提交，以及最后一个纯文档交接提交：
   - `5b9de49 feat: add versioned master data center`
   - `bd54ab3 feat: harden template and import lifecycle`
   - `a20e295 feat: complete review workbench workflow`
@@ -21,8 +20,10 @@
   - `8564206 docs: record template studio completion`
   - `a8374b6 feat: add editable template draft canvas`
   - `7293ea3 fix: restore least-privileged local identity`
-- 最终交接完成后，本地与 `origin/modular-architecture` 应指向同一提交；另一台机器或新 clone 的协作者可以直接从远端继承全部成果。
-- 推送前必须先 `git fetch origin` 并确认没有分叉；推送后用 `git rev-parse HEAD`、`git rev-parse origin/modular-architecture` 和 `git status --short --branch` 复核。
+  - `2a634d6 docs: hand off remaining project work`
+- 复核时发现并修复两项旧库启动兼容问题：中断迁移留下空 `alembic_version` 表时误判为已迁移；旧版同名 V1 模板与内置 seed 冲突时导致 API 无法启动。修复提交为 `f050c7e`，旧业务记录和旧模板均不覆盖。
+- 模板化导出与重导阶段仍只完成现状审计，**没有新增导出迁移、API、任务 Handler 或 React 页面**。
+- 另一台机器或新 clone 的协作者可以直接从远端继承全部成果。推送前后仍须用 `git fetch origin`、`git rev-parse HEAD`、`git rev-parse origin/modular-architecture` 和 `git status --short --branch` 复核。
 
 ## 一分钟分支摘要
 
@@ -34,8 +35,8 @@
 - 已完成：审核草稿、同一审核人租约恢复、退回、作废、人工分类，以及事务内原子 `confirm-and-claim-next`。
 - 已完成：员工、工单、产品、工序主数据 SQLite CRUD、搜索、权限、乐观版本、停用/恢复、独立审计及审核字段联动。
 - 下一任务：模板化导出与重导；之后依次为模板包和纸张实例、持久化任务 Handler、Tauri。
-- 验证边界：2026-07-15 最近一次全量复测通过；Python `183 passed`，Ruff、mypy（122 个源文件）、前端
-  `34 passed` 与生产构建均通过；浏览器完成创建、更新、停用、筛选停用项、恢复及四版本审计自验。
+- 验证边界：2026-07-16 拉取复核后全量通过；Python `185 passed`，Ruff、mypy（124 个源文件）、前端
+  `34 passed`、TypeScript 类型检查与 Web 生产构建均通过。浏览器交互验收仍沿用队友 2026-07-15 的自验记录，尚未在本机重新完整走一遍。
 - 重复图片导入会返回已有表单及状态，不再创建失败任务；开发环境管理员可重新启用已作废表单，或通过带二次确认的入口彻底清除本地测试数据。生产环境不暴露测试管理接口。
 - Alembic `005` 仅对 `ORIGINAL_IMAGE` 保持 SHA 全局唯一；`006` 新增主数据记录与审计表。校正图和字段裁切允许重复内容。处理异常会失败任务并回滚半成品，当前本地标准计件测试表已修复为 20/20 字段。
 
@@ -44,7 +45,7 @@
 同一工作目录接手：
 
 ```powershell
-Set-Location E:\codex\auto-decte
+Set-Location "<你的仓库目录>"
 git switch modular-architecture
 git status --short
 git log -8 --oneline
@@ -154,7 +155,7 @@ git status --short
 - 本节记录时全量 Python 套件曾有 2 个 identity 默认值断言失败；该问题已于
   2026-07-14 通过恢复最小权限默认身份解决，并经全量回归验证。
 
-## 当前明确未完成
+## 当前完成边界与明确未完成项
 
 ### A. 模板中心、四模板 seed 与生命周期管理已完成
 
@@ -168,7 +169,7 @@ git status --short
 - Alembic `004` 新增模板名称与用途元数据；模板键保持不可变，创建时和创建后均可改名称。
 - 草稿、预检失败和待发布版本可放弃删除；有活动草稿时禁止退役，必须先明确放弃草稿。
 - 发布模板不物理删除；退役会停止所有发布版本用于新分类，但保留历史版本、二维码解析依据和打印产物。
-- 2026-07-15 本地全量质量门与新数据库浏览器验收通过；尚未推送远端。
+- 2026-07-15 队友本地全量质量门与新数据库浏览器验收通过；相关提交已推送，并于 2026-07-16 在另一工作目录完成拉取复核。
 
 ### B. 模板包与打印批次未闭环
 
