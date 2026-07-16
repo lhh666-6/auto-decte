@@ -1,5 +1,7 @@
 """Framework-independent business entities."""
 
+import hashlib
+import json
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -133,7 +135,18 @@ class AuditEvent:
     timestamp: datetime = field(default_factory=utc_now)
 
 
-@dataclass(slots=True)
+def stable_json_sha256(value: Any) -> str:
+    """Hash a JSON-compatible value independently of dictionary key order."""
+    serialized = json.dumps(
+        value,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(serialized).hexdigest()
+
+
+@dataclass(frozen=True, slots=True)
 class ExportBatch:
     export_batch_id: str
     export_type: str
@@ -144,6 +157,17 @@ class ExportBatch:
     exported_by: str
     exported_at: datetime = field(default_factory=utc_now)
     supersedes_batch_id: str | None = None
+    task_id: str | None = None
+    template_snapshot: dict[str, Any] = field(default_factory=dict)
+    mapping_snapshot: tuple[dict[str, Any], ...] = ()
+    mapping_hash: str = ""
+    download_name: str = "export.xlsx"
+
+    def __post_init__(self) -> None:
+        expected_hash = stable_json_sha256(self.mapping_snapshot)
+        if self.mapping_hash and self.mapping_hash != expected_hash:
+            raise ValueError("mapping_hash does not match mapping_snapshot")
+        object.__setattr__(self, "mapping_hash", expected_hash)
 
 
 @dataclass(slots=True)

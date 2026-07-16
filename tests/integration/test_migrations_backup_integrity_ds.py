@@ -1,13 +1,30 @@
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+from alembic.config import Config
 from sqlalchemy import create_engine, inspect, text
 
+from alembic import command
+from app.adapters.database.repositories import SqlAlchemyFormRepository
 from app.infrastructure.backup.integrity_ds import IntegrityChecker
 from app.infrastructure.backup.service_ds import BackupService
 from app.infrastructure.database.migrations import upgrade_database
 from app.services.container import build_services
 from config.settings import Settings
+
+
+def _upgrade_to_revision(database_path: Path, revision: str) -> None:
+    project_root = Path(__file__).resolve().parents[2]
+    config = Config(str(project_root / "alembic.ini"))
+    config.attributes["database_path"] = database_path.resolve()
+    command.upgrade(config, revision)
+
+
+def _downgrade_to_revision(database_path: Path, revision: str) -> None:
+    project_root = Path(__file__).resolve().parents[2]
+    config = Config(str(project_root / "alembic.ini"))
+    config.attributes["database_path"] = database_path.resolve()
+    command.downgrade(config, revision)
 
 
 def test_alembic_upgrade_creates_task_and_review_lease_tables(tmp_path: Path) -> None:
@@ -198,6 +215,130 @@ def test_production_mode_requires_current_alembic_revision(tmp_path: Path) -> No
     services = build_services(settings)
 
     assert services.repository.list_export_batches() == []
+
+
+def test_upgrade_006_export_batch_preserves_data_and_adds_snapshot_columns(
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "export-batches-006.db"
+    _upgrade_to_revision(database_path, "006")
+    engine = create_engine(f"sqlite:///{database_path}")
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO export_batches "
+                "(export_batch_id, export_type, filters, included_records, file_path, "
+                "file_sha256, exported_by, exported_at, supersedes_batch_id) VALUES "
+                "('EXPORT-LEGACY', 'OUTPUT', '{\"form_id\":\"FORM-1\"}', "
+                "'[[\"FORM-1\",1]]', 'internal/legacy.xlsx', :sha256, 'finance', "
+                "'2026-07-15 08:00:00', NULL)"
+            ),
+            {"sha256": "e" * 64},
+        )
+    engine.dispose()
+
+    upgrade_database(database_path)
+
+    upgraded = create_engine(f"sqlite:///{database_path}")
+    columns = {item["name"] for item in inspect(upgraded).get_columns("export_batches")}
+    assert {
+        "task_id",
+        "template_snapshot",
+        "mapping_snapshot",
+        "mapping_hash",
+        "download_name",
+    } <= columns
+    batch = SqlAlchemyFormRepository(upgraded).get_export_batch("EXPORT-LEGACY")
+    assert batch is not None
+    assert batch.filters == {"form_id": "FORM-1"}
+    assert batch.included_records == (("FORM-1", 1),)
+    assert batch.task_id is None
+    assert batch.template_snapshot == {}
+    assert batch.mapping_snapshot == ()
+    assert len(batch.mapping_hash) == 64
+    assert batch.download_name == "export.xlsx"
+    with upgraded.connect() as connection:
+        revision = connection.execute(
+            text("SELECT version_num FROM alembic_version")
+        ).scalar_one()
+        assert revision == "007"
+    upgraded.dispose()
+
+    _downgrade_to_revision(database_path, "006")
+
+    downgraded = create_engine(f"sqlite:///{database_path}")
+    downgraded_columns = {
+        item["name"] for item in inspect(downgraded).get_columns("export_batches")
+    }
+    assert not {
+        "task_id",
+        "template_snapshot",
+        "mapping_snapshot",
+        "mapping_hash",
+        "download_name",
+    } & downgraded_columns
+    with downgraded.connect() as connection:
+        assert connection.execute(
+            text("SELECT file_path FROM export_batches WHERE export_batch_id = 'EXPORT-LEGACY'")
+        ).scalar_one() == "internal/legacy.xlsx"
+
+
+def test_auto_created_legacy_export_batches_gain_snapshot_columns_without_data_loss(
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "database" / "demo.db"
+    database_path.parent.mkdir(parents=True)
+    engine = create_engine(f"sqlite:///{database_path}")
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "CREATE TABLE forms ("
+                "form_id VARCHAR PRIMARY KEY, template_id VARCHAR NOT NULL, "
+                "template_version VARCHAR NOT NULL, coordinate_version VARCHAR NOT NULL, "
+                "review_status VARCHAR NOT NULL, export_status VARCHAR NOT NULL, "
+                "current_record_version INTEGER NOT NULL, created_at DATETIME NOT NULL)"
+            )
+        )
+        connection.execute(
+            text(
+                "CREATE TABLE export_batches ("
+                "export_batch_id VARCHAR PRIMARY KEY, export_type VARCHAR NOT NULL, "
+                "filters JSON NOT NULL, included_records JSON NOT NULL, "
+                "file_path VARCHAR NOT NULL UNIQUE, file_sha256 VARCHAR(64) NOT NULL, "
+                "exported_by VARCHAR NOT NULL, exported_at DATETIME NOT NULL, "
+                "supersedes_batch_id VARCHAR)"
+            )
+        )
+        connection.execute(
+            text(
+                "INSERT INTO export_batches VALUES ("
+                "'EXPORT-AUTO-LEGACY', 'OUTPUT', '{}', '[]', "
+                "'internal/auto-legacy.xlsx', :sha256, 'finance', "
+                "CURRENT_TIMESTAMP, NULL)"
+            ),
+            {"sha256": "f" * 64},
+        )
+    engine.dispose()
+
+    services = build_services(Settings(data_root=tmp_path))
+
+    batch = services.repository.get_export_batch("EXPORT-AUTO-LEGACY")
+    assert batch is not None
+    assert batch.file_path == "internal/auto-legacy.xlsx"
+    assert batch.template_snapshot == {}
+    assert batch.mapping_snapshot == ()
+    assert batch.download_name == "export.xlsx"
+    assert len(batch.mapping_hash) == 64
+    assert {
+        "task_id",
+        "template_snapshot",
+        "mapping_snapshot",
+        "mapping_hash",
+        "download_name",
+    } <= {
+        item["name"]
+        for item in inspect(services.engine).get_columns("export_batches")
+    }
 
 
 def test_backup_restores_to_staging_and_detects_missing_evidence(tmp_path: Path) -> None:

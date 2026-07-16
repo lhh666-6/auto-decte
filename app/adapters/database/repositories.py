@@ -2,6 +2,7 @@
 
 from collections.abc import Iterator
 from contextlib import contextmanager
+from datetime import UTC
 
 from sqlalchemy import Engine, delete, func, literal_column, select
 from sqlalchemy.orm import Session
@@ -464,9 +465,14 @@ class SqlAlchemyFormRepository:
                 ExportBatchRow(
                     export_batch_id=batch.export_batch_id,
                     export_type=batch.export_type,
+                    task_id=batch.task_id,
+                    template_snapshot=batch.template_snapshot,
+                    mapping_snapshot=list(batch.mapping_snapshot),
+                    mapping_hash=batch.mapping_hash,
                     filters=batch.filters,
                     included_records=[list(item) for item in batch.included_records],
                     file_path=batch.file_path,
+                    download_name=batch.download_name,
                     file_sha256=batch.file_sha256,
                     exported_by=batch.exported_by,
                     exported_at=batch.exported_at,
@@ -474,26 +480,24 @@ class SqlAlchemyFormRepository:
                 )
             )
 
+    def get_export_batch(self, batch_id: str) -> ExportBatch | None:
+        with self._read_session() as session:
+            row = session.get(ExportBatchRow, batch_id)
+            return self._to_export_batch(row) if row is not None else None
+
+    def get_export_batch_by_task(self, task_id: str) -> ExportBatch | None:
+        statement = select(ExportBatchRow).where(ExportBatchRow.task_id == task_id)
+        with self._read_session() as session:
+            row = session.scalar(statement)
+            return self._to_export_batch(row) if row is not None else None
+
     def list_export_batches(self) -> list[ExportBatch]:
-        statement = select(ExportBatchRow).order_by(ExportBatchRow.exported_at)
+        statement = select(ExportBatchRow).order_by(
+            ExportBatchRow.exported_at.desc(), ExportBatchRow.export_batch_id.desc()
+        )
         with self._read_session() as session:
             rows = session.scalars(statement).all()
-            return [
-                ExportBatch(
-                    export_batch_id=row.export_batch_id,
-                    export_type=row.export_type,
-                    filters=row.filters,
-                    included_records=tuple(
-                        (str(form_id), int(version)) for form_id, version in row.included_records
-                    ),
-                    file_path=row.file_path,
-                    file_sha256=row.file_sha256,
-                    exported_by=row.exported_by,
-                    exported_at=row.exported_at,
-                    supersedes_batch_id=row.supersedes_batch_id,
-                )
-                for row in rows
-            ]
+            return [self._to_export_batch(row) for row in rows]
 
     def add_ai_review(self, review: AIReviewRecord) -> None:
         with self._transaction() as session:
@@ -552,4 +556,28 @@ class SqlAlchemyFormRepository:
             change_reason=row.change_reason,
             confirmed_by=row.confirmed_by,
             created_at=row.created_at,
+        )
+
+    @staticmethod
+    def _to_export_batch(row: ExportBatchRow) -> ExportBatch:
+        exported_at = row.exported_at
+        if exported_at.tzinfo is None:
+            exported_at = exported_at.replace(tzinfo=UTC)
+        return ExportBatch(
+            export_batch_id=row.export_batch_id,
+            export_type=row.export_type,
+            filters=row.filters,
+            included_records=tuple(
+                (str(form_id), int(version)) for form_id, version in row.included_records
+            ),
+            file_path=row.file_path,
+            file_sha256=row.file_sha256,
+            exported_by=row.exported_by,
+            exported_at=exported_at,
+            supersedes_batch_id=row.supersedes_batch_id,
+            task_id=row.task_id,
+            template_snapshot=row.template_snapshot,
+            mapping_snapshot=tuple(row.mapping_snapshot),
+            mapping_hash=row.mapping_hash,
+            download_name=row.download_name,
         )

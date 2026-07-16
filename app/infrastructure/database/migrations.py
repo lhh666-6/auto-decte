@@ -7,7 +7,9 @@ from sqlalchemy import Engine, inspect, text
 
 from alembic import command
 
-HEAD_REVISION = "006"
+HEAD_REVISION = "007"
+
+_EMPTY_MAPPING_HASH = "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
 
 
 class SchemaRevisionError(RuntimeError):
@@ -29,17 +31,16 @@ def ensure_auto_created_schema_compatibility(engine: Engine) -> None:
     """Add columns that SQLAlchemy create_all cannot add to legacy local databases."""
     inspector = inspect(engine)
     tables = set(inspector.get_table_names())
-    if "forms" not in tables:
-        return
-    form_columns = {column["name"] for column in inspector.get_columns("forms")}
-    if "priority" not in form_columns:
-        with engine.begin() as connection:
-            connection.execute(
-                text(
-                    "ALTER TABLE forms ADD COLUMN priority "
-                    "INTEGER NOT NULL DEFAULT 0"
+    if "forms" in tables:
+        form_columns = {column["name"] for column in inspector.get_columns("forms")}
+        if "priority" not in form_columns:
+            with engine.begin() as connection:
+                connection.execute(
+                    text(
+                        "ALTER TABLE forms ADD COLUMN priority "
+                        "INTEGER NOT NULL DEFAULT 0"
+                    )
                 )
-            )
     inspector = inspect(engine)
     if "evidence_files" in inspector.get_table_names():
         evidence_indexes = {item["name"]: item for item in inspector.get_indexes("evidence_files")}
@@ -55,6 +56,67 @@ def ensure_auto_created_schema_compatibility(engine: Engine) -> None:
                     text(
                         "CREATE UNIQUE INDEX ux_evidence_files_original_sha256 "
                         "ON evidence_files (sha256) WHERE type = 'ORIGINAL_IMAGE'"
+                    )
+                )
+    inspector = inspect(engine)
+    tables = set(inspector.get_table_names())
+    if "export_batches" in tables:
+        export_columns = {
+            column["name"] for column in inspector.get_columns("export_batches")
+        }
+        missing_columns = {
+            "task_id": "VARCHAR",
+            "template_snapshot": "JSON NOT NULL DEFAULT '{}'",
+            "mapping_snapshot": "JSON NOT NULL DEFAULT '[]'",
+            "mapping_hash": (
+                f"VARCHAR(64) NOT NULL DEFAULT '{_EMPTY_MAPPING_HASH}'"
+            ),
+            "download_name": "VARCHAR NOT NULL DEFAULT 'export.xlsx'",
+        }
+        with engine.begin() as connection:
+            for column_name, definition in missing_columns.items():
+                if column_name not in export_columns:
+                    connection.execute(
+                        text(
+                            f"ALTER TABLE export_batches ADD COLUMN "
+                            f"{column_name} {definition}"
+                        )
+                    )
+            connection.execute(
+                text(
+                    "UPDATE export_batches SET template_snapshot = '{}' "
+                    "WHERE template_snapshot IS NULL"
+                )
+            )
+            connection.execute(
+                text(
+                    "UPDATE export_batches SET mapping_snapshot = '[]' "
+                    "WHERE mapping_snapshot IS NULL"
+                )
+            )
+            connection.execute(
+                text(
+                    "UPDATE export_batches SET mapping_hash = :mapping_hash "
+                    "WHERE mapping_hash IS NULL OR mapping_hash = ''"
+                ),
+                {"mapping_hash": _EMPTY_MAPPING_HASH},
+            )
+            connection.execute(
+                text(
+                    "UPDATE export_batches SET download_name = 'export.xlsx' "
+                    "WHERE download_name IS NULL OR download_name = ''"
+                )
+            )
+        inspector = inspect(engine)
+        export_indexes = {
+            item["name"] for item in inspector.get_indexes("export_batches")
+        }
+        if "ux_export_batches_task_id" not in export_indexes:
+            with engine.begin() as connection:
+                connection.execute(
+                    text(
+                        "CREATE UNIQUE INDEX ux_export_batches_task_id "
+                        "ON export_batches (task_id)"
                     )
                 )
     inspector = inspect(engine)
