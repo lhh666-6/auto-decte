@@ -32,6 +32,8 @@ from app.infrastructure.database.uow_ds import SqlAlchemyUnitOfWork
 from app.infrastructure.tasks.sqlite_store_ds import SqliteTaskStore
 from app.modules.master_data.facade_ds import MasterDataFacade
 from app.modules.master_data.repository_ds import SqlAlchemyMasterDataRepository
+from app.modules.reporting.facade_ds import ReportingFacade
+from app.modules.reporting.handler_ds import ExportHandler
 from app.modules.review.facade_ds import ReviewFacade
 from app.modules.review.lease_service_ds import ReviewLeaseService
 from app.modules.review.repository_ds import SqlAlchemyReviewLeaseRepository
@@ -57,6 +59,8 @@ class Services:
     reviews: ReviewForms
     queries: QueryForms
     exports: ExportForms
+    reporting: ReportingFacade
+    export_handler: ExportHandler
     recognition: RecognizeForms
     ai_reviews: AIReviewForms
     vector_index: LocalVectorIndex
@@ -99,6 +103,20 @@ def build_services(settings: Settings, *, install_seed_templates: bool = False) 
         audits=repository,
     )
     task_store = SqliteTaskStore(engine)
+    tasks = TaskService(task_store)
+    exporter = XlsxExporter()
+    exports = ExportForms(
+        repository,
+        exporter,
+        queries,
+        template_repository=template_repository,
+    )
+    reporting = ReportingFacade(
+        repository,
+        queries,
+        exporter=exporter,
+        template_repository=template_repository,
+    )
     services = Services(
         settings=settings,
         engine=engine,
@@ -109,7 +127,14 @@ def build_services(settings: Settings, *, install_seed_templates: bool = False) 
         imports=ImportForms(repository, repository, repository, storage),
         reviews=ReviewForms(repository, repository),
         queries=queries,
-        exports=ExportForms(repository, XlsxExporter(), queries),
+        exports=exports,
+        reporting=reporting,
+        export_handler=ExportHandler(
+            exports,
+            tasks,
+            repository,
+            settings.exports_root,
+        ),
         recognition=RecognizeForms(
             repository,
             repository,
@@ -130,7 +155,7 @@ def build_services(settings: Settings, *, install_seed_templates: bool = False) 
             lease_ttl_seconds=settings.review_lease_seconds,
         ),
         task_store=task_store,
-        tasks=TaskService(task_store),
+        tasks=tasks,
         evidence_storage=storage,
         master_data_repository=master_data_repository,
         master_data=master_data,

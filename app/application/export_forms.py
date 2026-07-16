@@ -1,6 +1,7 @@
 """XLSX export orchestration and batch persistence."""
 
 import hashlib
+from collections.abc import Callable, Mapping
 from dataclasses import asdict, replace
 from datetime import UTC, datetime
 from pathlib import Path
@@ -8,11 +9,9 @@ from typing import Protocol
 from uuid import uuid4
 
 from app.adapters.export.xlsx import XlsxExporter
-from app.application.query_forms import FormFilters, QueryForms
+from app.application.query_forms import FormFilters, QueryForms, SearchResult
 from app.domain.models import (
-    AuditEvent,
     ExportBatch,
-    ExportStatus,
     RecordStatus,
     RecordVersion,
     ReviewStatus,
@@ -27,9 +26,8 @@ from app.modules.reporting.models_ds import (
 
 
 class ExportRepository(Protocol):
-    def add_export_batch(self, batch: ExportBatch) -> None: ...
-    def set_export_status(self, form_id: str, status: ExportStatus) -> None: ...
-    def add_audit_event(self, event: AuditEvent) -> None: ...
+    def complete_export(self, batch: ExportBatch) -> None: ...
+    def get_export_batch(self, batch_id: str) -> ExportBatch | None: ...
 
 
 class ExportTemplateRepository(Protocol):
@@ -173,10 +171,15 @@ class ExportForms:
         filters: FormFilters,
         output_directory: Path,
         actor_id: str,
+        *,
+        task_id: str | None = None,
+        supersedes_batch_id: str | None = None,
+        progress: Callable[[int, str], None] | None = None,
     ) -> ExportBatch:
         confirmed_filters = replace(filters, review_status=ReviewStatus.CONFIRMED)
         results = self._queries.search(confirmed_filters)
         mapping_snapshot: tuple[ExportMapping, ...] | None = None
+        template_snapshot: dict[str, object] = {}
         if self._template_repository is not None:
             preview = self.preview(filters, actor_id)
             included_records = {
@@ -189,48 +192,77 @@ class ExportForms:
                 if (result.form.form_id, result.current_record.version) in included_records
             ]
             mapping_snapshot = preview.mapping_snapshot
+            template_snapshot = self._template_snapshot(results)
+        if supersedes_batch_id is not None and self._repository.get_export_batch(
+            supersedes_batch_id
+        ) is None:
+            raise KeyError(f"Unknown export batch: {supersedes_batch_id}")
         batch_id = f"EXPORT-{uuid4().hex}"
         timestamp = datetime.now(UTC)
         destination = output_directory / f"{export_type}-{timestamp:%Y%m%dT%H%M%S}-{batch_id}.xlsx"
+        partial = destination.with_name(f"{destination.name}.partial")
         serialized_filters = {
             key: value.value if hasattr(value, "value") else value
             for key, value in asdict(confirmed_filters).items()
             if value is not None
         }
-        self._exporter.write(
-            destination,
-            batch_id,
-            export_type,
-            results,
-            serialized_filters,
-            mappings=mapping_snapshot,
-        )
-        digest = hashlib.sha256(destination.read_bytes()).hexdigest()
-        batch = ExportBatch(
-            export_batch_id=batch_id,
-            export_type=export_type,
-            filters=serialized_filters,
-            included_records=tuple(
-                (result.form.form_id, result.current_record.version) for result in results
-            ),
-            file_path=str(destination),
-            file_sha256=digest,
-            exported_by=actor_id,
-            exported_at=timestamp,
-        )
-        self._repository.add_export_batch(batch)
-        for result in results:
-            self._repository.set_export_status(result.form.form_id, ExportStatus.EXPORTED)
-            self._repository.add_audit_event(
-                AuditEvent(
-                    event_id=f"EVENT-{uuid4().hex}",
-                    form_id=result.form.form_id,
-                    event_type="EXPORT",
-                    actor_id=actor_id,
-                    after={
-                        "export_batch_id": batch_id,
-                        "record_version": result.current_record.version,
-                    },
-                )
+        try:
+            if progress is not None:
+                progress(35, "writing")
+            self._exporter.write(
+                partial,
+                batch_id,
+                export_type,
+                results,
+                serialized_filters,
+                mappings=mapping_snapshot,
             )
-        return batch
+            digest = hashlib.sha256(partial.read_bytes()).hexdigest()
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            partial.replace(destination)
+            serialized_mappings = tuple(
+                asdict(mapping) for mapping in (mapping_snapshot or ())
+            )
+            batch = ExportBatch(
+                export_batch_id=batch_id,
+                export_type=export_type,
+                filters=serialized_filters,
+                included_records=tuple(
+                    (result.form.form_id, result.current_record.version)
+                    for result in results
+                ),
+                file_path=str(destination),
+                file_sha256=digest,
+                exported_by=actor_id,
+                exported_at=timestamp,
+                supersedes_batch_id=supersedes_batch_id,
+                task_id=task_id,
+                template_snapshot=template_snapshot,
+                mapping_snapshot=serialized_mappings,
+                download_name=destination.name,
+            )
+            if progress is not None:
+                progress(75, "persisting")
+            self._repository.complete_export(batch)
+            return batch
+        except Exception:
+            partial.unlink(missing_ok=True)
+            destination.unlink(missing_ok=True)
+            raise
+
+    def _template_snapshot(self, results: list[SearchResult]) -> dict[str, object]:
+        templates: dict[tuple[str, str], Mapping[str, object]] = {}
+        for result in results:
+            key = (result.form.template_id, result.form.template_version)
+            template = self._resolve_template(*key)
+            if template is None:
+                continue
+            templates[key] = {
+                "version_id": template.version_id,
+                "template_key": template.template_key,
+                "version": template.version,
+                "status": template.status.value,
+                "page": asdict(template.page),
+                "fields": [asdict(field) for field in template.fields],
+            }
+        return {"templates": [templates[key] for key in sorted(templates)]}

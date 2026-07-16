@@ -3,6 +3,7 @@
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import UTC
+from uuid import uuid4
 
 from sqlalchemy import Engine, delete, func, literal_column, select
 from sqlalchemy.orm import Session
@@ -462,29 +463,79 @@ class SqlAlchemyFormRepository:
 
     def add_export_batch(self, batch: ExportBatch) -> None:
         with self._transaction() as session:
-            session.add(
-                ExportBatchRow(
-                    export_batch_id=batch.export_batch_id,
-                    export_type=batch.export_type,
-                    task_id=batch.task_id,
-                    template_snapshot=thaw_json(batch.template_snapshot),
-                    mapping_snapshot=thaw_json(batch.mapping_snapshot),
-                    mapping_hash=batch.mapping_hash,
-                    filters=thaw_json(batch.filters),
-                    included_records=[list(item) for item in batch.included_records],
-                    file_path=batch.file_path,
-                    download_name=batch.download_name,
-                    file_sha256=batch.file_sha256,
-                    exported_by=batch.exported_by,
-                    exported_at=batch.exported_at,
-                    supersedes_batch_id=batch.supersedes_batch_id,
+            session.add(self._export_batch_row(batch))
+
+    def complete_export(self, batch: ExportBatch) -> None:
+        """Atomically persist an export and mark its exact record versions exported."""
+        with self._transaction() as session:
+            if batch.supersedes_batch_id is not None and session.get(
+                ExportBatchRow, batch.supersedes_batch_id
+            ) is None:
+                raise KeyError(f"Unknown export batch: {batch.supersedes_batch_id}")
+            for form_id, version in batch.included_records:
+                form = session.get(FormRow, form_id)
+                record = session.scalar(
+                    select(RecordVersionRow).where(
+                        RecordVersionRow.form_id == form_id,
+                        RecordVersionRow.version == version,
+                    )
                 )
-            )
+                if form is None or record is None:
+                    raise KeyError(f"Unknown record version: {form_id}@{version}")
+                if (
+                    form.current_record_version != version
+                    or form.review_status != ReviewStatus.CONFIRMED.value
+                    or record.status
+                    not in {RecordStatus.CONFIRMED.value, RecordStatus.CORRECTED.value}
+                ):
+                    raise ValueError(
+                        f"Record is no longer exportable: {form_id}@{version}"
+                    )
+            session.add(self._export_batch_row(batch))
+            for form_id, version in batch.included_records:
+                form = session.get(FormRow, form_id)
+                assert form is not None
+                form.export_status = ExportStatus.EXPORTED.value
+                session.add(
+                    AuditEventRow(
+                        event_id=f"EVENT-{uuid4().hex}",
+                        form_id=form_id,
+                        event_type="EXPORT",
+                        actor_id=batch.exported_by,
+                        timestamp=batch.exported_at,
+                        before=None,
+                        after={
+                            "export_batch_id": batch.export_batch_id,
+                            "record_version": version,
+                        },
+                        reason=None,
+                        evidence_ids=[],
+                    )
+                )
 
     def get_export_batch(self, batch_id: str) -> ExportBatch | None:
         with self._read_session() as session:
             row = session.get(ExportBatchRow, batch_id)
             return self._to_export_batch(row) if row is not None else None
+
+    @staticmethod
+    def _export_batch_row(batch: ExportBatch) -> ExportBatchRow:
+        return ExportBatchRow(
+            export_batch_id=batch.export_batch_id,
+            export_type=batch.export_type,
+            task_id=batch.task_id,
+            template_snapshot=thaw_json(batch.template_snapshot),
+            mapping_snapshot=thaw_json(batch.mapping_snapshot),
+            mapping_hash=batch.mapping_hash,
+            filters=thaw_json(batch.filters),
+            included_records=[list(item) for item in batch.included_records],
+            file_path=batch.file_path,
+            download_name=batch.download_name,
+            file_sha256=batch.file_sha256,
+            exported_by=batch.exported_by,
+            exported_at=batch.exported_at,
+            supersedes_batch_id=batch.supersedes_batch_id,
+        )
 
     def get_export_batch_by_task(self, task_id: str) -> ExportBatch | None:
         statement = select(ExportBatchRow).where(ExportBatchRow.task_id == task_id)
