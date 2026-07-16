@@ -419,6 +419,92 @@ def test_partial_export_batch_schema_backfills_actual_mapping_hash_idempotently(
     assert reloaded.mapping_hash == expected_hash
 
 
+def test_partial_schema_replaces_empty_hash_placeholder_only_when_snapshot_nonempty(
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "database" / "demo.db"
+    database_path.parent.mkdir(parents=True)
+    nonempty_snapshot = [
+        {
+            "field_key": "employee_id",
+            "target": {"worksheet": "employees"},
+        }
+    ]
+    empty_hash = stable_json_sha256([])
+    expected_nonempty_hash = stable_json_sha256(nonempty_snapshot)
+    engine = create_engine(f"sqlite:///{database_path}")
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "CREATE TABLE forms ("
+                "form_id VARCHAR PRIMARY KEY, template_id VARCHAR NOT NULL, "
+                "template_version VARCHAR NOT NULL, coordinate_version VARCHAR NOT NULL, "
+                "review_status VARCHAR NOT NULL, export_status VARCHAR NOT NULL, "
+                "current_record_version INTEGER NOT NULL, created_at DATETIME NOT NULL)"
+            )
+        )
+        connection.execute(
+            text(
+                "CREATE TABLE export_batches ("
+                "export_batch_id VARCHAR PRIMARY KEY, export_type VARCHAR NOT NULL, "
+                "filters JSON NOT NULL, included_records JSON NOT NULL, "
+                "file_path VARCHAR NOT NULL UNIQUE, file_sha256 VARCHAR(64) NOT NULL, "
+                "exported_by VARCHAR NOT NULL, exported_at DATETIME NOT NULL, "
+                "supersedes_batch_id VARCHAR, mapping_snapshot JSON NOT NULL, "
+                "mapping_hash VARCHAR(64) NOT NULL)"
+            )
+        )
+        connection.execute(
+            text(
+                "INSERT INTO export_batches "
+                "(export_batch_id, export_type, filters, included_records, file_path, "
+                "file_sha256, exported_by, exported_at, supersedes_batch_id, "
+                "mapping_snapshot, mapping_hash) VALUES "
+                "('EXPORT-PLACEHOLDER', 'OUTPUT', '{}', '[]', "
+                "'internal/placeholder.xlsx', :sha256_one, 'finance', CURRENT_TIMESTAMP, "
+                "NULL, :mapping_snapshot, :empty_hash), "
+                "('EXPORT-EMPTY', 'OUTPUT', '{}', '[]', "
+                "'internal/empty.xlsx', :sha256_two, 'finance', CURRENT_TIMESTAMP, "
+                "NULL, '[]', :empty_hash)"
+            ),
+            {
+                "sha256_one": "3" * 64,
+                "sha256_two": "4" * 64,
+                "mapping_snapshot": (
+                    '[{"field_key":"employee_id",'
+                    '"target":{"worksheet":"employees"}}]'
+                ),
+                "empty_hash": empty_hash,
+            },
+        )
+    engine.dispose()
+
+    services = build_services(Settings(data_root=tmp_path))
+
+    with services.engine.connect() as connection:
+        rows = connection.execute(
+            text(
+                "SELECT export_batch_id, mapping_hash FROM export_batches "
+                "ORDER BY export_batch_id"
+            )
+        ).all()
+        hashes = {batch_id: mapping_hash for batch_id, mapping_hash in rows}
+    assert hashes == {
+        "EXPORT-EMPTY": empty_hash,
+        "EXPORT-PLACEHOLDER": expected_nonempty_hash,
+    }
+    assert services.repository.get_export_batch("EXPORT-PLACEHOLDER") is not None
+    assert services.repository.get_export_batch("EXPORT-EMPTY") is not None
+    services.engine.dispose()
+
+    rebuilt = build_services(Settings(data_root=tmp_path))
+
+    assert rebuilt.repository.get_export_batch("EXPORT-PLACEHOLDER").mapping_hash == (  # type: ignore[union-attr]
+        expected_nonempty_hash
+    )
+    assert rebuilt.repository.get_export_batch("EXPORT-EMPTY").mapping_hash == empty_hash  # type: ignore[union-attr]
+
+
 def test_partial_export_batch_schema_rejects_invalid_mapping_json_clearly(
     tmp_path: Path,
 ) -> None:

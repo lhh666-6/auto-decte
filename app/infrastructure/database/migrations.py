@@ -104,9 +104,10 @@ def ensure_auto_created_schema_compatibility(engine: Engine) -> None:
                 )
             ).mappings().all()
             for row in rows:
+                stored_hash = row["mapping_hash"]
                 if (
                     not mapping_hash_was_missing
-                    and row["mapping_hash"] not in {None, ""}
+                    and stored_hash not in {None, "", _EMPTY_MAPPING_HASH}
                 ):
                     continue
                 raw_snapshot = row["mapping_snapshot"]
@@ -126,6 +127,8 @@ def ensure_auto_created_schema_compatibility(engine: Engine) -> None:
                     raise SchemaRevisionError(
                         f"Export batch {batch_id!r} has invalid mapping_snapshot JSON"
                     ) from error
+                if stored_hash == mapping_hash:
+                    continue
                 connection.execute(
                     text(
                         "UPDATE export_batches SET mapping_hash = :mapping_hash "
