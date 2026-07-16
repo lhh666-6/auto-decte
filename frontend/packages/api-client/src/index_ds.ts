@@ -43,6 +43,24 @@ export {
   type ReviewLease,
   type WorkbenchDetail,
 } from "./review-workbench.js";
+export {
+  ExportApi,
+  type CreateExportInput,
+  type CreateExportResponse,
+  type ExportApiRequestDefaults,
+  type ExportBatch,
+  type ExportExclusionReason,
+  type ExportFilters,
+  type ExportMapping,
+  type ExportPreview,
+  type ExportPreviewItem,
+  type ExportReviewStatus,
+  type ExportStatus,
+  type ExportTask,
+  type ExportTaskStatus,
+  type IncludedExportRecord,
+  type WaitForExportTaskOptions,
+} from "./exports_ds.js";
 
 // When generated types exist, uncomment:
 // export type * from "./generated_ds.js";

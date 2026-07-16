@@ -1,0 +1,361 @@
+import {
+  ApiRequestError,
+  ExportApi,
+  type CreateExportInput,
+  type CreateExportResponse,
+  type ExportBatch,
+  type ExportExclusionReason,
+  type ExportFilters,
+  type ExportPreview,
+  type ExportTask,
+  type WaitForExportTaskOptions,
+} from "@form-detection/api-client";
+import { useCallback, useEffect, useMemo, useState } from "react";
+
+export interface ExportCenterApi {
+  preview(filters: ExportFilters): Promise<ExportPreview>;
+  create(input: CreateExportInput, idempotencyKey: string): Promise<CreateExportResponse>;
+  waitForTask(taskId: string, options?: WaitForExportTaskOptions): Promise<ExportTask>;
+  listBatches(): Promise<ExportBatch[]>;
+  getBatch(batchId: string): Promise<ExportBatch>;
+  downloadBatch(batchId: string): Promise<Blob>;
+}
+
+interface ExportCenterProps {
+  api?: ExportCenterApi;
+  onBack: () => void;
+}
+
+const EMPTY_FILTERS: ExportFilters = {
+  form_id: "",
+  employee_id: "",
+  work_order_id: "",
+  review_status: undefined,
+  export_status: undefined,
+};
+
+export function ExportCenter({ api, onBack }: ExportCenterProps) {
+  const client = useMemo<ExportCenterApi>(() => api ?? new ExportApi("/api/v1"), [api]);
+  const [filters, setFilters] = useState<ExportFilters>(EMPTY_FILTERS);
+  const [exportType, setExportType] = useState("PAYROLL");
+  const [preview, setPreview] = useState<ExportPreview | null>(null);
+  const [batches, setBatches] = useState<ExportBatch[]>([]);
+  const [batchDetail, setBatchDetail] = useState<ExportBatch | null>(null);
+  const [task, setTask] = useState<ExportTask | null>(null);
+  const [previewing, setPreviewing] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [busyBatchId, setBusyBatchId] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const refreshBatches = useCallback(async () => {
+    try {
+      setBatches(await client.listBatches());
+    } catch (cause) {
+      setError(toMessage(cause));
+    }
+  }, [client]);
+
+  useEffect(() => {
+    void refreshBatches();
+  }, [refreshBatches]);
+
+  function changeFilter<K extends keyof ExportFilters>(key: K, value: ExportFilters[K]) {
+    setFilters((current) => ({ ...current, [key]: value || undefined }));
+    setPreview(null);
+    setMessage(null);
+  }
+
+  async function loadPreview() {
+    setPreviewing(true);
+    setError(null);
+    setMessage(null);
+    try {
+      setPreview(await client.preview(filters));
+    } catch (cause) {
+      setError(toMessage(cause));
+    } finally {
+      setPreviewing(false);
+    }
+  }
+
+  async function createExport(supersedesBatchId?: string) {
+    if (!preview?.included.length || !exportType.trim()) return;
+    setCreating(true);
+    setError(null);
+    setMessage(null);
+    setTask(null);
+    try {
+      const created = await client.create({
+        export_type: exportType.trim(),
+        filters,
+        ...(supersedesBatchId ? { supersedes_batch_id: supersedesBatchId } : {}),
+      }, makeIdempotencyKey());
+      setTask({
+        task_id: created.task_id,
+        operation: "XLSX_EXPORT",
+        resource_id: "EXPORTS",
+        status: created.status,
+        progress: 0,
+        step: "PENDING",
+        error: null,
+      });
+      const completed = await client.waitForTask(created.task_id, { onUpdate: setTask });
+      setTask(completed);
+      if (completed.status === "SUCCEEDED") {
+        setMessage("导出任务已完成。");
+        await refreshBatches();
+      } else {
+        setError(completed.error ?? `导出任务终止：${completed.status}`);
+      }
+    } catch (cause) {
+      setError(toMessage(cause));
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  async function loadBatchDetail(batchId: string) {
+    setBusyBatchId(batchId);
+    setError(null);
+    try {
+      setBatchDetail(await client.getBatch(batchId));
+    } catch (cause) {
+      setError(toMessage(cause));
+    } finally {
+      setBusyBatchId(null);
+    }
+  }
+
+  async function download(batch: ExportBatch) {
+    setBusyBatchId(batch.export_batch_id);
+    setError(null);
+    try {
+      const blob = await client.downloadBatch(batch.export_batch_id);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = batch.download_name;
+      link.rel = "noopener";
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (cause) {
+      setError(toMessage(cause));
+    } finally {
+      setBusyBatchId(null);
+    }
+  }
+
+  const previewFormIds = new Set(preview?.included.map((item) => item.form_id) ?? []);
+  const reexportMode = filters.export_status === "REEXPORT_REQUIRED";
+
+  return (
+    <main className="export-center">
+      <header className="export-center-header">
+        <div>
+          <button type="button" className="text-button" onClick={onBack}>← 返回审核工作台</button>
+          <span className="eyebrow">模板驱动 · 可追溯</span>
+          <h1>导出中心</h1>
+          <p>预览最终校验结果，创建异步 XLSX 任务并从授权接口下载。</p>
+        </div>
+        <div className="export-center-summary" aria-label="导出摘要">
+          <span><strong>{preview?.included.length ?? "—"}</strong> 拟包含</span>
+          <span><strong>{preview?.excluded.length ?? "—"}</strong> 已排除</span>
+          <span><strong>{batches.length}</strong> 历史批次</span>
+        </div>
+      </header>
+
+      {error && <div className="error-banner export-center-message" role="alert">{error}</div>}
+      {message && <div className="success-banner export-center-message" role="status">{message}</div>}
+
+      <section className="export-filter-card" aria-labelledby="export-filter-title">
+        <div className="export-section-heading">
+          <div>
+            <span className="eyebrow">第一步</span>
+            <h2 id="export-filter-title">筛选并预览</h2>
+          </div>
+          <button
+            type="button"
+            className="button button-primary"
+            disabled={previewing || creating}
+            onClick={() => void loadPreview()}
+          >
+            {previewing ? "正在预览…" : "预览导出范围"}
+          </button>
+        </div>
+        <div className="export-filter-grid">
+          <label>表单编号<input value={filters.form_id ?? ""} onChange={(event) => changeFilter("form_id", event.target.value)} /></label>
+          <label>员工编号<input value={filters.employee_id ?? ""} onChange={(event) => changeFilter("employee_id", event.target.value)} /></label>
+          <label>工单编号<input value={filters.work_order_id ?? ""} onChange={(event) => changeFilter("work_order_id", event.target.value)} /></label>
+          <label>
+            审核状态
+            <select value={filters.review_status ?? ""} onChange={(event) => changeFilter("review_status", event.target.value as ExportFilters["review_status"])}>
+              <option value="">全部</option>
+              <option value="CONFIRMED">CONFIRMED</option>
+            </select>
+          </label>
+          <label>
+            导出状态
+            <select value={filters.export_status ?? ""} onChange={(event) => changeFilter("export_status", event.target.value as ExportFilters["export_status"])}>
+              <option value="">全部</option>
+              <option value="NOT_EXPORTED">NOT_EXPORTED</option>
+              <option value="EXPORTED">EXPORTED</option>
+              <option value="REEXPORT_REQUIRED">REEXPORT_REQUIRED</option>
+            </select>
+          </label>
+          <label>导出类型<input value={exportType} onChange={(event) => setExportType(event.target.value)} /></label>
+        </div>
+        {reexportMode && (
+          <div className="reexport-alert" role="alert">
+            <strong>REEXPORT_REQUIRED</strong>
+            <span>已筛选需要重导的表单。请在历史批次中选择真实来源批次，新文件会显式替代它且不会覆盖旧文件。</span>
+          </div>
+        )}
+      </section>
+
+      {preview && (
+        <section className="export-preview-grid" aria-label="导出预览结果">
+          <div className="export-preview-card included-records">
+            <div className="export-section-heading compact">
+              <div><span className="eyebrow">通过最终校验</span><h2>拟包含记录</h2></div>
+              <span className="status-pill active">{preview.included.length}</span>
+            </div>
+            {preview.included.length ? (
+              <ul className="export-record-list">
+                {preview.included.map((item) => <li key={`${item.form_id}-${item.record_version}`}>{item.form_id} · 记录版本 {item.record_version}</li>)}
+              </ul>
+            ) : <p className="muted">当前筛选没有可导出记录。</p>}
+            <button
+              type="button"
+              className="button button-primary"
+              disabled={!preview.included.length || creating || !exportType.trim()}
+              onClick={() => void createExport()}
+            >创建导出任务</button>
+          </div>
+
+          <div className="export-preview-card" role="region" aria-label="排除记录">
+            <div className="export-section-heading compact">
+              <div><span className="eyebrow">未进入文件</span><h2>排除记录与规则</h2></div>
+              <span className="status-pill inactive">{preview.excluded.length}</span>
+            </div>
+            {preview.excluded.length ? (
+              <ul className="export-exclusion-list">
+                {preview.excluded.map((item) => (
+                  <li key={`${item.form_id}-${item.record_version}`}>
+                    <strong>{item.form_id} · 记录版本 {item.record_version}</strong>
+                    {item.reason && <span className="export-reason-summary">{item.reason}</span>}
+                    <ul>
+                      {(item.reasons ?? []).map((reason, index) => (
+                        <li key={`${reason.scope}-${reason.code}-${reason.field_key ?? index}`}>
+                          <span className={`reason-scope ${reason.scope.toLowerCase()}`}>{reasonLabel(reason)}</span>
+                          <p>{reason.message}</p>
+                          {ruleDetail(reason) && <small>{ruleDetail(reason)}</small>}
+                        </li>
+                      ))}
+                    </ul>
+                  </li>
+                ))}
+              </ul>
+            ) : <p className="muted">没有被排除的记录。</p>}
+          </div>
+
+          <div className="export-preview-card export-mappings">
+            <div className="export-section-heading compact"><div><span className="eyebrow">不可变快照</span><h2>字段映射</h2></div></div>
+            <ul>
+              {preview.mapping_snapshot.map((mapping) => (
+                <li key={`${mapping.template_id}-${mapping.template_version}-${mapping.field_key}`}>
+                  <strong>{mapping.field_key}</strong>
+                  <span>{mapping.workbook} / {mapping.worksheet} / {mapping.business_column}</span>
+                  <small>{mapping.template_id} · V{mapping.template_version}</small>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </section>
+      )}
+
+      {task && (
+        <section className="export-task-card" aria-live="polite">
+          <div className="export-section-heading compact">
+            <div><span className="eyebrow">任务 {task.task_id}</span><h2>{task.status}</h2></div>
+            <strong>{task.progress}%</strong>
+          </div>
+          <progress value={task.progress} max={100} aria-label="导出任务进度" aria-valuenow={task.progress} />
+          <span>{task.step ?? "等待任务进度"}</span>
+        </section>
+      )}
+
+      <section className="export-history-card" role="region" aria-label="导出批次历史">
+        <div className="export-section-heading">
+          <div><span className="eyebrow">不可变记录</span><h2>导出批次历史</h2></div>
+          <button type="button" className="button button-secondary" onClick={() => void refreshBatches()}>刷新历史</button>
+        </div>
+        {batches.length ? (
+          <div className="export-batch-list">
+            {batches.map((batch) => {
+              const canReexport = reexportMode && batch.included_records.some((record) => previewFormIds.has(record.form_id));
+              return (
+                <article key={batch.export_batch_id} className={canReexport ? "reexport-source" : ""}>
+                  <div>
+                    <strong>{batch.export_batch_id}</strong>
+                    <span>{batch.export_type} · {formatDate(batch.exported_at)} · {batch.included_records.length} 条</span>
+                    <small>SHA-256 {batch.file_sha256}</small>
+                    {batch.supersedes_batch_id && <small>替代批次：{batch.supersedes_batch_id}</small>}
+                  </div>
+                  <div className="export-batch-actions">
+                    <button type="button" className="text-button" disabled={busyBatchId === batch.export_batch_id} onClick={() => void loadBatchDetail(batch.export_batch_id)}>查看详情</button>
+                    <button type="button" className="button button-secondary" disabled={busyBatchId === batch.export_batch_id} onClick={() => void download(batch)}>下载 {batch.download_name}</button>
+                    {canReexport && <button type="button" className="button button-primary" disabled={creating} onClick={() => void createExport(batch.export_batch_id)}>重导并替代 {batch.export_batch_id}</button>}
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        ) : <p className="muted">尚无成功导出批次。</p>}
+        {batchDetail && (
+          <aside className="export-batch-detail" aria-label={`批次 ${batchDetail.export_batch_id} 详情`}>
+            <div className="export-section-heading compact">
+              <div><span className="eyebrow">批次详情</span><h3>{batchDetail.export_batch_id}</h3></div>
+              <button type="button" className="text-button" onClick={() => setBatchDetail(null)}>关闭</button>
+            </div>
+            <dl>
+              <div><dt>操作者</dt><dd>{batchDetail.exported_by}</dd></div>
+              <div><dt>映射哈希</dt><dd>{batchDetail.mapping_hash}</dd></div>
+              <div><dt>文件哈希</dt><dd>{batchDetail.file_sha256}</dd></div>
+              <div><dt>替代批次</dt><dd>{batchDetail.supersedes_batch_id ?? "无"}</dd></div>
+            </dl>
+          </aside>
+        )}
+      </section>
+    </main>
+  );
+}
+
+function reasonLabel(reason: ExportExclusionReason): string {
+  return [reason.scope, reason.field_key, reason.code].filter(Boolean).join(" · ");
+}
+
+function ruleDetail(reason: ExportExclusionReason): string | null {
+  const details: string[] = [];
+  if (reason.required) details.push("必填");
+  if (reason.allowed_values?.length) details.push(`允许值：${reason.allowed_values.join("、")}`);
+  if (reason.minimum_value !== undefined || reason.maximum_value !== undefined) {
+    details.push(`范围：${reason.minimum_value ?? "—"}–${reason.maximum_value ?? "—"}`);
+  }
+  return details.length ? details.join("；") : null;
+}
+
+function makeIdempotencyKey(): string {
+  const randomId = globalThis.crypto?.randomUUID?.();
+  return `export-${randomId ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`}`;
+}
+
+function formatDate(value: string): string {
+  const date = new Date(value);
+  return Number.isNaN(date.valueOf()) ? value : date.toLocaleString("zh-CN");
+}
+
+function toMessage(cause: unknown): string {
+  if (cause instanceof ApiRequestError) return `${cause.code}：${cause.message}`;
+  return cause instanceof Error ? cause.message : "导出请求无法完成。";
+}

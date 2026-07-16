@@ -18,11 +18,12 @@ import {
 } from "./review-model";
 import { TemplateStudio } from "./TemplateStudio_ds";
 import { MasterDataCenter } from "./MasterDataCenter_ds";
+import { ExportCenter } from "./ExportCenter_ds";
 
 const notificationPort = new WebNotificationPort();
 
 type MobilePane = "evidence" | "fields";
-type Feature = "review" | "templates" | "master-data";
+type Feature = "review" | "templates" | "master-data" | "exports";
 type QueueKey = "classification" | "review" | "exceptions" | "exportable";
 type ReviewAction = "return" | "void";
 
@@ -168,8 +169,8 @@ export function App() {
 
   function chooseQueue(queueKey: QueueKey) {
     if (!canLeaveCurrentForm()) return;
-    setFeature("review");
     setSelectedQueue(queueKey);
+    setFeature(queueKey === "exportable" ? "exports" : "review");
   }
 
   function openQueueForm(formId: string) {
@@ -504,6 +505,10 @@ export function App() {
 
   if (feature === "templates") return <TemplateStudio onBack={() => setFeature("review")} />;
   if (feature === "master-data") return <MasterDataNotice onBack={() => setFeature("review")} />;
+  if (feature === "exports") return <ExportCenter onBack={() => {
+    setSelectedQueue("review");
+    setFeature("review");
+  }} />;
 
   return (
     <div className="app-shell">
