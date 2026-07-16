@@ -18,7 +18,7 @@ describe("ExportApi", () => {
     }));
     const api = new ExportApi("/api/v1", fetcher, {
       credentials: "include",
-      headers: { "X-Local-Roles": "FINANCE", "X-Local-Actor": "finance-user" },
+      headers: { "X-Roles": "FINANCE", "X-Actor-ID": "finance-user" },
     });
 
     await api.preview({
@@ -34,7 +34,7 @@ describe("ExportApi", () => {
       {
         method: "GET",
         credentials: "include",
-        headers: { "X-Local-Roles": "FINANCE", "X-Local-Actor": "finance-user" },
+        headers: { "X-Roles": "FINANCE", "X-Actor-ID": "finance-user" },
         body: undefined,
       },
     );
@@ -48,7 +48,7 @@ describe("ExportApi", () => {
       events_url: "/api/v1/tasks/TASK-1/events",
     }, 202));
     const api = new ExportApi("/api/v1", fetcher, {
-      headers: { "X-Local-Roles": "FINANCE" },
+      headers: { "X-Roles": "FINANCE" },
     });
 
     const created = await api.create({
@@ -62,7 +62,7 @@ describe("ExportApi", () => {
       method: "POST",
       credentials: "same-origin",
       headers: {
-        "X-Local-Roles": "FINANCE",
+        "X-Roles": "FINANCE",
         "Idempotency-Key": "export-once",
         "Content-Type": "application/json",
       },
@@ -95,6 +95,24 @@ describe("ExportApi", () => {
       "/api/v1/tasks/TASK%2F1",
       "/api/v1/tasks/TASK%2F1",
     ]);
+  });
+
+  it("passes AbortSignal to task requests and rejects polling with AbortError", async () => {
+    const fetcher = vi.fn().mockResolvedValue(jsonResponse({
+      task_id: "TASK-1", operation: "XLSX_EXPORT", resource_id: "EXPORTS",
+      status: "RUNNING", progress: 10, step: "VALIDATING", error: null,
+    }));
+    const controller = new AbortController();
+    const waiting = new ExportApi("/api/v1", fetcher).waitForTask("TASK-1", {
+      intervalMs: 1_000,
+      signal: controller.signal,
+    });
+    await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(1));
+
+    controller.abort();
+
+    await expect(waiting).rejects.toEqual(expect.objectContaining({ name: "AbortError" }));
+    expect(fetcher.mock.calls[0]?.[1]?.signal).toBe(controller.signal);
   });
 
   it("lists batches and loads an encoded batch detail", async () => {

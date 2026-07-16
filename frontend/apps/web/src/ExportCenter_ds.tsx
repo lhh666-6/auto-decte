@@ -10,7 +10,7 @@ import {
   type ExportTask,
   type WaitForExportTaskOptions,
 } from "@form-detection/api-client";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 export interface ExportCenterApi {
   preview(filters: ExportFilters): Promise<ExportPreview>;
@@ -47,12 +47,23 @@ export function ExportCenter({ api, onBack }: ExportCenterProps) {
   const [busyBatchId, setBusyBatchId] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const mounted = useRef(true);
+  const pollingController = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      pollingController.current?.abort();
+    };
+  }, []);
 
   const refreshBatches = useCallback(async () => {
     try {
-      setBatches(await client.listBatches());
+      const loaded = await client.listBatches();
+      if (mounted.current) setBatches(loaded);
     } catch (cause) {
-      setError(toMessage(cause));
+      if (mounted.current) setError(toMessage(cause));
     }
   }, [client]);
 
@@ -81,16 +92,21 @@ export function ExportCenter({ api, onBack }: ExportCenterProps) {
 
   async function createExport(supersedesBatchId?: string) {
     if (!preview?.included.length || !exportType.trim()) return;
+    if (filters.export_status === "REEXPORT_REQUIRED" && !supersedesBatchId) return;
     setCreating(true);
     setError(null);
     setMessage(null);
     setTask(null);
+    pollingController.current?.abort();
+    const controller = new AbortController();
+    pollingController.current = controller;
     try {
       const created = await client.create({
         export_type: exportType.trim(),
         filters,
         ...(supersedesBatchId ? { supersedes_batch_id: supersedesBatchId } : {}),
       }, makeIdempotencyKey());
+      if (!mounted.current || controller.signal.aborted) return;
       setTask({
         task_id: created.task_id,
         operation: "XLSX_EXPORT",
@@ -100,7 +116,13 @@ export function ExportCenter({ api, onBack }: ExportCenterProps) {
         step: "PENDING",
         error: null,
       });
-      const completed = await client.waitForTask(created.task_id, { onUpdate: setTask });
+      const completed = await client.waitForTask(created.task_id, {
+        signal: controller.signal,
+        onUpdate: (update) => {
+          if (mounted.current && !controller.signal.aborted) setTask(update);
+        },
+      });
+      if (!mounted.current || controller.signal.aborted) return;
       setTask(completed);
       if (completed.status === "SUCCEEDED") {
         setMessage("导出任务已完成。");
@@ -109,9 +131,10 @@ export function ExportCenter({ api, onBack }: ExportCenterProps) {
         setError(completed.error ?? `导出任务终止：${completed.status}`);
       }
     } catch (cause) {
-      setError(toMessage(cause));
+      if (!isAbortError(cause) && mounted.current) setError(toMessage(cause));
     } finally {
-      setCreating(false);
+      if (pollingController.current === controller) pollingController.current = null;
+      if (mounted.current) setCreating(false);
     }
   }
 
@@ -146,7 +169,6 @@ export function ExportCenter({ api, onBack }: ExportCenterProps) {
     }
   }
 
-  const previewFormIds = new Set(preview?.included.map((item) => item.form_id) ?? []);
   const reexportMode = filters.export_status === "REEXPORT_REQUIRED";
 
   return (
@@ -228,9 +250,10 @@ export function ExportCenter({ api, onBack }: ExportCenterProps) {
             <button
               type="button"
               className="button button-primary"
-              disabled={!preview.included.length || creating || !exportType.trim()}
+              disabled={!preview.included.length || creating || !exportType.trim() || reexportMode}
               onClick={() => void createExport()}
             >创建导出任务</button>
+            {reexportMode && <small className="reexport-create-hint">重导必须从下方选择一个覆盖全部表单旧版本的来源批次。</small>}
           </div>
 
           <div className="export-preview-card" role="region" aria-label="排除记录">
@@ -293,7 +316,7 @@ export function ExportCenter({ api, onBack }: ExportCenterProps) {
         {batches.length ? (
           <div className="export-batch-list">
             {batches.map((batch) => {
-              const canReexport = reexportMode && batch.included_records.some((record) => previewFormIds.has(record.form_id));
+              const canReexport = reexportMode && isEligibleSupersededBatch(batch, preview?.included ?? []);
               return (
                 <article key={batch.export_batch_id} className={canReexport ? "reexport-source" : ""}>
                   <div>
@@ -306,6 +329,10 @@ export function ExportCenter({ api, onBack }: ExportCenterProps) {
                     <button type="button" className="text-button" disabled={busyBatchId === batch.export_batch_id} onClick={() => void loadBatchDetail(batch.export_batch_id)}>查看详情</button>
                     <button type="button" className="button button-secondary" disabled={busyBatchId === batch.export_batch_id} onClick={() => void download(batch)}>下载 {batch.download_name}</button>
                     {canReexport && <button type="button" className="button button-primary" disabled={creating} onClick={() => void createExport(batch.export_batch_id)}>重导并替代 {batch.export_batch_id}</button>}
+                    {reexportMode && !canReexport && <>
+                      <button type="button" className="button button-secondary" disabled>不可作为来源 {batch.export_batch_id}</button>
+                      <small className="reexport-source-warning">该批次未包含每个拟重导表单的旧版本，请缩小筛选范围。</small>
+                    </>}
                   </div>
                 </article>
               );
@@ -335,6 +362,17 @@ function reasonLabel(reason: ExportExclusionReason): string {
   return [reason.scope, reason.field_key, reason.code].filter(Boolean).join(" · ");
 }
 
+function isEligibleSupersededBatch(
+  batch: ExportBatch,
+  included: ExportPreview["included"],
+): boolean {
+  return included.length > 0 && included.every((item) => (
+    batch.included_records.some((record) => (
+      record.form_id === item.form_id && record.record_version < item.record_version
+    ))
+  ));
+}
+
 function ruleDetail(reason: ExportExclusionReason): string | null {
   const details: string[] = [];
   if (reason.required) details.push("必填");
@@ -358,4 +396,8 @@ function formatDate(value: string): string {
 function toMessage(cause: unknown): string {
   if (cause instanceof ApiRequestError) return `${cause.code}：${cause.message}`;
   return cause instanceof Error ? cause.message : "导出请求无法完成。";
+}
+
+function isAbortError(cause: unknown): boolean {
+  return cause instanceof Error && cause.name === "AbortError";
 }

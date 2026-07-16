@@ -194,6 +194,7 @@ button { cursor: pointer; }
 .export-preview-grid { display: grid; grid-template-columns: minmax(0, .8fr) minmax(0, 1.2fr); gap: 14px; max-width: 1280px; margin: 0 auto 16px; }
 .export-preview-card { min-width: 0; padding: 18px; }
 .export-preview-card > .button { margin-top: 14px; }
+.reexport-create-hint { display: block; margin-top: 8px; color: #92400e; font-size: 10px; line-height: 1.5; }
 .export-record-list, .export-exclusion-list, .export-exclusion-list ul, .export-mappings ul { display: grid; gap: 8px; margin: 14px 0 0; padding: 0; list-style: none; }
 .export-record-list li { border: 1px solid #bbf7d0; border-radius: 7px; padding: 9px; color: #166534; background: #f0fdf4; font-size: 12px; }
 .export-exclusion-list > li { display: grid; gap: 7px; border: 1px solid #e2e8f0; border-radius: 8px; padding: 11px; }
@@ -219,6 +220,7 @@ button { cursor: pointer; }
 .export-batch-list article > div:first-child { display: grid; min-width: 0; gap: 3px; }
 .export-batch-list article span, .export-batch-list article small { overflow-wrap: anywhere; color: #64748b; font-size: 10px; }
 .export-batch-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: end; gap: 7px; }
+.export-batch-actions .reexport-source-warning { flex-basis: 100%; max-width: 360px; color: #92400e; font-size: 10px; line-height: 1.4; text-align: right; }
 .export-batch-detail { margin-top: 14px; border: 1px solid #bfdbfe; border-radius: 9px; padding: 14px; background: #eff6ff; }
 .export-batch-detail dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; margin: 12px 0 0; }
 .export-batch-detail dl div { min-width: 0; }
@@ -233,6 +235,7 @@ button { cursor: pointer; }
   .export-mappings { grid-column: auto; }
   .export-batch-list article { align-items: start; flex-direction: column; }
   .export-batch-actions { justify-content: start; }
+  .export-batch-actions .reexport-source-warning { text-align: left; }
 }
 
 @media (max-width: 520px) {

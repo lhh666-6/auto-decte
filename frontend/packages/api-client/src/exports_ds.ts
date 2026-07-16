@@ -168,8 +168,8 @@ export class ExportApi {
     });
   }
 
-  getTask(taskId: string): Promise<ExportTask> {
-    return this.request(`/tasks/${encodeURIComponent(taskId)}`, { method: "GET" });
+  getTask(taskId: string, signal?: AbortSignal): Promise<ExportTask> {
+    return this.request(`/tasks/${encodeURIComponent(taskId)}`, { method: "GET", signal });
   }
 
   async waitForTask(
@@ -178,8 +178,8 @@ export class ExportApi {
   ): Promise<ExportTask> {
     const intervalMs = options.intervalMs ?? 750;
     while (true) {
-      if (options.signal?.aborted) throw new Error("Export task polling was cancelled.");
-      const task = await this.getTask(taskId);
+      if (options.signal?.aborted) throw abortError();
+      const task = await this.getTask(taskId, options.signal);
       options.onUpdate?.(task);
       if (TERMINAL_TASK_STATUSES.has(task.status)) return task;
       if (intervalMs > 0) await wait(intervalMs, options.signal);
@@ -204,7 +204,7 @@ export class ExportApi {
 
   private async request<T>(
     path: string,
-    options: { method?: string; headers?: Record<string, string>; body?: unknown } = {},
+    options: { method?: string; headers?: Record<string, string>; body?: unknown; signal?: AbortSignal } = {},
   ): Promise<T> {
     const response = await this.fetchResponse(path, options);
     if (response.status === 204) return undefined as T;
@@ -213,7 +213,7 @@ export class ExportApi {
 
   private async fetchResponse(
     path: string,
-    options: { method?: string; headers?: Record<string, string>; body?: unknown },
+    options: { method?: string; headers?: Record<string, string>; body?: unknown; signal?: AbortSignal },
   ): Promise<Response> {
     const headers = { ...this.defaults.headers, ...options.headers };
     if (options.body !== undefined) headers["Content-Type"] = "application/json";
@@ -223,6 +223,7 @@ export class ExportApi {
       credentials: this.defaults.credentials ?? "same-origin",
       headers,
       body: options.body === undefined ? undefined : JSON.stringify(options.body),
+      ...(options.signal ? { signal: options.signal } : {}),
     });
     if (!response.ok) await throwApiError(response);
     return response;
@@ -255,10 +256,23 @@ async function throwApiError(response: Response): Promise<never> {
 
 function wait(milliseconds: number, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
-    const timer = globalThis.setTimeout(resolve, milliseconds);
-    signal?.addEventListener("abort", () => {
+    if (signal?.aborted) {
+      reject(abortError());
+      return;
+    }
+    const finish = () => {
+      signal?.removeEventListener("abort", cancel);
+      resolve();
+    };
+    const timer = globalThis.setTimeout(finish, milliseconds);
+    const cancel = () => {
       globalThis.clearTimeout(timer);
-      reject(new Error("Export task polling was cancelled."));
-    }, { once: true });
+      reject(abortError());
+    };
+    signal?.addEventListener("abort", cancel, { once: true });
   });
+}
+
+function abortError(): DOMException {
+  return new DOMException("Export task polling was cancelled.", "AbortError");
 }

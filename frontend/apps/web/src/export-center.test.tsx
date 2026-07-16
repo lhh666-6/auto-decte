@@ -159,6 +159,11 @@ describe("ExportCenter", () => {
     await user.click(screen.getByRole("button", { name: "预览导出范围" }));
 
     expect((await screen.findByRole("alert")).textContent).toContain("REEXPORT_REQUIRED");
+    const ordinaryCreate = screen.getByRole("button", { name: "创建导出任务" });
+    expect(ordinaryCreate.hasAttribute("disabled")).toBe(true);
+    expect(screen.getByText("重导必须从下方选择一个覆盖全部表单旧版本的来源批次。")).toBeTruthy();
+    await user.click(ordinaryCreate);
+    expect(api.create).not.toHaveBeenCalled();
     await user.click(screen.getByRole("button", { name: "重导并替代 BATCH-OLD" }));
 
     await waitFor(() => expect(api.create).toHaveBeenCalledWith(
@@ -168,6 +173,69 @@ describe("ExportCenter", () => {
       }),
       expect.any(String),
     ));
+  });
+
+  it("rejects a re-export source that lacks an older version for every included form", async () => {
+    const user = userEvent.setup();
+    const multiPreview: ExportPreview = {
+      ...preview,
+      included: [
+        { form_id: "FORM-1", record_version: 2, reasons: [] },
+        { form_id: "FORM-2", record_version: 3, reasons: [] },
+      ],
+    };
+    const partialBatch: ExportBatch = {
+      ...oldBatch,
+      export_batch_id: "BATCH-PARTIAL",
+      included_records: [
+        { form_id: "FORM-1", record_version: 1 },
+        { form_id: "FORM-2", record_version: 3 },
+      ],
+    };
+    const api = makeApi({
+      preview: vi.fn().mockResolvedValue(multiPreview),
+      listBatches: vi.fn().mockResolvedValue([partialBatch]),
+    });
+    render(<ExportCenter api={api} onBack={vi.fn()} />);
+
+    await user.selectOptions(screen.getByLabelText("导出状态"), "REEXPORT_REQUIRED");
+    await user.click(screen.getByRole("button", { name: "预览导出范围" }));
+
+    expect(screen.queryByRole("button", { name: "重导并替代 BATCH-PARTIAL" })).toBeNull();
+    const disabledSource = screen.getByRole("button", { name: "不可作为来源 BATCH-PARTIAL" });
+    expect(disabledSource.hasAttribute("disabled")).toBe(true);
+    expect(screen.getByText("该批次未包含每个拟重导表单的旧版本，请缩小筛选范围。")).toBeTruthy();
+    await user.click(disabledSource);
+    expect(api.create).not.toHaveBeenCalled();
+  });
+
+  it("aborts task polling on unmount without refreshing history afterward", async () => {
+    const user = userEvent.setup();
+    let pollingSignal: AbortSignal | undefined;
+    const waitForTask = vi.fn().mockImplementation((
+      _taskId: string,
+      options?: { signal?: AbortSignal },
+    ) => {
+      pollingSignal = options?.signal;
+      return new Promise<ExportTask>((_resolve, reject) => {
+        pollingSignal?.addEventListener("abort", () => {
+          reject(new DOMException("Polling cancelled", "AbortError"));
+        }, { once: true });
+      });
+    });
+    const api = makeApi({ waitForTask });
+    const rendered = render(<ExportCenter api={api} onBack={vi.fn()} />);
+
+    await waitFor(() => expect(api.listBatches).toHaveBeenCalledTimes(1));
+    await user.click(screen.getByRole("button", { name: "预览导出范围" }));
+    await user.click(await screen.findByRole("button", { name: "创建导出任务" }));
+    await waitFor(() => expect(waitForTask).toHaveBeenCalledTimes(1));
+    rendered.unmount();
+
+    expect(pollingSignal).toBeDefined();
+    expect(pollingSignal?.aborted).toBe(true);
+    await Promise.resolve();
+    expect(api.listBatches).toHaveBeenCalledTimes(1);
   });
 
   it("opens the export feature from 可导出 only after unsaved review navigation is confirmed", async () => {
