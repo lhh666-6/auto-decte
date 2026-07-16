@@ -94,6 +94,7 @@ export function App() {
       field.data_type, field.rules,
     ));
   }).length ?? 0;
+  const isCorrection = (detail?.form.current_record_version ?? 0) > 0;
 
   const refreshQueues = useCallback(async () => {
     try {
@@ -212,7 +213,7 @@ export function App() {
     }
   }
 
-  async function confirmAndNext() {
+  async function submitPrimaryReviewAction() {
     if (!detail) return;
     if (!lease) {
       setError("请先获取审核锁，再确认表单。");
@@ -220,6 +221,7 @@ export function App() {
     }
     try {
       setLoading(true);
+      setError(null);
       const values = buildConfirmValues(
         detail.fields.map((field) => ({
           fieldId: field.field_id,
@@ -227,6 +229,36 @@ export function App() {
         })),
         edits,
       );
+      if (detail.form.current_record_version > 0) {
+        const formId = detail.form.form_id;
+        await api.confirm(formId, {
+          expectedVersion: detail.form.current_record_version,
+          leaseToken: lease.lease_token,
+          values,
+          reason: "人工审核工作台更正",
+          evidenceIds: detail.evidence.map((evidence) => evidence.file_id),
+        });
+        const [updatedDetail, updatedHistory] = await Promise.all([
+          api.getWorkbench(formId),
+          api.getHistory(formId).catch(() => null),
+        ]);
+        setDetail(updatedDetail);
+        setHistory(updatedHistory);
+        setFormIdInput(formId);
+        setEdits(updatedDetail.draft?.values ?? {});
+        setRuleFailures({});
+        setSelectedFieldId(updatedDetail.fields[0]?.field_id ?? null);
+        setClassificationOptions([]);
+        setClassificationChoice("");
+        await refreshQueues();
+        await notificationPort.notify({
+          title: "表单更正已保存",
+          body: `${formId} 已写入第 ${updatedDetail.form.current_record_version} 版。`,
+          level: "success",
+          timeoutMs: 3_500,
+        });
+        return;
+      }
       const result = await api.confirmAndClaimNext(detail.form.form_id, {
         expectedVersion: detail.form.current_record_version,
         leaseToken: lease.lease_token,
@@ -585,6 +617,7 @@ export function App() {
           <div className="form-summary">
             <strong>{detail?.form.form_id ?? "未加载表单"}</strong>
             <span>{detail ? `模板 ${detail.form.template_id} · v${detail.form.template_version}` : "输入编号后加载"}</span>
+            {detail && <span>记录版本 {detail.form.current_record_version} · 导出状态 {detail.form.export_status}</span>}
           </div>
           <div className="lease-summary">
             {lease ? <span className="lease-active">审核锁有效至 {new Date(lease.expires_at).toLocaleTimeString()}</span> : <span>未获取审核锁</span>}
@@ -766,16 +799,18 @@ export function App() {
               <span className="action-hint">
                 {detail?.draft
                   ? `草稿由 ${detail.draft.saved_by} 保存于 ${new Date(detail.draft.updated_at).toLocaleTimeString()}`
-                  : "确认会创建新版本并原子领取下一张"}
+                  : isCorrection
+                    ? "更正会创建新记录版本，并保留当前表单以便核对重导状态"
+                    : "确认会创建新版本并原子领取下一张"}
               </span>
               <button
                 type="button"
                 className="button button-primary"
-                disabled={!detail || !lease || loading || selectedQueue !== "review" || warningCount > 0}
+                disabled={!detail || !lease || loading || warningCount > 0 || (!isCorrection && selectedQueue !== "review")}
                 title={warningCount > 0 ? "请先处理所有待确认字段" : undefined}
-                onClick={() => void confirmAndNext()}
+                onClick={() => void submitPrimaryReviewAction()}
               >
-                确认并下一张
+                {isCorrection ? "保存更正" : "确认并下一张"}
               </button>
             </footer>
           </>

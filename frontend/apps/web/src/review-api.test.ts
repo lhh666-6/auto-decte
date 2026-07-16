@@ -30,6 +30,33 @@ describe("ReviewWorkbenchApi", () => {
     expect(detail.form.form_id).toBe("FORM-2");
   });
 
+  it("posts corrections with optimistic version, lease, values and evidence", async () => {
+    const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      record_id: "RECORD-1", version: 2, status: "CORRECTED",
+    }), { status: 200 }));
+    const api = new ReviewWorkbenchApi("/api/v1", fetcher);
+
+    await api.confirm("FORM/1", {
+      expectedVersion: 1,
+      leaseToken: "lease-a",
+      values: { "FIELD-1": "9" },
+      reason: "人工审核工作台更正",
+      evidenceIds: ["FILE-1"],
+    });
+
+    expect(fetcher).toHaveBeenCalledWith("/api/v1/forms/FORM%2F1/confirm", {
+      method: "POST",
+      headers: { "If-Match": "1", "Content-Type": "application/json" },
+      body: JSON.stringify({
+        expected_version: 1,
+        lease_token: "lease-a",
+        values: { "FIELD-1": "9" },
+        reason: "人工审核工作台更正",
+        evidence_ids: ["FILE-1"],
+      }),
+    });
+  });
+
   it("uses real review workflow and classification endpoints", async () => {
     const fetcher = vi.fn().mockImplementation(() => Promise.resolve(
       new Response(JSON.stringify({}), {
