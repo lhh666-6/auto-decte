@@ -193,6 +193,8 @@ class ExportForms:
             ]
             mapping_snapshot = preview.mapping_snapshot
             template_snapshot = self._template_snapshot(results)
+        if not results:
+            raise ValueError("No exportable records after final validation")
         if supersedes_batch_id is not None and self._repository.get_export_batch(
             supersedes_batch_id
         ) is None:

@@ -40,7 +40,9 @@ class ExportHandler:
                 raise ValueError("export_type is required")
             if re.fullmatch(r"[A-Za-z0-9_-]+", export_type) is None:
                 raise ValueError("export_type must be a safe identifier")
-            filters = _deserialize_filters(task.payload.get("filters", {}))
+            if "filters" not in task.payload:
+                raise ValueError("filters is required")
+            filters = _deserialize_filters(task.payload["filters"])
             supersedes = task.payload.get("supersedes_batch_id")
             if supersedes is not None and not isinstance(supersedes, str):
                 raise ValueError("supersedes_batch_id must be a string")

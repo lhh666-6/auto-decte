@@ -202,11 +202,13 @@ def test_preview_excludes_confirmed_record_that_fails_basic_final_validation(
     ]
     assert preview.mapping_snapshot == ()
 
-    batch = service.export("OUTPUT", FormFilters(), tmp_path / "exports", "finance")
+    with pytest.raises(
+        ValueError, match="No exportable records after final validation"
+    ):
+        service.export("OUTPUT", FormFilters(), tmp_path / "exports", "finance")
 
-    assert batch.included_records == tuple(
-        (item.form_id, item.record_version) for item in preview.included
-    )
+    assert repository.list_export_batches() == []
+    assert list((tmp_path / "exports").glob("*")) == []
     assert repository.get_form("FORM-INVALID").export_status is ExportStatus.NOT_EXPORTED  # type: ignore[union-attr]
 
 

@@ -14,7 +14,7 @@ from app.application.export_forms import ExportForms
 from app.application.import_forms import ImportForms
 from app.application.query_forms import FormFilters, QueryForms
 from app.application.review_forms import ReviewForms
-from app.domain.models import ExportStatus
+from app.domain.models import ExportStatus, ReviewStatus
 from app.domain.templates_ds import (
     ExportTarget,
     FieldDefinition,
@@ -155,6 +155,96 @@ def test_handler_fails_when_preview_has_no_included_records(tmp_path: Path) -> N
 
     assert tasks.get(task.task_id).status is TaskStatus.FAILED
     assert repository.get_export_batch_by_task(task.task_id) is None
+    assert list((tmp_path / "exports").glob("*")) == []
+
+
+def test_handler_requires_filters_in_persisted_payload(tmp_path: Path) -> None:
+    from app.modules.reporting.handler_ds import ExportHandler
+
+    _, repository, _, exports, tasks, _ = _build_export_services(tmp_path)
+    task = tasks.submit(
+        TaskCommand(
+            "XLSX_EXPORT",
+            "exports",
+            "finance",
+            "missing-filters",
+            {"export_type": "OUTPUT"},
+        )
+    )
+
+    with pytest.raises(ValueError, match="filters is required"):
+        ExportHandler(exports, tasks, repository, tmp_path / "exports").handle(
+            task.task_id
+        )
+
+    assert tasks.get(task.task_id).status is TaskStatus.FAILED
+    assert repository.list_export_batches() == []
+    assert list((tmp_path / "exports").glob("*")) == []
+
+
+class _TrackingExporter(XlsxExporter):
+    def __init__(self) -> None:
+        self.write_calls = 0
+
+    def write(
+        self,
+        destination: Path,
+        batch_id: str,
+        export_type: str,
+        results: Any,
+        filters: dict[str, Any],
+        mappings: Any = None,
+    ) -> None:
+        self.write_calls += 1
+        super().write(destination, batch_id, export_type, results, filters, mappings)
+
+
+def test_handler_fails_if_record_loses_eligibility_during_final_validation(
+    tmp_path: Path,
+) -> None:
+    from app.modules.reporting.handler_ds import ExportHandler
+
+    _, repository, templates, _, tasks, _ = _build_export_services(tmp_path)
+    exporter = _TrackingExporter()
+    exports = ExportForms(
+        repository,
+        exporter,
+        QueryForms(repository),
+        template_repository=templates,
+    )
+    original_preview = exports.preview
+    preview_calls = 0
+
+    def preview_then_revoke(
+        filters: FormFilters, actor_id: str | None = None
+    ) -> object:
+        nonlocal preview_calls
+        preview = original_preview(filters, actor_id)
+        preview_calls += 1
+        if preview_calls == 1:
+            repository.set_review_status("FORM-1", ReviewStatus.NEEDS_REVIEW)
+        return preview
+
+    exports.preview = preview_then_revoke  # type: ignore[method-assign,assignment]
+    task = tasks.submit(
+        TaskCommand(
+            "XLSX_EXPORT",
+            "exports",
+            "finance",
+            "eligibility-race",
+            {"export_type": "OUTPUT", "filters": {}},
+        )
+    )
+
+    with pytest.raises(ValueError, match="No exportable records after final validation"):
+        ExportHandler(exports, tasks, repository, tmp_path / "exports").handle(
+            task.task_id
+        )
+
+    assert preview_calls == 2
+    assert exporter.write_calls == 0
+    assert tasks.get(task.task_id).status is TaskStatus.FAILED
+    assert repository.list_export_batches() == []
     assert list((tmp_path / "exports").glob("*")) == []
 
 
