@@ -31,7 +31,7 @@ const EMPTY_FILTERS: ExportFilters = {
   employee_id: "",
   work_order_id: "",
   review_status: undefined,
-  export_status: undefined,
+  export_status: "NOT_EXPORTED",
 };
 
 export function ExportCenter({ api, onBack }: ExportCenterProps) {
@@ -72,7 +72,10 @@ export function ExportCenter({ api, onBack }: ExportCenterProps) {
   }, [refreshBatches]);
 
   function changeFilter<K extends keyof ExportFilters>(key: K, value: ExportFilters[K]) {
-    setFilters((current) => ({ ...current, [key]: value || undefined }));
+    const nextValue = key === "export_status"
+      ? value === "REEXPORT_REQUIRED" ? value : "NOT_EXPORTED"
+      : value || undefined;
+    setFilters((current) => ({ ...current, [key]: nextValue }));
     setPreview(null);
     setMessage(null);
   }
@@ -82,7 +85,7 @@ export function ExportCenter({ api, onBack }: ExportCenterProps) {
     setError(null);
     setMessage(null);
     try {
-      setPreview(await client.preview(filters));
+      setPreview(await client.preview(withExportMode(filters)));
     } catch (cause) {
       setError(toMessage(cause));
     } finally {
@@ -103,7 +106,7 @@ export function ExportCenter({ api, onBack }: ExportCenterProps) {
     try {
       const created = await client.create({
         export_type: exportType.trim(),
-        filters,
+        filters: withExportMode(filters),
         ...(supersedesBatchId ? { supersedes_batch_id: supersedesBatchId } : {}),
       }, makeIdempotencyKey());
       if (!mounted.current || controller.signal.aborted) return;
@@ -218,11 +221,9 @@ export function ExportCenter({ api, onBack }: ExportCenterProps) {
           </label>
           <label>
             导出状态
-            <select value={filters.export_status ?? ""} onChange={(event) => changeFilter("export_status", event.target.value as ExportFilters["export_status"])}>
-              <option value="">全部</option>
-              <option value="NOT_EXPORTED">NOT_EXPORTED</option>
-              <option value="EXPORTED">EXPORTED</option>
-              <option value="REEXPORT_REQUIRED">REEXPORT_REQUIRED</option>
+            <select value={filters.export_status === "REEXPORT_REQUIRED" ? "REEXPORT_REQUIRED" : "NOT_EXPORTED"} onChange={(event) => changeFilter("export_status", event.target.value as ExportFilters["export_status"])}>
+              <option value="NOT_EXPORTED">未导出（普通新导出）</option>
+              <option value="REEXPORT_REQUIRED">需要重导（选择来源批次）</option>
             </select>
           </label>
           <label>导出类型<input value={exportType} onChange={(event) => setExportType(event.target.value)} /></label>
@@ -360,6 +361,15 @@ export function ExportCenter({ api, onBack }: ExportCenterProps) {
 
 function reasonLabel(reason: ExportExclusionReason): string {
   return [reason.scope, reason.field_key, reason.code].filter(Boolean).join(" · ");
+}
+
+function withExportMode(filters: ExportFilters): ExportFilters {
+  return {
+    ...filters,
+    export_status: filters.export_status === "REEXPORT_REQUIRED"
+      ? "REEXPORT_REQUIRED"
+      : "NOT_EXPORTED",
+  };
 }
 
 function isEligibleSupersededBatch(

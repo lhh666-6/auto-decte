@@ -93,6 +93,30 @@ function makeApi(overrides: Partial<ExportCenterApi> = {}): ExportCenterApi {
 }
 
 describe("ExportCenter", () => {
+  it("defaults preview and ordinary create to NOT_EXPORTED without an ALL bypass", async () => {
+    const user = userEvent.setup();
+    const api = makeApi();
+    render(<ExportCenter api={api} onBack={vi.fn()} />);
+
+    const status = screen.getByLabelText("导出状态") as HTMLSelectElement;
+    expect(status.value).toBe("NOT_EXPORTED");
+    expect(within(status).queryByRole("option", { name: "全部" })).toBeNull();
+    await user.type(screen.getByLabelText("表单编号"), "FORM-1");
+    await user.clear(screen.getByLabelText("表单编号"));
+    await user.click(screen.getByRole("button", { name: "预览导出范围" }));
+
+    expect(api.preview).toHaveBeenCalledWith(expect.objectContaining({
+      export_status: "NOT_EXPORTED",
+    }));
+    await user.click(await screen.findByRole("button", { name: "创建导出任务" }));
+    await waitFor(() => expect(api.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        filters: expect.objectContaining({ export_status: "NOT_EXPORTED" }),
+      }),
+      expect.any(String),
+    ));
+  });
+
   it("previews included records, FORM/FIELD exclusions, rule details and mappings", async () => {
     const user = userEvent.setup();
     const api = makeApi();
