@@ -53,6 +53,8 @@ class ExportForms:
 
     def preview(self, filters: FormFilters, actor_id: str | None = None) -> ExportPreview:
         """Classify filtered forms for export without mutating persisted state."""
+        if self._template_repository is None:
+            raise RuntimeError("template repository is required for export preview")
         del actor_id
         included: list[ExportPreviewItem] = []
         excluded: list[ExportPreviewItem] = []

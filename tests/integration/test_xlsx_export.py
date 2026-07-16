@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import pytest
 from openpyxl import load_workbook
 from sqlalchemy import create_engine
 
@@ -207,9 +208,24 @@ def test_preview_excludes_confirmed_record_that_fails_basic_final_validation(
     assert repository.get_form("FORM-INVALID").export_status is ExportStatus.NOT_EXPORTED  # type: ignore[union-attr]
 
 
-def test_reporting_facade_preview_explains_missing_template(tmp_path: Path) -> None:
+def test_reporting_facade_preview_requires_template_repository(tmp_path: Path) -> None:
     _, _, repository = setup_confirmed_form(tmp_path)
     facade = ReportingFacade(repository, QueryForms(repository))
+
+    with pytest.raises(
+        RuntimeError, match="template repository is required for export preview"
+    ):
+        facade.preview(FormFilters())
+
+
+def test_reporting_facade_preview_explains_missing_template(tmp_path: Path) -> None:
+    _, _, repository = setup_confirmed_form(tmp_path)
+    templates = SqlAlchemyTemplateRepository(
+        create_engine(f"sqlite:///{tmp_path / 'demo.db'}")
+    )
+    facade = ReportingFacade(
+        repository, QueryForms(repository), template_repository=templates
+    )
 
     preview = facade.preview(FormFilters())
 
