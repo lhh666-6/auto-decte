@@ -61,6 +61,10 @@ export {
   type IncludedExportRecord,
   type WaitForExportTaskOptions,
 } from "./exports_ds.js";
+export {
+  TaskApi,
+  type TaskStatusDetail,
+} from "./tasks_ds.js";
 
 // When generated types exist, uncomment:
 // export type * from "./generated_ds.js";
