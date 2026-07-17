@@ -803,7 +803,7 @@ git diff --check
 
 预期：第一条无输出，第二条无错误。
 
-- [ ] 提交已完成；仍需在网络证书问题解除后确认远端没有新提交：
+- [x] 提交并确认远端没有新提交：
 
 ```powershell
 git add docs/CURRENT_STATUS.md docs/NEXT_TASK.md docs/FRONTEND_INTERACTION_GUIDE.md docs/superpowers/plans/2026-07-17-frontend-rebuild-implementation.md
@@ -814,7 +814,7 @@ git rev-list --left-right --count origin/modular-architecture...HEAD
 
 预期：左侧为 `0`；如果左侧不为 `0`，先停止并与队友协调，不要强推。
 
-- [ ] 推送（当前被本机 Git HTTPS 证书代理阻塞）：
+- [x] 推送：
 
 ```powershell
 git push origin modular-architecture

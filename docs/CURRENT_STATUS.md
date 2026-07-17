@@ -4,7 +4,7 @@
 
 ## 本轮结论
 
-工业表单前端重建实施计划的任务 1—16 已按顺序完成。当前功能基线为 `ff03a39 fix(review): preserve confirmed values across reload and export`，集成分支为 `modular-architecture`；远端同步仍等待 GitHub 网络认证恢复。
+工业表单前端重建实施计划的任务 1—16 已按顺序完成。当前功能基线为 `ff03a39 fix(review): preserve confirmed values across reload and export`，集成分支为 `modular-architecture`；2026-07-18 已完成远端核对和推送，最终清单提交随本文件一并同步。
 
 本轮没有改变审核事务、模板版本、主数据乐观锁、导出批次或识别算法等后端业务不变量。前端已从单页功能区切换重建为有固定路由、统一外壳和中文业务语言的 React Web 应用。
 
