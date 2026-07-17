@@ -334,7 +334,7 @@ export function ExportCenter({ api, onBack }: ExportCenterProps) {
                       {(item.reasons ?? []).map((reason, index) => (
                         <li key={`${reason.scope}-${reason.code}-${reason.field_key ?? index}`}>
                           <span className={`reason-scope ${reason.scope.toLowerCase()}`}>{reasonLabel(reason)}</span>
-                          <p>{reason.message}</p>
+                          <p>{reasonMessage(reason)}</p>
                           {ruleDetail(reason) && <small>{ruleDetail(reason)}</small>}
                         </li>
                       ))}
@@ -419,6 +419,21 @@ function reasonLabel(reason: ExportExclusionReason): string {
   return reason.scope === "FIELD" && reason.field_key
     ? `字段 ${reason.field_key}`
     : "整张表单";
+}
+
+function reasonMessage(reason: ExportExclusionReason): string {
+  return ({
+    NOT_CONFIRMED: "表单尚未完成确认。",
+    TEMPLATE_NOT_FOUND: "找不到该表单使用的模板版本。",
+    NO_VALID_MAPPING: "模板没有可用的 Excel 列对应关系。",
+    FINAL_VALIDATION_FAILED: "记录未通过导出前的最终检查。",
+    REQUIRED_VALUE_MISSING: "必填内容尚未填写。",
+    NOT_ALLOWED: "填写内容不在模板允许范围内。",
+    VALUE_NOT_ALLOWED: "填写内容不在模板允许范围内。",
+    VALUE_NOT_NUMERIC: "填写内容必须是数字。",
+    VALUE_BELOW_MINIMUM: "填写数值低于允许的最小值。",
+    VALUE_ABOVE_MAXIMUM: "填写数值高于允许的最大值。",
+  } as Record<string, string>)[reason.code] ?? reason.message;
 }
 
 function taskStatusLabel(status: ExportTask["status"]): string {

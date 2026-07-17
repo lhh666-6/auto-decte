@@ -21,12 +21,12 @@ const preview: ExportPreview = {
     record_version: 1,
     reason: "RULE_BLOCKED",
     reasons: [
-      { scope: "FORM", code: "NOT_CONFIRMED", message: "表单尚未确认" },
+      { scope: "FORM", code: "NOT_CONFIRMED", message: "Form is not confirmed." },
       {
         scope: "FIELD",
         code: "NOT_ALLOWED",
         field_key: "shift",
-        message: "班次不在模板允许范围内",
+        message: "Value is not in the allowed set.",
         required: true,
         allowed_values: ["A", "B"],
         minimum_value: 1,
@@ -173,7 +173,10 @@ describe("ExportCenter", () => {
     const excluded = screen.getByRole("region", { name: "无法导出的记录" });
     expect(within(excluded).getByText("FORM-2 · 记录版本 1")).toBeTruthy();
     expect(within(excluded).getByText("整张表单")).toBeTruthy();
+    expect(within(excluded).getByText("表单尚未完成确认。")).toBeTruthy();
+    expect(within(excluded).queryByText("Form is not confirmed.")).toBeNull();
     expect(within(excluded).getByText("字段 shift")).toBeTruthy();
+    expect(within(excluded).getByText("填写内容不在模板允许范围内。")).toBeTruthy();
     expect(within(excluded).getByText("必填；允许值：A、B；范围：1–10")).toBeTruthy();
     expect(within(excluded).queryByText("RULE_BLOCKED")).toBeNull();
     expect(screen.getByText("企业工资记录.xlsx / 计时考核单 / employee_id")).toBeTruthy();
