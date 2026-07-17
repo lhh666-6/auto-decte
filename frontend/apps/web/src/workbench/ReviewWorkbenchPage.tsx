@@ -1,6 +1,7 @@
 import {
   ApiRequestError,
   ReviewWorkbenchApi,
+  TaskApi,
   type ClassificationOption,
   type RecognitionCandidate,
   type ReviewField,
@@ -17,6 +18,7 @@ import {
 } from "../review-model";
 import { getReviewStatusCopy } from "../ui/business-language";
 import { EvidenceViewer } from "./EvidenceViewer";
+import { ClassificationStage } from "./ClassificationStage";
 import { FieldDetailPanel } from "./FieldDetailPanel";
 import { FieldReviewTable } from "./FieldReviewTable";
 import { selectFirstIssueFieldId } from "./field-navigation";
@@ -50,6 +52,7 @@ export function ReviewWorkbenchPage({
   onOpenExports,
 }: ReviewWorkbenchPageProps) {
   const api = useMemo(() => new ReviewWorkbenchApi("/api/v1"), []);
+  const taskApi = useMemo(() => new TaskApi("/api/v1"), []);
   const [formIdInput, setFormIdInput] = useState("");
   const [detail, setDetail] = useState<WorkbenchDetail | null>(null);
   const [history, setHistory] = useState<ReviewHistory | null>(null);
@@ -71,9 +74,6 @@ export function ReviewWorkbenchPage({
   const [mobilePane, setMobilePane] = useState<MobilePane>("evidence");
   const [selectedQueue, setSelectedQueue] = useState<QueueKey>("review");
   const [classificationOptions, setClassificationOptions] = useState<ClassificationOption[]>([]);
-  const [classificationChoice, setClassificationChoice] = useState("");
-  const [classificationReason, setClassificationReason] = useState("");
-  const [classificationTask, setClassificationTask] = useState<string | null>(null);
   const [reviewAction, setReviewAction] = useState<ReviewAction | null>(null);
   const [actionReason, setActionReason] = useState("");
   const [queueForms, setQueueForms] = useState<Record<QueueKey, WorkbenchDetail["form"][]>>({
@@ -129,16 +129,11 @@ export function ReviewWorkbenchPage({
       ));
       setHoveredFieldId(null);
       setLease(null);
-      setClassificationTask(null);
       if (loadedDetail.form.review_status === "NEEDS_CLASSIFICATION") {
         const options = await api.getClassificationOptions(cleaned);
         setClassificationOptions(options);
-        setClassificationChoice(
-          options[0] ? `${options[0].template_key}@${options[0].version}` : "",
-        );
       } else {
         setClassificationOptions([]);
-        setClassificationChoice("");
       }
       void refreshQueues();
     } catch (cause) {
@@ -261,7 +256,6 @@ export function ReviewWorkbenchPage({
           {},
         ));
         setClassificationOptions([]);
-        setClassificationChoice("");
         await refreshQueues();
         await notificationPort.notify({
           title: "表单更正已保存",
@@ -391,38 +385,6 @@ export function ReviewWorkbenchPage({
       setEdits({});
       setRuleFailures({});
       setFormIdInput("");
-      await refreshQueues();
-    } catch (cause) {
-      setError(toMessage(cause));
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function assignSelectedTemplate() {
-    if (!detail || !classificationChoice || !classificationReason.trim()) {
-      setError("请选择模板并填写人工分类原因。");
-      return;
-    }
-    const separator = classificationChoice.lastIndexOf("@");
-    const templateKey = classificationChoice.slice(0, separator);
-    const version = Number(classificationChoice.slice(separator + 1));
-    try {
-      setLoading(true);
-      const result = await api.assignTemplate(detail.form.form_id, {
-        templateKey,
-        version,
-        reason: classificationReason.trim(),
-      });
-      setClassificationReason("");
-      await notificationPort.notify({
-        title: "人工分类已保存",
-        body: `已创建识别任务 ${result.recognition_task_id}。`,
-        level: "success",
-        timeoutMs: 4_000,
-      });
-      await loadWorkbenchById(detail.form.form_id);
-      setClassificationTask(result.recognition_task_id);
       await refreshQueues();
     } catch (cause) {
       setError(toMessage(cause));
@@ -645,49 +607,27 @@ export function ReviewWorkbenchPage({
         />
 
         {detail?.form.review_status === "NEEDS_CLASSIFICATION" ? (
-          <section className="classification-card" aria-label="人工模板分类">
-            <div>
-              <span className="eyebrow">二维码识别失败</span>
-              <h2>人工选择已发布模板</h2>
-              <p>系统不会猜测模板。选择结果、原因和后续识别任务都会被审计。</p>
-            </div>
-            <label>
-              已发布模板
-              <select
-                value={classificationChoice}
-                onChange={(event) => setClassificationChoice(event.target.value)}
-              >
-                {classificationOptions.map((option) => (
-                  <option
-                    key={`${option.template_key}@${option.version}`}
-                    value={`${option.template_key}@${option.version}`}
-                  >
-                    {option.template_key} · V{option.version} · {option.field_count} 字段
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              分类原因
-              <textarea
-                value={classificationReason}
-                onChange={(event) => setClassificationReason(event.target.value)}
-                placeholder="例如：二维码污损，依据纸面标题确认模板"
-                maxLength={500}
-              />
-            </label>
-            <button
-              type="button"
-              className="button button-primary"
-              disabled={!classificationChoice || !classificationReason.trim() || loading}
-              onClick={() => void assignSelectedTemplate()}
-            >
-              确认分类并创建识别任务
-            </button>
-            {classificationTask && (
-              <p className="classification-task">识别任务 {classificationTask} 已进入队列。</p>
-            )}
-          </section>
+          <ClassificationStage
+            key={detail.form.form_id}
+            formId={detail.form.form_id}
+            options={classificationOptions}
+            assignTemplate={async (input) => {
+              const result = await api.assignTemplate(detail.form.form_id, input);
+              await notificationPort.notify({
+                title: "人工分类已保存",
+                body: `已创建识别任务 ${result.recognition_task_id}。`,
+                level: "success",
+                timeoutMs: 4_000,
+              });
+              return result;
+            }}
+            taskApi={taskApi}
+            onRecognitionSucceeded={async () => {
+              await loadWorkbenchById(detail.form.form_id);
+              await refreshQueues();
+            }}
+            onError={setError}
+          />
         ) : (
           <>
             <div className="mobile-pane-switch" role="tablist" aria-label="审核面板">
