@@ -48,11 +48,17 @@ interface ReviewWorkbenchPageProps {
   onOpenTemplates: () => void;
   onOpenMasterData: () => void;
   onOpenExports: () => void;
+  routeQueue?: Exclude<QueueKey, "exportable">;
+  routeFormId?: string;
+  onQueueRouteChange?: (queue: Exclude<QueueKey, "exportable">) => void;
 }
 export function ReviewWorkbenchPage({
   onOpenTemplates,
   onOpenMasterData,
   onOpenExports,
+  routeQueue,
+  routeFormId,
+  onQueueRouteChange,
 }: ReviewWorkbenchPageProps) {
   const api = useMemo(() => new ReviewWorkbenchApi("/api/v1"), []);
   const taskApi = useMemo(() => new TaskApi("/api/v1"), []);
@@ -75,13 +81,14 @@ export function ReviewWorkbenchPage({
   const [uploading, setUploading] = useState(false);
   const [duplicateImport, setDuplicateImport] = useState<DuplicateImportInfo | null>(null);
   const [mobilePane, setMobilePane] = useState<MobilePane>("evidence");
-  const [selectedQueue, setSelectedQueue] = useState<QueueKey>("review");
+  const [selectedQueue, setSelectedQueue] = useState<QueueKey>(routeQueue ?? "review");
   const [classificationOptions, setClassificationOptions] = useState<ClassificationOption[]>([]);
   const [reviewAction, setReviewAction] = useState<ReviewAction | null>(null);
   const [actionReason, setActionReason] = useState("");
   const [queueForms, setQueueForms] = useState<Record<QueueKey, WorkbenchDetail["form"][]>>({
     classification: [], review: [], exceptions: [], exportable: [],
   });
+  const routedFormLoad = useRef<string | null>(null);
 
   const selectedField = detail?.fields.find((field) => field.field_id === selectedFieldId) ?? null;
   const hasUnsavedEdits =
@@ -187,6 +194,16 @@ export function ReviewWorkbenchPage({
   }, [refreshQueues]);
 
   useEffect(() => {
+    if (routeQueue) setSelectedQueue(routeQueue);
+  }, [routeQueue]);
+
+  useEffect(() => {
+    if (!routeFormId || routedFormLoad.current === routeFormId) return;
+    routedFormLoad.current = routeFormId;
+    void loadWorkbenchById(routeFormId);
+  }, [loadWorkbenchById, routeFormId]);
+
+  useEffect(() => {
     if (!hasUnsavedEdits) return undefined;
     const warn = (event: BeforeUnloadEvent) => {
       event.preventDefault();
@@ -208,6 +225,7 @@ export function ReviewWorkbenchPage({
       return;
     }
     setSelectedQueue(queueKey);
+    onQueueRouteChange?.(queueKey);
   }
 
   function openQueueForm(formId: string) {
