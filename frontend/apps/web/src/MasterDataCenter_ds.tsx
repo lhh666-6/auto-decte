@@ -7,6 +7,12 @@ import {
 } from "@form-detection/api-client";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import {
+  MASTER_DATA_FORM,
+  attributesFromBusinessForm,
+  businessFormFromRecord,
+} from "./master-data-form";
+
 const CATALOGS: Array<{ key: MasterDataCatalog; label: string; hint: string }> = [
   { key: "employees", label: "员工", hint: "员工编号、姓名、班组与岗位" },
   { key: "work-orders", label: "工单", hint: "生产工单及关联产品、计划数量" },
@@ -14,9 +20,21 @@ const CATALOGS: Array<{ key: MasterDataCatalog; label: string; hint: string }> =
   { key: "processes", label: "工序", hint: "工序编码、顺序与工作站" },
 ];
 
-export function MasterDataCenter({ onBack }: { onBack: () => void }) {
-  const api = useMemo(() => new MasterDataApi("/api/v1"), []);
-  const [catalog, setCatalog] = useState<MasterDataCatalog>("employees");
+interface MasterDataCenterProps {
+  onBack: () => void;
+  api?: MasterDataApi;
+  initialCatalog?: MasterDataCatalog;
+  onCatalogChange?: (catalog: MasterDataCatalog) => void;
+}
+
+export function MasterDataCenter({
+  onBack,
+  api,
+  initialCatalog = "employees",
+  onCatalogChange,
+}: MasterDataCenterProps) {
+  const client = useMemo(() => api ?? new MasterDataApi("/api/v1"), [api]);
+  const [catalog, setCatalog] = useState<MasterDataCatalog>(initialCatalog);
   const [items, setItems] = useState<MasterDataRecord[]>([]);
   const [selected, setSelected] = useState<MasterDataRecord | null>(null);
   const [audits, setAudits] = useState<MasterDataAudit[]>([]);
@@ -25,7 +43,8 @@ export function MasterDataCenter({ onBack }: { onBack: () => void }) {
   const [creating, setCreating] = useState(false);
   const [code, setCode] = useState("");
   const [displayName, setDisplayName] = useState("");
-  const [attributesText, setAttributesText] = useState("{}");
+  const [businessValues, setBusinessValues] = useState<Record<string, string>>({});
+  const [extraAttributesText, setExtraAttributesText] = useState("{}");
   const [reason, setReason] = useState("");
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -35,7 +54,7 @@ export function MasterDataCenter({ onBack }: { onBack: () => void }) {
     setLoading(true);
     setError(null);
     try {
-      const loaded = await api.list(nextCatalog, { includeInactive, query });
+      const loaded = await client.list(nextCatalog, { includeInactive, query });
       setItems(loaded);
       setSelected((current) => {
         if (current?.catalog !== nextCatalog) return null;
@@ -46,41 +65,58 @@ export function MasterDataCenter({ onBack }: { onBack: () => void }) {
     } finally {
       setLoading(false);
     }
-  }, [api, catalog, includeInactive, query]);
+  }, [catalog, client, includeInactive, query]);
 
   useEffect(() => {
     void refresh();
   }, [refresh]);
 
-  function chooseCatalog(next: MasterDataCatalog) {
-    setCatalog(next);
+  useEffect(() => {
+    if (catalog === initialCatalog) return;
+    setCatalog(initialCatalog);
+    resetEditor();
+    setQuery("");
+  }, [initialCatalog]); // The URL owns the active directory.
+
+  function resetEditor() {
     setSelected(null);
     setAudits([]);
     setCreating(false);
-    setQuery("");
     setMessage(null);
     setError(null);
   }
 
+  function chooseCatalog(next: MasterDataCatalog) {
+    if (next === catalog) return;
+    setCatalog(next);
+    resetEditor();
+    setQuery("");
+    onCatalogChange?.(next);
+  }
+
   async function chooseRecord(record: MasterDataRecord) {
+    const mapped = businessFormFromRecord(record.catalog, record.attributes);
     setCreating(false);
     setSelected(record);
     setCode(record.code);
     setDisplayName(record.display_name);
-    setAttributesText(JSON.stringify(record.attributes, null, 2));
+    setBusinessValues(mapped.values);
+    setExtraAttributesText(JSON.stringify(mapped.extra, null, 2));
     setReason("");
     setMessage(null);
     setError(null);
-    setAudits(await api.audits(record.catalog, record.code).catch(() => []));
+    setAudits(await client.audits(record.catalog, record.code).catch(() => []));
   }
 
   function startCreate() {
+    const mapped = businessFormFromRecord(catalog, {});
     setCreating(true);
     setSelected(null);
     setAudits([]);
     setCode("");
     setDisplayName("");
-    setAttributesText("{}");
+    setBusinessValues(mapped.values);
+    setExtraAttributesText("{}");
     setReason("");
     setMessage(null);
     setError(null);
@@ -89,44 +125,48 @@ export function MasterDataCenter({ onBack }: { onBack: () => void }) {
   async function save() {
     setError(null);
     setMessage(null);
-    let attributes: Record<string, unknown>;
+    let extra: Record<string, unknown>;
     try {
-      const parsed: unknown = JSON.parse(attributesText || "{}");
+      const parsed: unknown = JSON.parse(extraAttributesText || "{}");
       if (parsed === null || Array.isArray(parsed) || typeof parsed !== "object") {
-        throw new Error("属性必须是 JSON 对象");
+        throw new Error("更多信息必须是 JSON 对象");
       }
-      attributes = parsed as Record<string, unknown>;
+      extra = parsed as Record<string, unknown>;
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "属性 JSON 无效");
+      setError(cause instanceof Error ? cause.message : "更多信息格式无效");
       return;
     }
     if (!code.trim() || !displayName.trim() || !reason.trim()) {
       setError("编码、名称和变更原因均为必填项。");
       return;
     }
+    const attributes = attributesFromBusinessForm(catalog, businessValues, extra);
     setLoading(true);
     try {
-      const saved = creating
-        ? await api.create(catalog, {
+      const wasCreating = creating;
+      const saved = wasCreating
+        ? await client.create(catalog, {
           code: code.trim(),
           display_name: displayName.trim(),
           attributes,
           reason: reason.trim(),
         })
-        : await api.update(catalog, selected!.code, {
+        : await client.update(catalog, selected!.code, {
           expected_revision: selected!.revision,
           display_name: displayName.trim(),
           attributes,
           reason: reason.trim(),
         });
+      const mapped = businessFormFromRecord(catalog, saved.attributes);
       setCreating(false);
       setSelected(saved);
       setCode(saved.code);
       setDisplayName(saved.display_name);
-      setAttributesText(JSON.stringify(saved.attributes, null, 2));
+      setBusinessValues(mapped.values);
+      setExtraAttributesText(JSON.stringify(mapped.extra, null, 2));
       setReason("");
-      setMessage(creating ? "主数据已创建。" : `已保存第 ${saved.revision} 版。`);
-      setAudits(await api.audits(catalog, saved.code).catch(() => []));
+      setMessage(wasCreating ? "主数据已创建。" : `已保存第 ${saved.revision} 版。`);
+      setAudits(await client.audits(catalog, saved.code).catch(() => []));
       await refresh();
     } catch (cause) {
       setError(conflictMessage(cause));
@@ -146,7 +186,7 @@ export function MasterDataCenter({ onBack }: { onBack: () => void }) {
     setLoading(true);
     setError(null);
     try {
-      const saved = await api.setActive(
+      const saved = await client.setActive(
         catalog,
         selected.code,
         !selected.active,
@@ -155,8 +195,8 @@ export function MasterDataCenter({ onBack }: { onBack: () => void }) {
       );
       setSelected(saved);
       setReason("");
-      setMessage(saved.active ? "该记录已恢复使用。" : "该记录已停用，默认列表和复核选项将不再显示。 ");
-      setAudits(await api.audits(catalog, saved.code).catch(() => []));
+      setMessage(saved.active ? "该记录已恢复使用。" : "该记录已停用，默认列表和复核选项将不再显示。");
+      setAudits(await client.audits(catalog, saved.code).catch(() => []));
       await refresh();
     } catch (cause) {
       setError(conflictMessage(cause));
@@ -166,6 +206,7 @@ export function MasterDataCenter({ onBack }: { onBack: () => void }) {
   }
 
   const meta = CATALOGS.find((item) => item.key === catalog)!;
+  const form = MASTER_DATA_FORM[catalog];
   return (
     <main className="master-data-center">
       <header className="master-data-header">
@@ -182,6 +223,7 @@ export function MasterDataCenter({ onBack }: { onBack: () => void }) {
         {CATALOGS.map((item) => (
           <button
             type="button"
+            aria-label={item.label}
             className={item.key === catalog ? "active" : ""}
             key={item.key}
             onClick={() => chooseCatalog(item.key)}
@@ -208,7 +250,11 @@ export function MasterDataCenter({ onBack }: { onBack: () => void }) {
             显示已停用记录
           </label>
           <div className="master-data-list" aria-busy={loading}>
-            {items.length === 0 ? <p className="master-data-empty">{loading ? "正在加载…" : "暂无匹配记录"}</p> : items.map((item) => (
+            {items.length === 0 ? (
+              <p className="master-data-empty">
+                {loading ? "正在加载…" : query.trim() ? `没有找到匹配的${meta.label}` : `${meta.label}目录为空`}
+              </p>
+            ) : items.map((item) => (
               <button
                 type="button"
                 key={item.code}
@@ -231,13 +277,16 @@ export function MasterDataCenter({ onBack }: { onBack: () => void }) {
           ) : (
             <>
               <div className="master-data-editor-heading">
-                <div><span className="eyebrow">{creating ? "新建记录" : `修订 v${selected!.revision}`}</span><h2>{creating ? `新增${meta.label}` : selected!.display_name}</h2></div>
+                <div><span className="eyebrow">{creating ? "新建记录" : "维护记录"}</span><h2>{creating ? `新增${meta.label}` : selected!.display_name}</h2></div>
                 {selected && <span className={selected.active ? "status-pill active" : "status-pill inactive"}>{selected.active ? "使用中" : "已停用"}</span>}
               </div>
               <div className="master-data-form">
-                <label>编码<input value={code} readOnly={!creating} onChange={(event) => setCode(event.target.value)} placeholder="唯一且创建后不可修改" /></label>
-                <label>显示名称<input value={displayName} onChange={(event) => setDisplayName(event.target.value)} /></label>
-                <label className="wide">扩展属性（JSON 对象）<textarea value={attributesText} onChange={(event) => setAttributesText(event.target.value)} spellCheck={false} /></label>
+                <label>{form.codeLabel}<input value={code} readOnly={!creating} onChange={(event) => setCode(event.target.value)} placeholder="唯一且创建后不可修改" /></label>
+                <label>{form.nameLabel}<input value={displayName} onChange={(event) => setDisplayName(event.target.value)} /></label>
+                {form.fields.map((field) => (
+                  <label key={field.key}>{field.label}<input type={field.type ?? "text"} value={businessValues[field.key] ?? ""} onChange={(event) => setBusinessValues((current) => ({ ...current, [field.key]: event.target.value }))} /></label>
+                ))}
+                <label className="wide">更多信息<textarea value={extraAttributesText} onChange={(event) => setExtraAttributesText(event.target.value)} spellCheck={false} placeholder="未列出的附加属性（JSON 对象）" /></label>
                 <label className="wide">变更原因<textarea value={reason} onChange={(event) => setReason(event.target.value)} placeholder="用于不可篡改的审计记录" /></label>
               </div>
               <div className="master-data-actions">
@@ -245,10 +294,16 @@ export function MasterDataCenter({ onBack }: { onBack: () => void }) {
                 {selected && <button type="button" className={`button ${selected.active ? "button-danger" : "button-secondary"}`} disabled={loading} onClick={() => void changeActive()}>{selected.active ? "停用记录" : "恢复使用"}</button>}
               </div>
               {selected && (
-                <section className="master-data-audit">
-                  <h3>变更轨迹</h3>
-                  {audits.length === 0 ? <p>当前身份无审计读取权限，或暂无轨迹。</p> : <ol>{audits.map((audit) => <li key={audit.audit_id}><strong>{audit.event_type}</strong><span>v{audit.revision} · {audit.actor_id} · {new Date(audit.timestamp).toLocaleString()}</span><p>{audit.reason}</p></li>)}</ol>}
-                </section>
+                <>
+                  <details>
+                    <summary>追溯详情</summary>
+                    <p>当前修订版本：{selected.revision}</p>
+                  </details>
+                  <section className="master-data-audit">
+                    <h3>变更轨迹</h3>
+                    {audits.length === 0 ? <p>当前身份无审计读取权限，或暂无轨迹。</p> : <ol>{audits.map((audit) => <li key={audit.audit_id}><strong>{audit.event_type}</strong><span>版本 {audit.revision} · {audit.actor_id} · {new Date(audit.timestamp).toLocaleString()}</span><p>{audit.reason}</p></li>)}</ol>}
+                  </section>
+                </>
               )}
             </>
           )}
@@ -264,7 +319,7 @@ function toMessage(cause: unknown): string {
 
 function conflictMessage(cause: unknown): string {
   if (cause instanceof ApiRequestError && cause.code === "MASTER_DATA_REVISION_CONFLICT") {
-    return "该记录已被其他人更新，列表已刷新；请重新选择后再修改。";
+    return "该记录已被其他人修改，请刷新后重试";
   }
   if (cause instanceof ApiRequestError && cause.code === "PERMISSION_DENIED") {
     return "当前身份只有读取权限；主数据写入需要管理员权限。";

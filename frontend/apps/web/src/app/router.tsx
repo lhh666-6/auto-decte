@@ -1,5 +1,7 @@
 import { Link, Navigate, Route, Routes, useLocation, useNavigate, useParams } from "react-router-dom";
 
+import type { MasterDataCatalog } from "@form-detection/api-client";
+
 import { ExportCenter } from "../ExportCenter_ds";
 import { MasterDataCenter } from "../MasterDataCenter_ds";
 import { TemplateStudio } from "../TemplateStudio_ds";
@@ -55,7 +57,18 @@ function TemplatesRoute() {
 
 function MasterDataRoute() {
   const navigate = useNavigate();
-  return <MasterDataCenter onBack={() => navigate("/workbench/review")} />;
+  const location = useLocation();
+  const segment = location.pathname.split("/").at(-1);
+  const catalog = (["employees", "work-orders", "products", "processes"] as const).includes(
+    segment as MasterDataCatalog,
+  ) ? segment as MasterDataCatalog : "employees";
+  return (
+    <MasterDataCenter
+      initialCatalog={catalog}
+      onCatalogChange={(nextCatalog) => navigate(`/master-data/${nextCatalog}`)}
+      onBack={() => navigate("/workbench/review")}
+    />
+  );
 }
 
 function ExportsRoute() {
