@@ -2,85 +2,56 @@
 
 最后更新：2026-07-17
 
-## 2026-07-17 前端重建交接
+## 本轮结论
 
-人工试用和外部界面方案已经完成归纳，下一开发方向正式确定为“工业表单前端重建与交互优化”。完整执行顺序见 [前端重建实施计划](superpowers/plans/2026-07-17-frontend-rebuild-implementation.md)，当前界面真实行为与不可破坏语义见 [前端交互闭环说明](FRONTEND_INTERACTION_GUIDE.md)。后续队友只需读取这两份文件、本状态文件、`NEXT_TASK.md` 和 `DECISIONS.md`，然后按计划逐项完成，无需扫描整个仓库。
+工业表单前端重建实施计划的任务 1—16 已按顺序完成。当前代码基线为 `e04b617 fix(frontend): localize export exclusion reasons`，集成分支为 `modular-architecture`；最终文档提交和远端同步在本文件更新后完成。
 
-产品规格唯一依据为用户提供的 `frontend_rebuild_summary.md`。开发重点固定为：先完成核心双栏审核闭环，再建立统一应用外壳和路由，最后压缩模板、基础数据和导出模块；不得加入原文没有批准的产品功能。
+本轮没有改变审核事务、模板版本、主数据乐观锁、导出批次或识别算法等后端业务不变量。前端已从单页功能区切换重建为有固定路由、统一外壳和中文业务语言的 React Web 应用。
 
-本轮只更新文档，没有修改业务代码或重新运行自动化测试。最近功能基线仍为 `35c1243 fix(frontend): support exported form corrections`；文档提交推送后，队友从 `origin/modular-architecture` 拉取继续开发。
+## 已完成的前端能力
 
-已确认的实施边界：前端可以利用现有任务查询接口原地显示识别进度；但“待重新拍照表单上传新照片并永久保存新旧替换关系”缺少生产 API，不能由纯前端伪造。该缺口已在实施计划和 `NEXT_TASK.md` 中设为硬阻塞。
-
-## 状态依据
-
-| 项目 | 当前值 |
+| 模块 | 当前可用能力 |
 |---|---|
-| 集成分支 | `modular-architecture` |
-| 当前 HEAD | `35c1243 fix(frontend): support exported form corrections` |
-| 远程同步 | 本地 `modular-architecture` 领先 `origin/modular-architecture` 27 个提交，尚未推送 |
-| 工作树 | 本轮文档更新前干净，无未提交业务代码 |
-| Python 测试 | 最近全量 `264 passed`；本轮 QR/模板定向验证 `26 passed` |
-| Ruff | 全部通过 |
-| mypy | 128 个源文件无问题 |
-| 前端测试 | `53 passed` |
-| 前端构建 | TypeScript 类型检查与 Web 生产构建通过 |
-| 浏览器人工验收 | 已启动真实 Web/API 链路并进行部分试用；发现权限与纸面模板产品适配问题，尚未完成最终验收 |
+| 应用外壳与路由 | 固定一级导航；审核、模板、基础数据、导出均有可复制 URL；刷新、前进和后退保持模块位置；未知地址显示应用内 404。 |
+| 审核工作台 | 待确认类型、待核对、待重新拍照共用工作台骨架；桌面双栏、可拖动分隔线、窄屏图片/电子表格切换；队列、表单上下文和底部动作统一。 |
+| 图片证据 | 原图/校正图切换、25%–400% 缩放、滚轮、拖动、90° 旋转、复位、字段框显示隐藏和字段裁片。 |
+| 字段审核 | 图片框与字段行双向联动；首个问题字段定位；候选、规则、主数据选项和错误说明；草稿、首次确认、更正、退回、作废保持原 API 语义。 |
+| 分类与任务进度 | 二维码失败时必须选择精确已发布版本并填写原因；分类后原地轮询识别任务，显示中文步骤、进度、失败原因和重试方向。 |
+| 模板中心 | 顶部搜索/筛选/创建工具栏；精确版本路由；发布版本只读；调优克隆草稿；预览支持缩放、适合页面/宽度、搜索和双向选择；模板包导入仍明确为未开放。 |
+| 基础数据 | 员工、工单、产品、工序按 URL 正确定位；业务字段表单替代直接 JSON；未知扩展属性保留在“更多信息”；版本冲突、停用/恢复和审计语义保留。 |
+| 导出数据 | “选择数据 → 检查数据 → 生成 Excel → 下载文件”四步流程；排除原因和状态中文化；映射、哈希、批次 ID 等技术信息只在追溯详情显示；重导保留旧文件和替代关系。 |
+| 通用交互 | 统一问题提示、危险操作确认框、追溯详情和状态徽标；主要按钮使用明确的“动作 + 对象”文案，键盘和焦点行为有测试覆盖。 |
 
-以上全量自动化结果来自本轮功能收尾验证；`26 passed` 是 2026-07-17 对二维码生成、打印导出、精确版本绑定、图片导入和模板 API 的定向复测。当前工作只记录人工试用发现，不修改业务代码。
+## 验证结果
 
-## 整体状态
+### 自动化验证
 
-项目已经从 Streamlit 工程原型演进为 Windows 本地优先的模块化单体 Demo。模板设计、纸质表单识别基础、图片导入、人工审核、版本审计和主数据管理已经形成可运行链路；React Web 前端已替换主要占位页面，并保留未来由 Tauri 封装同一前端的架构方向。
+- Python：`264 passed`。测试使用代码默认身份 `local-operator/OPERATOR` 覆盖仓库本地 `.env` 的管理员试用配置，并使用仓库内临时目录避开系统临时目录权限限制。
+- Ruff：通过。
+- mypy：`126 source files` 无问题。
+- 前端：`25 passed` 测试文件、`124 passed` 测试；TypeScript 类型检查通过。
+- Web 生产构建：通过，Vite 转换 `76 modules`。
 
-模板化 XLSX 导出与重导中心已经完成。当前阶段转为人工验证和问题发现：先验证真实工厂纸表、打印、拍照、识别与审核体验，再决定模板产品化改造的实施顺序。此阶段不新增功能。
+### 真实浏览器验收
 
-## 已完成模块
+- 在真实 API、真实 Vite Web 和现有表单数据上核对了统一外壳、审核队列、20 个字段框、字段表格、原图/校正图、缩放、旋转、复位、字段裁片及首个问题字段。
+- 核对了模板创建弹窗、产品 URL 直达和产品业务表单、导出四步检查结果及重拍队列空状态。
+- 在 `390 × 844` 视口核对了图片/电子表格切换，字段选择状态保持正确。
+- 浏览器验收发现后端排除原因仍可能返回英文；已在 `e04b617` 增加按原因码映射的中文文案和回归测试，真实页面复验后不再显示对应英文原因。
+- 为避免改变共享演示数据，浏览器验收未提交审核、分类、停用或导出等写操作；这些写入分支由组件/API 自动化测试覆盖。
 
-| 模块 | 已完成能力 | 主要证据 |
-|---|---|---|
-| 基础架构 | 模块化单体、领域/应用/适配器分层、SQLite、UoW、配置与组合根 | `app/domain/`、`app/application/`、`app/modules/`、`app/services/container.py` |
-| 身份与权限 | 5 个角色、显式权限矩阵、默认最小权限 `local-operator/OPERATOR` | `app/modules/identity_access/`、`7293ea3` |
-| 图片与证据 | 受控上传、原图 SHA-256 去重、不可变证据、派生图允许重复、失败回滚 | `app/api/routers/imports_ds.py`、`app/adapters/storage/`、`bd54ab3` |
-| 模板中心 | 模板库、草稿、只读发布版本、复制调优、预检、发布、退役、名称与用途 | `app/api/routers/templates_ds.py`、`frontend/apps/web/src/TemplateLibrary_ds.tsx` |
-| 模板设计器 | A4/A5 画布、字段选择、拖动、缩放、键盘移动、属性编辑和保护区 | `TemplateCanvasEditor_ds.tsx`、`FieldInspector_ds.tsx`、`a8374b6` |
-| 企业模板 | 4 个工资/生产模板幂等 seed，包含字段、规则、导出目标和 PNG/PDF | `app/modules/templates/seed_templates_ds.py`、`3ed353c` |
-| 识别基础 | 模板 QR、ArUco 10/11/12/13、标准画布、字段裁切、RecognitionAttempt、OCR/OMR 候选 | `app/application/recognize_forms.py`、`app/adapters/recognition/` |
-| 审核工作台 | 左图右表、真实队列、字段联动、草稿、Lease、退回、作废、人工分类、原子确认并领取下一张 | `app/modules/review/`、`app/api/routers/review_ds.py`、`frontend/apps/web/src/App.tsx`、`a20e295` |
-| 主数据 | 员工、工单、产品、工序 CRUD、搜索、乐观版本、停用/恢复、审计、审核字段下拉联动 | `app/modules/master_data/`、`MasterDataCenter_ds.tsx`、`5b9de49` |
-| 任务基础 | SQLite 任务、幂等键、状态机、事件序列、SSE、重启中断恢复 | `app/modules/tasks/`、`app/infrastructure/tasks/`、`app/api/routers/tasks_ds.py` |
-| 审计与运维 | RecordVersion、AuditEvent、备份恢复、完整性检查、结构化日志骨架 | `app/infrastructure/backup/`、`app/modules/audit/` |
-| 导出闭环 | 模板映射预览、持久化 `XLSX_EXPORT` 任务、批次历史、受控下载、公式注入防护、旧文件保留、`REEXPORT_REQUIRED` 与显式重导替代关系 | `app/api/routers/exports_ds.py`、`app/modules/reporting/handler_ds.py`、`frontend/apps/web/src/ExportCenter_ds.tsx`、`tests/api/test_exports_api_ds.py` |
+## 仍未完成或受阻的能力
 
-## 正在开发模块
+1. **重新拍照的永久追溯仍受后端阻塞**：现有 `POST /api/v1/imports` 只会创建新表单，尚无生产 API 将新照片绑定为 `RECAPTURE_REQUIRED` 原表单的 replacement evidence。前端只诚实提示限制，不使用内存或 `localStorage` 冒充永久关系。
+2. **真实现场识别尚未量化**：仍需要 40–60 张来自不同打印机、手机、光线、折痕、倾斜和二维码污损条件的企业样表，才能给出现场准确率结论。
+3. **生产任务消费未完全独立化**：`FORM_IMPORT`、`FORM_RECOGNITION`、`XLSX_EXPORT` 尚未全部由独立生产 Worker/Handler 消费。
+4. **模板包和纸张实例未实现**：安全 ZIP 导入/导出、manifest/hash 校验、打印批次和唯一 `sheet_instance_id` 仍需独立任务。
+5. **中文 OCR 与桌面设备接入未完成**：文本字段仍以人工核对为主；Tauri、相机、扫描仪、Windows 安装包仍是后续工程。
+6. **纸面模板产品化方向尚待授权**：自定义毫米尺寸、受约束小模块、网格吸附、人员匹配和权限体验不属于本轮前端重建范围。
 
-无。当前只进行人工验证、样本收集和问题记录，工作树没有未提交业务代码。
+## 继续协作
 
-当前目标为“人工验证与问题收集”，范围见 [NEXT_TASK.md](NEXT_TASK.md)。在形成真实样本证据和明确实施优先级前，不扩展模板、识别、审核或主数据模块。
-
-## 2026-07-17 人工试用发现
-
-1. **本地权限与产品入口冲突**：系统没有登录界面，但默认 `OPERATOR` 会阻止图片导入和模板创建，用户只能通过临时 ADMIN 配置继续试用。需要在未来明确“本地单用户完整能力”与“多用户部署权限矩阵”的产品边界；当前不改权限实现。
-2. **现有纸面模板过于通用**：自由手写区域和通用字段过多，不符合工厂希望减少工人自由发挥、提高格式化程度和降低识别难度的目标。
-3. **纸张尺寸模型过窄**：当前设计器和 API 只提供 A4/A5；真实表格可能是尺寸不固定的横条，需要支持任意毫米宽高、横竖方向和多联裁切。
-4. **模板搭建粒度不合适**：需要数字方格、单选方块、姓名/签名线、固定明细行、异常短说明、二维码安全区等受约束小模块，并采用毫米网格吸附；不应退化为完全自由绘图工具。
-5. **人员核验规则未产品化**：工号暂按纯数字逐格识别并与员工库匹配，姓名只供人工对照；工号不存在时应允许保存复核，但禁止正式工资导出。
-6. **现场识别效果尚无证据**：自动测试证明了干净样张的二维码闭环，但还没有覆盖不同打印机、手机、光线、折痕、缩放和二维码污损的真实工厂样本。
-7. **原始工资表应作为产品依据**：后续母版需从根目录现有计时、计件和复杂生产明细工作簿提炼，不以当前演示模板的视觉结构为最终业务结构。
-
-## 已知问题与未完成项
-
-1. ~~**导出中心尚未产品化**~~：已完成导出 API、React 导出中心、预览、受控下载、持久化任务、批次快照和重导替代关系。
-2. ~~**XLSX 公式注入防护未验收**~~：已增加 `= + - @` 开头文本的防护与测试。
-3. **生产任务消费未闭环**：任务状态机和 SSE 已有，但 `FORM_IMPORT`、`FORM_RECOGNITION`、`XLSX_EXPORT` 尚未全部由独立生产 Worker/Handler 消费。
-4. **模板包与纸张实例未实现**：缺少安全 ZIP 导入/导出、manifest/hash 校验、打印批次和每张纸唯一 `sheet_instance_id`。
-5. **审核高级工具未完成**：缺少显式上一张/下一张、跨筛选队列快照、图片缩放/旋转/复位、字段裁切详情、完整三阶段规则面板和导出影响 UI。
-6. **中文 OCR 未接入**：日期、班次、姓名等文本字段仍以人工录入为主，系统不会伪造识别结果。
-7. **旧库内置模板冲突需要人工决策**：如果旧库已有同名 V1 模板但内容不同，应用会保留旧模板、记录警告并继续启动，不会自动覆盖或自动安装其余 seed。后续需通过新版本或显式迁移解决。
-8. **桌面化尚为骨架**：Tauri v2、File/Camera/Scanner/Audio Ports、Windows 安装包和真实设备接入未完成。
-9. **人工验收仍不充分**：本轮没有在最新拉取状态下重新走完整浏览器闭环；40–60 张真实企业样表的量化验收也尚未完成。
-
-## 继续工作前
+协作者应先读取 [NEXT_TASK.md](NEXT_TASK.md)、[前端交互闭环说明](FRONTEND_INTERACTION_GUIDE.md)、[实施计划](superpowers/plans/2026-07-17-frontend-rebuild-implementation.md) 和 [DECISIONS.md](DECISIONS.md)。拉取命令：
 
 ```powershell
 git fetch origin
@@ -89,4 +60,4 @@ git pull --ff-only origin modular-architecture
 git status --short
 ```
 
-预期 `git status --short` 无输出。继续开发前还应阅读 [NEXT_TASK.md](NEXT_TASK.md)、[DECISIONS.md](DECISIONS.md) 和最新 [handoff](handoffs/2026-07-16-template-review-master-data.md)。
+预期工作树干净。新增工作必须从 `NEXT_TASK.md` 的真实未完成项中获得明确授权，不应重新实现已完成的前端重建。
