@@ -20,7 +20,11 @@ import {
 } from "./template-studio-model";
 import { nextScreen, type StudioAction, type StudioScreen } from "./template-studio-state";
 
-type Props = { onBack: () => void };
+type Props = {
+  onBack: () => void;
+  initialScreen?: StudioScreen;
+  onScreenChange?: (screen: StudioScreen) => void;
+};
 
 const INITIAL_FIELD: TemplateField = {
   field_key: "worker_name",
@@ -45,12 +49,23 @@ const INITIAL_FIELD: TemplateField = {
   region: { x: 0.1, y: 0.2, width: 0.22, height: 0.05 },
 };
 
-export function TemplateStudio({ onBack }: Props) {
+export function TemplateStudio({ onBack, initialScreen, onScreenChange }: Props) {
   const api = useMemo(() => new TemplateApi("/api/v1"), []);
-  const [screen, setScreen] = useState<StudioScreen>({ kind: "library" });
+  const [screen, setScreen] = useState<StudioScreen>(initialScreen ?? { kind: "library" });
+
+  const initialVersionId = initialScreen && initialScreen.kind !== "library"
+    ? initialScreen.versionId
+    : null;
+  useEffect(() => {
+    setScreen(initialScreen ?? { kind: "library" });
+  }, [initialScreen?.kind, initialVersionId]);
 
   function navigate(action: StudioAction) {
-    setScreen((current) => nextScreen(current, action));
+    setScreen((current) => {
+      const next = nextScreen(current, action);
+      onScreenChange?.(next);
+      return next;
+    });
   }
 
   async function createBlank(

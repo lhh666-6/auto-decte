@@ -33,7 +33,24 @@ function ReviewRoute() {
 
 function TemplatesRoute() {
   const navigate = useNavigate();
-  return <TemplateStudio onBack={() => navigate("/workbench/review")} />;
+  const location = useLocation();
+  const { templateId, version } = useParams();
+  const initialScreen = version
+    ? { kind: "preview" as const, versionId: version }
+    : location.pathname.endsWith("/draft") && templateId
+      ? { kind: "editor" as const, versionId: templateId }
+      : { kind: "library" as const };
+  return (
+    <TemplateStudio
+      initialScreen={initialScreen}
+      onBack={() => navigate("/workbench/review")}
+      onScreenChange={(screen) => {
+        if (screen.kind === "library") navigate("/templates");
+        else if (screen.kind === "preview") navigate(`/templates/${screen.versionId}/versions/${screen.versionId}`);
+        else navigate(`/templates/${screen.versionId}/draft`);
+      }}
+    />
+  );
 }
 
 function MasterDataRoute() {
