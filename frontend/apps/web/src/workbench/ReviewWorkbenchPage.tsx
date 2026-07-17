@@ -19,6 +19,7 @@ import {
 import { getReviewStatusCopy } from "../ui/business-language";
 import { EvidenceViewer } from "./EvidenceViewer";
 import { ClassificationStage } from "./ClassificationStage";
+import { RecaptureStage } from "./RecaptureStage";
 import { FieldDetailPanel } from "./FieldDetailPanel";
 import { FieldReviewTable } from "./FieldReviewTable";
 import { selectFirstIssueFieldId } from "./field-navigation";
@@ -665,6 +666,12 @@ export function ReviewWorkbenchPage({
               await refreshQueues();
             }}
             onError={setError}
+          />
+        ) : detail.form.review_status === "RECAPTURE_REQUIRED" ? (
+          <RecaptureStage
+            detail={detail}
+            history={history}
+            onUpload={(file) => void importImage(file)}
           />
         ) : (
           <>
