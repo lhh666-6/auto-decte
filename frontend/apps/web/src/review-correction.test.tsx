@@ -184,4 +184,63 @@ describe("review correction", () => {
       "Content-Type": "application/json",
     });
   });
+
+  it("does not allow review writes without an active lease", async () => {
+    const user = userEvent.setup();
+    const fetcher = vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      const path = String(input);
+      const method = init?.method ?? "GET";
+      if (path.includes("/forms/queue/")) return jsonResponse([]);
+      if (path === "/api/v1/forms/FORM-EXPORTED" && method === "GET") {
+        return jsonResponse(workbench(1));
+      }
+      if (path === "/api/v1/forms/FORM-EXPORTED/review-history") {
+        return jsonResponse({ versions: [], audits: [] });
+      }
+      return jsonResponse({ code: "UNEXPECTED", detail: `${method} ${path}` }, 404);
+    });
+    render(<App />);
+
+    await user.type(screen.getByLabelText("表单编号"), "FORM-EXPORTED");
+    await user.click(screen.getByRole("button", { name: "加载表单" }));
+    const field = await screen.findByLabelText("工时 确认值");
+    await user.clear(field);
+    await user.type(field, "9");
+
+    for (const name of ["退回", "作废", "保存草稿", "保存更正"]) {
+      expect((screen.getByRole("button", { name }) as HTMLButtonElement).disabled).toBe(true);
+    }
+    expect(fetcher.mock.calls.some(([path, init]) => (
+      init?.method !== undefined && init.method !== "GET" && String(path).includes("/forms/FORM-EXPORTED/")
+    ))).toBe(false);
+  });
+
+  it("asks before switching modules with unsaved review edits", async () => {
+    const user = userEvent.setup();
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      const path = String(input);
+      const method = init?.method ?? "GET";
+      if (path.includes("/forms/queue/")) return jsonResponse([]);
+      if (path === "/api/v1/forms/FORM-EXPORTED" && method === "GET") {
+        return jsonResponse(workbench(1));
+      }
+      if (path === "/api/v1/forms/FORM-EXPORTED/review-history") {
+        return jsonResponse({ versions: [], audits: [] });
+      }
+      return jsonResponse({ code: "UNEXPECTED", detail: `${method} ${path}` }, 404);
+    });
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    render(<App />);
+
+    await user.type(screen.getByLabelText("表单编号"), "FORM-EXPORTED");
+    await user.click(screen.getByRole("button", { name: "加载表单" }));
+    const field = await screen.findByLabelText("工时 确认值");
+    await user.clear(field);
+    await user.type(field, "9");
+    await user.click(screen.getByRole("button", { name: "模板与字段" }));
+
+    expect(confirm).toHaveBeenCalledWith("当前有尚未保存的审核修改，确定离开吗？");
+    expect(screen.getByRole("button", { name: "模板与字段" })).toBeTruthy();
+    expect(screen.getByLabelText("工时 确认值")).toBeTruthy();
+  });
 });
