@@ -12,6 +12,9 @@ import {
   attributesFromBusinessForm,
   businessFormFromRecord,
 } from "./master-data-form";
+import { ConfirmDialog } from "./ui/ConfirmDialog";
+import { ProblemNotice } from "./ui/ProblemNotice";
+import { TraceDetails } from "./ui/TraceDetails";
 
 const CATALOGS: Array<{ key: MasterDataCatalog; label: string; hint: string }> = [
   { key: "employees", label: "员工", hint: "员工编号、姓名、班组与岗位" },
@@ -49,6 +52,7 @@ export function MasterDataCenter({
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [confirmDeactivate, setConfirmDeactivate] = useState(false);
 
   const refresh = useCallback(async (nextCatalog = catalog) => {
     setLoading(true);
@@ -233,11 +237,8 @@ export function MasterDataCenter({
         ))}
       </nav>
 
-      {(error || message) && (
-        <div className={error ? "error-banner master-data-message" : "success-banner master-data-message"} role="status">
-          {error ?? message}
-        </div>
-      )}
+      {error ? <ProblemNotice title="基础数据没有保存" reason={error} actionLabel="返回并检查填写内容" onAction={() => setError(null)} /> : null}
+      {message ? <div className="success-banner master-data-message" role="status">{message}</div> : null}
 
       <div className="master-data-layout">
         <section className="master-data-list-card">
@@ -291,14 +292,11 @@ export function MasterDataCenter({
               </div>
               <div className="master-data-actions">
                 <button type="button" className="button button-primary" disabled={loading} onClick={() => void save()}>{creating ? "创建记录" : "保存新版本"}</button>
-                {selected && <button type="button" className={`button ${selected.active ? "button-danger" : "button-secondary"}`} disabled={loading} onClick={() => void changeActive()}>{selected.active ? "停用记录" : "恢复使用"}</button>}
+                {selected && <button type="button" className={`button ${selected.active ? "button-danger" : "button-secondary"}`} disabled={loading} onClick={() => selected.active ? setConfirmDeactivate(true) : void changeActive()}>{selected.active ? "停用基础数据" : "恢复使用"}</button>}
               </div>
               {selected && (
                 <>
-                  <details>
-                    <summary>追溯详情</summary>
-                    <p>当前修订版本：{selected.revision}</p>
-                  </details>
+                  <TraceDetails items={[{ label: "当前修订版本", value: String(selected.revision) }]} />
                   <section className="master-data-audit">
                     <h3>变更轨迹</h3>
                     {audits.length === 0 ? <p>当前身份无审计读取权限，或暂无轨迹。</p> : <ol>{audits.map((audit) => <li key={audit.audit_id}><strong>{audit.event_type}</strong><span>版本 {audit.revision} · {audit.actor_id} · {new Date(audit.timestamp).toLocaleString()}</span><p>{audit.reason}</p></li>)}</ol>}
@@ -309,6 +307,21 @@ export function MasterDataCenter({
           )}
         </section>
       </div>
+      {confirmDeactivate && selected ? (
+        <ConfirmDialog
+          title="停用当前基础数据"
+          description="停用后不会删除历史记录，但默认列表、审核选项和新模板引用将不再显示它。"
+          confirmLabel="确认停用基础数据"
+          cancelLabel="取消停用"
+          loading={loading}
+          confirmDisabled={!reason.trim()}
+          onCancel={() => setConfirmDeactivate(false)}
+          onConfirm={() => {
+            setConfirmDeactivate(false);
+            void changeActive();
+          }}
+        />
+      ) : null}
     </main>
   );
 }

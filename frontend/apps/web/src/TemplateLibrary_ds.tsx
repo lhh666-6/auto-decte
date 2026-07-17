@@ -1,6 +1,9 @@
 import { isEditableTemplateStatus, type TemplateApi, type TemplateLibraryItem, type TemplatePage } from "@form-detection/api-client";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import { ConfirmDialog } from "./ui/ConfirmDialog";
+import { ProblemNotice } from "./ui/ProblemNotice";
+
 type Props = {
   api: TemplateApi;
   onBack: () => void;
@@ -72,7 +75,7 @@ export function TemplateLibrary({ api, onBack, onSelectPublished, onOpenDraft, o
         <button className="button button-primary" onClick={() => setShowCreate(true)}>创建模板</button>
       </section>
 
-      {error && <div className="error-banner" role="alert"><span>{error}</span><button className="text-button" onClick={() => void loadTemplates()}>重试</button></div>}
+      {error && <ProblemNotice title="模板库没有加载完成" reason={error} actionLabel="重新加载模板" onAction={() => void loadTemplates()} />}
       <section className="template-library-content" aria-live="polite">
         <div className="library-summary"><strong>{loading ? "正在加载模板库…" : `共 ${visibleTemplates.length} 个模板`}</strong><span>模板数据来自已保存的版本记录</span></div>
         {!loading && !error && visibleTemplates.length === 0 && <div className="library-empty"><h2>还没有可显示的模板</h2><p>创建空白模板后，草稿会在这里显示；系统不会虚构已发布版本。</p></div>}
@@ -152,6 +155,7 @@ function TemplateCard({ api, item, onChanged, onSelectPublished, onOpenDraft }: 
   const [purpose, setPurpose] = useState(item.description);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [pendingAction, setPendingAction] = useState<{ kind: "discard"; versionId: string } | { kind: "retire" } | null>(null);
 
   async function run(action: () => Promise<void>) {
     setBusy(true);
@@ -160,12 +164,10 @@ function TemplateCard({ api, item, onChanged, onSelectPublished, onOpenDraft }: 
   }
 
   async function discardDraft(versionId: string) {
-    if (!window.confirm("确定放弃这个草稿吗？草稿字段和未发布修改将被永久删除。")) return;
     await run(async () => { await api.discardDraft(versionId); await onChanged(); });
   }
 
   async function retire() {
-    if (!window.confirm("确定退役此模板吗？历史表单和打印件会保留，但不能再用于新分类和打印。")) return;
     await run(async () => { await api.retireTemplate(item.template_key); await onChanged(); });
   }
 
@@ -189,8 +191,8 @@ function TemplateCard({ api, item, onChanged, onSelectPublished, onOpenDraft }: 
       {showMore ? (
         <div className="template-card-more">
           <button className="text-button" disabled={busy} onClick={() => setEditingMetadata((value) => !value)}>编辑名称与说明</button>
-          {isEditableTemplateStatus(item.status) ? <button className="text-button danger" disabled={busy} onClick={() => void discardDraft(item.version_id)}>放弃草稿</button> : null}
-          {published ? <button className="text-button danger" disabled={busy || Boolean(item.active_draft)} onClick={() => void retire()}>退役模板</button> : null}
+          {isEditableTemplateStatus(item.status) ? <button className="text-button danger" disabled={busy} onClick={() => setPendingAction({ kind: "discard", versionId: item.version_id })}>放弃草稿</button> : null}
+          {published ? <button className="text-button danger" disabled={busy || Boolean(item.active_draft)} onClick={() => setPendingAction({ kind: "retire" })}>退役模板</button> : null}
           {item.active_draft ? <button className="text-button" onClick={() => onOpenDraft(item.active_draft!.version_id)}>继续编辑草稿 V{item.active_draft.version}</button> : null}
         </div>
       ) : null}
@@ -200,6 +202,22 @@ function TemplateCard({ api, item, onChanged, onSelectPublished, onOpenDraft }: 
           <label>用途说明<textarea value={purpose} maxLength={500} disabled={busy} onChange={(event) => setPurpose(event.target.value)} /></label>
           <div><button className="button button-primary" disabled={busy || !name.trim()} onClick={() => void run(async () => { await api.updateMetadata(item.template_key, name.trim(), purpose.trim()); setEditingMetadata(false); await onChanged(); })}>保存信息</button><button className="button button-secondary" onClick={() => setEditingMetadata(false)}>取消</button></div>
         </div>
+      ) : null}
+      {pendingAction ? (
+        <ConfirmDialog
+          title={pendingAction.kind === "discard" ? "放弃当前模板草稿" : "退役当前模板"}
+          description={pendingAction.kind === "discard" ? "草稿字段和未发布修改将被永久删除。" : "历史表单和打印件会保留，但该模板不能再用于新分类和打印。"}
+          confirmLabel={pendingAction.kind === "discard" ? "确认放弃模板草稿" : "确认退役模板"}
+          cancelLabel="取消操作"
+          loading={busy}
+          onCancel={() => setPendingAction(null)}
+          onConfirm={() => {
+            const action = pendingAction;
+            setPendingAction(null);
+            if (action.kind === "discard") void discardDraft(action.versionId);
+            else void retire();
+          }}
+        />
       ) : null}
     </article>
   );

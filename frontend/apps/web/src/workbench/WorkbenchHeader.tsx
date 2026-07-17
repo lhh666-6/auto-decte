@@ -1,6 +1,7 @@
 import type { ReviewLease, WorkbenchDetail } from "@form-detection/api-client";
 
 import { getExportStatusCopy, getReviewStatusCopy } from "../ui/business-language";
+import { TraceDetails } from "../ui/TraceDetails";
 
 interface WorkbenchHeaderProps {
   formIdInput: string;
@@ -70,10 +71,10 @@ export function WorkbenchHeader({
           </span>
         )}
         {detail && (
-          <details className="trace-details-inline">
-            <summary>追溯详情</summary>
-            <span>{reviewStatus?.technicalLabel} · {exportStatus?.technicalLabel}</span>
-          </details>
+          <TraceDetails items={[
+            { label: "审核状态代码", value: reviewStatus?.technicalLabel ?? "" },
+            { label: "导出状态代码", value: exportStatus?.technicalLabel ?? "" },
+          ]} />
         )}
       </div>
       <div className="lease-summary">

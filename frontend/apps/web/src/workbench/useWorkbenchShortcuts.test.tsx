@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import { cleanup, fireEvent, render } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { ReviewLease, WorkbenchDetail } from "@form-detection/api-client";
@@ -123,14 +124,17 @@ describe("workbench empty and error states", () => {
     expect(queryByTestId("review-workbench-grid")).toBeNull();
   });
 
-  it("turns a technical request error into guidance and keeps its code in trace details", () => {
-    const { getByText } = render(
+  it("turns a technical request error into guidance and keeps its code in trace details", async () => {
+    const user = userEvent.setup();
+    const { getByText, queryByText } = render(
       <WorkbenchErrorNotice error="LEASE_CONFLICT：审核锁已被其他人获取" />,
     );
 
     expect(getByText("操作没有完成")).toBeTruthy();
     expect(getByText(/审核锁已被其他人获取/)).toBeTruthy();
     expect(getByText(/请刷新状态后重试/)).toBeTruthy();
+    expect(queryByText("LEASE_CONFLICT")).toBeNull();
+    await user.click(getByText("追溯详情"));
     expect(getByText("LEASE_CONFLICT")).toBeTruthy();
   });
 });

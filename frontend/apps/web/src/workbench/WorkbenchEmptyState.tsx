@@ -1,5 +1,7 @@
 import type { QueueKey } from "./workbench-types";
 
+import { ProblemNotice } from "../ui/ProblemNotice";
+
 interface WorkbenchEmptyStateProps {
   queue: Exclude<QueueKey, "exportable">;
   onUpload(): void;
@@ -45,19 +47,5 @@ export function WorkbenchErrorNotice({ error }: { error: string }) {
   const code = match?.[1] ?? null;
   const message = match?.[2] ?? error;
 
-  return (
-    <section className="error-banner workbench-error" role="alert">
-      <div>
-        <strong>操作没有完成</strong>
-        <p>{message}，当前步骤不能继续。</p>
-        <p>请刷新状态后重试；若仍失败，请检查输入与网络连接。</p>
-        {code ? (
-          <details>
-            <summary>追溯详情</summary>
-            <code>{code}</code>
-          </details>
-        ) : null}
-      </div>
-    </section>
-  );
+  return <ProblemNotice title="操作没有完成" reason={`${message}，当前步骤不能继续。请刷新状态后重试；若仍失败，请检查输入与网络连接。`} actionLabel="刷新当前页面" onAction={() => window.location.reload()} code={code} />;
 }

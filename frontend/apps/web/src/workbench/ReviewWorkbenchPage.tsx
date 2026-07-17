@@ -17,6 +17,7 @@ import {
   reviewValueIssue,
 } from "../review-model";
 import { getReviewStatusCopy } from "../ui/business-language";
+import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { EvidenceViewer } from "./EvidenceViewer";
 import { ClassificationStage } from "./ClassificationStage";
 import { RecaptureStage } from "./RecaptureStage";
@@ -811,44 +812,27 @@ function ReviewActionDialog({
 }) {
   const isVoid = action === "void";
   return (
-    <div className="dialog-backdrop" role="presentation">
-      <section
-        className="review-action-dialog"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="review-action-title"
-      >
-        <span className="eyebrow">需写入审计原因</span>
-        <h2 id="review-action-title">{isVoid ? "作废当前表单" : "退回当前表单"}</h2>
-        <p>
-          {isVoid
-            ? "作废会创建不可变的 VOIDED 记录版本，并从审核队列移除。"
-            : "退回会清除审核草稿和租约，并将表单送入重新采集队列。"}
-        </p>
+    <ConfirmDialog
+      title={isVoid ? "作废当前表单" : "退回当前表单"}
+      description={isVoid
+        ? "作废会保存不可更改的操作记录，并将表单从审核队列移除。"
+        : "退回会清除审核草稿和审核锁，并将表单送入重新采集队列。"}
+      confirmLabel={isVoid ? "确认作废当前表单" : "确认退回当前表单"}
+      cancelLabel={isVoid ? "取消作废" : "取消退回"}
+      loading={loading}
+      confirmDisabled={!reason.trim()}
+      onCancel={onCancel}
+      onConfirm={onConfirm}
+    >
         <label>
           操作原因
           <textarea
-            autoFocus
             value={reason}
             maxLength={500}
             onChange={(event) => onReasonChange(event.target.value)}
           />
         </label>
-        <div className="dialog-actions">
-          <button type="button" className="button button-secondary" onClick={onCancel}>
-            取消
-          </button>
-          <button
-            type="button"
-            className="button button-danger"
-            disabled={!reason.trim() || loading}
-            onClick={onConfirm}
-          >
-            确认{isVoid ? "作废" : "退回"}
-          </button>
-        </div>
-      </section>
-    </div>
+    </ConfirmDialog>
   );
 }
 

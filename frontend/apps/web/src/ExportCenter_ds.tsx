@@ -12,6 +12,9 @@ import {
 } from "@form-detection/api-client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { ProblemNotice } from "./ui/ProblemNotice";
+import { TraceDetails } from "./ui/TraceDetails";
+
 export interface ExportCenterApi {
   preview(filters: ExportFilters, signal?: AbortSignal): Promise<ExportPreview>;
   create(input: CreateExportInput, idempotencyKey: string): Promise<CreateExportResponse>;
@@ -218,15 +221,6 @@ export function ExportCenter({ api, onBack }: ExportCenterProps) {
     }
   }
 
-  async function copyTrace(batch: ExportBatch) {
-    try {
-      await navigator.clipboard?.writeText(traceText(batch));
-      setMessage("追溯信息已复制。");
-    } catch {
-      setError("无法访问剪贴板，请手动复制追溯信息。");
-    }
-  }
-
   const reexportMode = filters.export_status === "REEXPORT_REQUIRED";
 
   return (
@@ -254,7 +248,7 @@ export function ExportCenter({ api, onBack }: ExportCenterProps) {
         </ol>
       </nav>
 
-      {error && <div className="error-banner export-center-message" role="alert">{error}</div>}
+      {error && <ProblemNotice title="导出操作没有完成" reason={error} actionLabel="返回并重新检查数据" onAction={() => setError(null)} />}
       {message && <div className="success-banner export-center-message" role="status">{message}</div>}
 
       <section className="export-filter-card" aria-labelledby="export-filter-title">
@@ -413,17 +407,7 @@ export function ExportCenter({ api, onBack }: ExportCenterProps) {
               <div><span className="eyebrow">完整技术信息</span><h3>追溯详情</h3></div>
               <button type="button" className="text-button" onClick={() => setBatchDetail(null)}>关闭追溯详情</button>
             </div>
-            <dl>
-              <div><dt>完整批次 ID</dt><dd>{batchDetail.export_batch_id}</dd></div>
-              <div><dt>任务 ID</dt><dd>{batchDetail.task_id ?? "无"}</dd></div>
-              <div><dt>操作者</dt><dd>{batchDetail.exported_by}</dd></div>
-              <div><dt>映射哈希</dt><dd>{batchDetail.mapping_hash}</dd></div>
-              <div><dt>文件哈希</dt><dd>{batchDetail.file_sha256}</dd></div>
-              <div><dt>内部文件名</dt><dd>{batchDetail.download_name}</dd></div>
-              <div><dt>导出状态代码</dt><dd>{batchDetail.filters.export_status ?? "无"}</dd></div>
-              <div><dt>替代批次</dt><dd>{batchDetail.supersedes_batch_id ?? "无"}</dd></div>
-            </dl>
-            <button type="button" className="button button-secondary" onClick={() => void copyTrace(batchDetail)}>复制追溯信息</button>
+            <TraceDetails defaultOpen items={traceItems(batchDetail)} />
           </aside>
         )}
       </section>
@@ -463,16 +447,17 @@ function shortBatchId(batchId: string): string {
   return batchId.split("-").at(-1)?.slice(-8) || batchId.slice(-8);
 }
 
-function traceText(batch: ExportBatch): string {
+function traceItems(batch: ExportBatch) {
   return [
-    `完整批次 ID: ${batch.export_batch_id}`,
-    `任务 ID: ${batch.task_id ?? "无"}`,
-    `映射哈希: ${batch.mapping_hash}`,
-    `文件哈希: ${batch.file_sha256}`,
-    `内部文件名: ${batch.download_name}`,
-    `导出状态代码: ${batch.filters.export_status ?? "无"}`,
-    `替代批次: ${batch.supersedes_batch_id ?? "无"}`,
-  ].join("\n");
+    { label: "完整批次 ID", value: batch.export_batch_id },
+    { label: "任务 ID", value: batch.task_id ?? "无" },
+    { label: "操作者", value: batch.exported_by },
+    { label: "映射哈希", value: batch.mapping_hash },
+    { label: "文件哈希", value: batch.file_sha256 },
+    { label: "内部文件名", value: batch.download_name },
+    { label: "导出状态代码", value: batch.filters.export_status ?? "无" },
+    { label: "替代批次", value: batch.supersedes_batch_id ?? "无" },
+  ];
 }
 
 function normalizeFilters(filters: ExportFilters): ExportFilters {
