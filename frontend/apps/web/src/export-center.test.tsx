@@ -104,6 +104,33 @@ function deferred<T>() {
 }
 
 describe("ExportCenter", () => {
+  it("presents export as four business steps and hides technical details until requested", async () => {
+    const user = userEvent.setup();
+    const api = makeApi();
+    render(<ExportCenter api={api} onBack={vi.fn()} />);
+
+    for (const name of ["选择数据", "检查数据", "生成 Excel", "下载文件"]) {
+      expect(screen.getByRole("heading", { name })).toBeTruthy();
+    }
+    expect(screen.queryByText("BATCH-OLD")).toBeNull();
+    expect(screen.queryByText(/file-sha/)).toBeNull();
+    expect(screen.queryByText("payroll-old.xlsx")).toBeNull();
+
+    await user.click(screen.getByRole("button", { name: "检查可导出的数据" }));
+    expect(await screen.findByRole("heading", { name: "将要导出的记录" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "无法导出的记录及原因" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Excel 列对应关系" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "生成 Excel" })).toBeTruthy();
+
+    await user.click(screen.getByRole("button", { name: /打开.*追溯详情/ }));
+    const trace = await screen.findByRole("complementary", { name: "追溯详情" });
+    expect(within(trace).getByText("BATCH-OLD")).toBeTruthy();
+    expect(within(trace).getByText("file-sha")).toBeTruthy();
+    expect(within(trace).getByText("mapping-hash")).toBeTruthy();
+    expect(within(trace).getByText("payroll-old.xlsx")).toBeTruthy();
+    expect(within(trace).getByRole("button", { name: "复制追溯信息" })).toBeTruthy();
+  });
+
   it("defaults preview and ordinary create to NOT_EXPORTED without an ALL bypass", async () => {
     const user = userEvent.setup();
     const api = makeApi();
@@ -114,13 +141,13 @@ describe("ExportCenter", () => {
     expect(within(status).queryByRole("option", { name: "全部" })).toBeNull();
     await user.type(screen.getByLabelText("表单编号"), "FORM-1");
     await user.clear(screen.getByLabelText("表单编号"));
-    await user.click(screen.getByRole("button", { name: "预览导出范围" }));
+    await user.click(screen.getByRole("button", { name: "检查可导出的数据" }));
 
     expect(api.preview).toHaveBeenCalledWith(
       expect.objectContaining({ export_status: "NOT_EXPORTED" }),
       expect.anything(),
     );
-    await user.click(await screen.findByRole("button", { name: "创建导出任务" }));
+    await user.click(await screen.findByRole("button", { name: "生成 Excel" }));
     await waitFor(() => expect(api.create).toHaveBeenCalledWith(
       expect.objectContaining({
         filters: expect.objectContaining({ export_status: "NOT_EXPORTED" }),
@@ -136,18 +163,19 @@ describe("ExportCenter", () => {
 
     await user.type(screen.getByLabelText("表单编号"), "FORM/一");
     await user.type(screen.getByLabelText("员工编号"), "E&01");
-    await user.click(screen.getByRole("button", { name: "预览导出范围" }));
+    await user.click(screen.getByRole("button", { name: "检查可导出的数据" }));
 
     expect(api.preview).toHaveBeenCalledWith(
       expect.objectContaining({ form_id: "FORM/一", employee_id: "E&01" }),
       expect.anything(),
     );
     expect(await screen.findByText("FORM-1 · 记录版本 2")).toBeTruthy();
-    const excluded = screen.getByRole("region", { name: "排除记录" });
+    const excluded = screen.getByRole("region", { name: "无法导出的记录" });
     expect(within(excluded).getByText("FORM-2 · 记录版本 1")).toBeTruthy();
-    expect(within(excluded).getByText("FORM · NOT_CONFIRMED")).toBeTruthy();
-    expect(within(excluded).getByText("FIELD · shift · NOT_ALLOWED")).toBeTruthy();
+    expect(within(excluded).getByText("整张表单")).toBeTruthy();
+    expect(within(excluded).getByText("字段 shift")).toBeTruthy();
     expect(within(excluded).getByText("必填；允许值：A、B；范围：1–10")).toBeTruthy();
+    expect(within(excluded).queryByText("RULE_BLOCKED")).toBeNull();
     expect(screen.getByText("企业工资记录.xlsx / 计时考核单 / employee_id")).toBeTruthy();
   });
 
@@ -167,7 +195,7 @@ describe("ExportCenter", () => {
 
     const formId = screen.getByLabelText("表单编号");
     await user.type(formId, "FORM-A");
-    await user.click(screen.getByRole("button", { name: "预览导出范围" }));
+    await user.click(screen.getByRole("button", { name: "检查可导出的数据" }));
     await waitFor(() => expect(previewRequest).toHaveBeenCalledTimes(1));
     await user.clear(formId);
     await user.type(formId, "FORM-B");
@@ -178,14 +206,14 @@ describe("ExportCenter", () => {
     }));
 
     expect(screen.queryByText("FORM-A · 记录版本 1")).toBeNull();
-    expect(screen.queryByRole("button", { name: "创建导出任务" })).toBeNull();
-    await user.click(screen.getByRole("button", { name: "预览导出范围" }));
+    expect(screen.queryByRole("button", { name: "生成 Excel" })).toBeNull();
+    await user.click(screen.getByRole("button", { name: "检查可导出的数据" }));
     await waitFor(() => expect(previewRequest).toHaveBeenCalledTimes(2));
     await act(async () => second.resolve({
       ...preview,
       included: [{ form_id: "FORM-B", record_version: 2, reasons: [] }],
     }));
-    await user.click(await screen.findByRole("button", { name: "创建导出任务" }));
+    await user.click(await screen.findByRole("button", { name: "生成 Excel" }));
 
     await waitFor(() => expect(api.create).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -217,18 +245,18 @@ describe("ExportCenter", () => {
     vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
     render(<ExportCenter api={api} onBack={vi.fn()} />);
 
-    await user.click(screen.getByRole("button", { name: "预览导出范围" }));
-    await user.click(await screen.findByRole("button", { name: "创建导出任务" }));
+    await user.click(screen.getByRole("button", { name: "检查可导出的数据" }));
+    await user.click(await screen.findByRole("button", { name: "生成 Excel" }));
 
-    expect(await screen.findByText("WRITE_WORKBOOK")).toBeTruthy();
+    expect(await screen.findByText("正在写入工作表")).toBeTruthy();
     expect(screen.getByRole("progressbar").getAttribute("aria-valuenow")).toBe("55");
     await act(async () => { finishTask(succeededTask); });
     expect(await screen.findByText("导出任务已完成。" )).toBeTruthy();
     expect(api.listBatches).toHaveBeenCalledTimes(2);
 
     const history = screen.getByRole("region", { name: "导出批次历史" });
-    expect(within(history).getByText("BATCH-OLD")).toBeTruthy();
-    await user.click(within(history).getByRole("button", { name: "下载 payroll-old.xlsx" }));
+    expect(within(history).getByText("导出记录 OLD")).toBeTruthy();
+    await user.click(within(history).getByRole("button", { name: "下载文件" }));
     await waitFor(() => expect(api.downloadBatch).toHaveBeenCalledWith("BATCH-OLD"));
     expect(createObjectURL).toHaveBeenCalledWith(expect.any(Blob));
   });
@@ -239,15 +267,15 @@ describe("ExportCenter", () => {
     render(<ExportCenter api={api} onBack={vi.fn()} />);
 
     await user.selectOptions(screen.getByLabelText("导出状态"), "REEXPORT_REQUIRED");
-    await user.click(screen.getByRole("button", { name: "预览导出范围" }));
+    await user.click(screen.getByRole("button", { name: "检查可导出的数据" }));
 
-    expect((await screen.findByRole("alert")).textContent).toContain("REEXPORT_REQUIRED");
-    const ordinaryCreate = screen.getByRole("button", { name: "创建导出任务" });
+    expect((await screen.findByRole("alert")).textContent).toContain("记录在上次导出后发生修改");
+    const ordinaryCreate = screen.getByRole("button", { name: "生成 Excel" });
     expect(ordinaryCreate.hasAttribute("disabled")).toBe(true);
     expect(screen.getByText("重导必须从下方选择一个覆盖全部表单旧版本的来源批次。")).toBeTruthy();
     await user.click(ordinaryCreate);
     expect(api.create).not.toHaveBeenCalled();
-    await user.click(screen.getByRole("button", { name: "重导并替代 BATCH-OLD" }));
+    await user.click(screen.getByRole("button", { name: "用此记录生成修正版" }));
 
     await waitFor(() => expect(api.create).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -282,10 +310,10 @@ describe("ExportCenter", () => {
     render(<ExportCenter api={api} onBack={vi.fn()} />);
 
     await user.selectOptions(screen.getByLabelText("导出状态"), "REEXPORT_REQUIRED");
-    await user.click(screen.getByRole("button", { name: "预览导出范围" }));
+    await user.click(screen.getByRole("button", { name: "检查可导出的数据" }));
 
-    expect(screen.queryByRole("button", { name: "重导并替代 BATCH-PARTIAL" })).toBeNull();
-    const disabledSource = screen.getByRole("button", { name: "不可作为来源 BATCH-PARTIAL" });
+    expect(screen.queryByRole("button", { name: "用此记录生成修正版" })).toBeNull();
+    const disabledSource = screen.getByRole("button", { name: "此记录不可用于重导" });
     expect(disabledSource.hasAttribute("disabled")).toBe(true);
     expect(screen.getByText("该批次未包含每个拟重导表单的旧版本，请缩小筛选范围。")).toBeTruthy();
     await user.click(disabledSource);
@@ -310,8 +338,8 @@ describe("ExportCenter", () => {
     const rendered = render(<ExportCenter api={api} onBack={vi.fn()} />);
 
     await waitFor(() => expect(api.listBatches).toHaveBeenCalledTimes(1));
-    await user.click(screen.getByRole("button", { name: "预览导出范围" }));
-    await user.click(await screen.findByRole("button", { name: "创建导出任务" }));
+    await user.click(screen.getByRole("button", { name: "检查可导出的数据" }));
+    await user.click(await screen.findByRole("button", { name: "生成 Excel" }));
     await waitFor(() => expect(waitForTask).toHaveBeenCalledTimes(1));
     rendered.unmount();
 
@@ -338,15 +366,15 @@ describe("ExportCenter", () => {
     render(<ExportCenter api={api} onBack={vi.fn()} />);
 
     await waitFor(() => expect(listBatches).toHaveBeenCalledTimes(1));
-    await user.click(screen.getByRole("button", { name: "预览导出范围" }));
-    await user.click(await screen.findByRole("button", { name: "创建导出任务" }));
+    await user.click(screen.getByRole("button", { name: "检查可导出的数据" }));
+    await user.click(await screen.findByRole("button", { name: "生成 Excel" }));
     await waitFor(() => expect(listBatches).toHaveBeenCalledTimes(2));
     await act(async () => refreshed.resolve([newBatch]));
-    expect(await screen.findByText("BATCH-NEW")).toBeTruthy();
+    expect(await screen.findByText("导出记录 NEW")).toBeTruthy();
     await act(async () => initial.resolve([oldBatch]));
 
-    expect(screen.getByText("BATCH-NEW")).toBeTruthy();
-    expect(screen.queryByText("BATCH-OLD")).toBeNull();
+    expect(screen.getByText("导出记录 NEW")).toBeTruthy();
+    expect(screen.queryByText("导出记录 OLD")).toBeNull();
   });
 
   it("opens the export feature from 可导出 only after unsaved review navigation is confirmed", async () => {

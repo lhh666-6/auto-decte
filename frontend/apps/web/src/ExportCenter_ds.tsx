@@ -96,6 +96,16 @@ export function ExportCenter({ api, onBack }: ExportCenterProps) {
     setMessage(null);
   }
 
+  function changeExportType(value: string) {
+    previewController.current?.abort();
+    previewController.current = null;
+    previewGeneration.current += 1;
+    setExportType(value);
+    setPreviewSnapshot(null);
+    setPreviewing(false);
+    setMessage(null);
+  }
+
   async function loadPreview() {
     previewController.current?.abort();
     const controller = new AbortController();
@@ -208,6 +218,15 @@ export function ExportCenter({ api, onBack }: ExportCenterProps) {
     }
   }
 
+  async function copyTrace(batch: ExportBatch) {
+    try {
+      await navigator.clipboard?.writeText(traceText(batch));
+      setMessage("追溯信息已复制。");
+    } catch {
+      setError("无法访问剪贴板，请手动复制追溯信息。");
+    }
+  }
+
   const reexportMode = filters.export_status === "REEXPORT_REQUIRED";
 
   return (
@@ -226,6 +245,15 @@ export function ExportCenter({ api, onBack }: ExportCenterProps) {
         </div>
       </header>
 
+      <nav className="export-steps" aria-label="导出步骤">
+        <ol>
+          <li><span>1</span><h2>选择数据</h2></li>
+          <li><span>2</span><h2>检查数据</h2></li>
+          <li><span>3</span><h2>生成 Excel</h2></li>
+          <li><span>4</span><h2>下载文件</h2></li>
+        </ol>
+      </nav>
+
       {error && <div className="error-banner export-center-message" role="alert">{error}</div>}
       {message && <div className="success-banner export-center-message" role="status">{message}</div>}
 
@@ -233,7 +261,7 @@ export function ExportCenter({ api, onBack }: ExportCenterProps) {
         <div className="export-section-heading">
           <div>
             <span className="eyebrow">第一步</span>
-            <h2 id="export-filter-title">筛选并预览</h2>
+            <h2 id="export-filter-title">筛选条件</h2>
           </div>
           <button
             type="button"
@@ -241,7 +269,7 @@ export function ExportCenter({ api, onBack }: ExportCenterProps) {
             disabled={previewing || creating}
             onClick={() => void loadPreview()}
           >
-            {previewing ? "正在预览…" : "预览导出范围"}
+            {previewing ? "正在检查…" : "检查可导出的数据"}
           </button>
         </div>
         <div className="export-filter-grid">
@@ -252,7 +280,7 @@ export function ExportCenter({ api, onBack }: ExportCenterProps) {
             审核状态
             <select value={filters.review_status ?? ""} onChange={(event) => changeFilter("review_status", event.target.value as ExportFilters["review_status"])}>
               <option value="">全部</option>
-              <option value="CONFIRMED">CONFIRMED</option>
+              <option value="CONFIRMED">已确认</option>
             </select>
           </label>
           <label>
@@ -262,12 +290,17 @@ export function ExportCenter({ api, onBack }: ExportCenterProps) {
               <option value="REEXPORT_REQUIRED">需要重导（选择来源批次）</option>
             </select>
           </label>
-          <label>导出类型<input value={exportType} onChange={(event) => setExportType(event.target.value)} /></label>
+          <label>
+            文件用途
+            <select value={exportType} onChange={(event) => changeExportType(event.target.value)}>
+              <option value="PAYROLL">工资记录</option>
+            </select>
+          </label>
         </div>
         {reexportMode && (
           <div className="reexport-alert" role="alert">
-            <strong>REEXPORT_REQUIRED</strong>
-            <span>已筛选需要重导的表单。请在历史批次中选择真实来源批次，新文件会显式替代它且不会覆盖旧文件。</span>
+            <strong>生成修正版</strong>
+            <span>记录在上次导出后发生修改；选择包含旧数据的导出记录；系统生成修正版；旧文件继续保留。</span>
           </div>
         )}
       </section>
@@ -276,7 +309,7 @@ export function ExportCenter({ api, onBack }: ExportCenterProps) {
         <section className="export-preview-grid" aria-label="导出预览结果">
           <div className="export-preview-card included-records">
             <div className="export-section-heading compact">
-              <div><span className="eyebrow">通过最终校验</span><h2>拟包含记录</h2></div>
+              <div><span className="eyebrow">第二步 · 检查数据</span><h2>将要导出的记录</h2></div>
               <span className="status-pill active">{preview.included.length}</span>
             </div>
             {preview.included.length ? (
@@ -289,13 +322,13 @@ export function ExportCenter({ api, onBack }: ExportCenterProps) {
               className="button button-primary"
               disabled={!preview.included.length || creating || !exportType.trim() || reexportMode}
               onClick={() => void createExport()}
-            >创建导出任务</button>
+            >生成 Excel</button>
             {reexportMode && <small className="reexport-create-hint">重导必须从下方选择一个覆盖全部表单旧版本的来源批次。</small>}
           </div>
 
-          <div className="export-preview-card" role="region" aria-label="排除记录">
+          <div className="export-preview-card" role="region" aria-label="无法导出的记录">
             <div className="export-section-heading compact">
-              <div><span className="eyebrow">未进入文件</span><h2>排除记录与规则</h2></div>
+              <div><span className="eyebrow">未进入文件</span><h2>无法导出的记录及原因</h2></div>
               <span className="status-pill inactive">{preview.excluded.length}</span>
             </div>
             {preview.excluded.length ? (
@@ -303,7 +336,6 @@ export function ExportCenter({ api, onBack }: ExportCenterProps) {
                 {preview.excluded.map((item) => (
                   <li key={`${item.form_id}-${item.record_version}`}>
                     <strong>{item.form_id} · 记录版本 {item.record_version}</strong>
-                    {item.reason && <span className="export-reason-summary">{item.reason}</span>}
                     <ul>
                       {(item.reasons ?? []).map((reason, index) => (
                         <li key={`${reason.scope}-${reason.code}-${reason.field_key ?? index}`}>
@@ -320,7 +352,7 @@ export function ExportCenter({ api, onBack }: ExportCenterProps) {
           </div>
 
           <div className="export-preview-card export-mappings">
-            <div className="export-section-heading compact"><div><span className="eyebrow">不可变快照</span><h2>字段映射</h2></div></div>
+            <div className="export-section-heading compact"><div><span className="eyebrow">生成前确认</span><h2>Excel 列对应关系</h2></div></div>
             <ul>
               {preview.mapping_snapshot.map((mapping) => (
                 <li key={`${mapping.template_id}-${mapping.template_version}-${mapping.field_key}`}>
@@ -337,17 +369,17 @@ export function ExportCenter({ api, onBack }: ExportCenterProps) {
       {task && (
         <section className="export-task-card" aria-live="polite">
           <div className="export-section-heading compact">
-            <div><span className="eyebrow">任务 {task.task_id}</span><h2>{task.status}</h2></div>
+            <div><span className="eyebrow">第三步 · 生成进度</span><h2>{taskStatusLabel(task.status)}</h2></div>
             <strong>{task.progress}%</strong>
           </div>
           <progress value={task.progress} max={100} aria-label="导出任务进度" aria-valuenow={task.progress} />
-          <span>{task.step ?? "等待任务进度"}</span>
+          <span>{taskStepLabel(task.step)}</span>
         </section>
       )}
 
       <section className="export-history-card" role="region" aria-label="导出批次历史">
         <div className="export-section-heading">
-          <div><span className="eyebrow">不可变记录</span><h2>导出批次历史</h2></div>
+          <div><span className="eyebrow">第四步 · 下载文件</span><h2>导出历史</h2></div>
           <button type="button" className="button button-secondary" onClick={() => void refreshBatches()}>刷新历史</button>
         </div>
         {batches.length ? (
@@ -357,17 +389,16 @@ export function ExportCenter({ api, onBack }: ExportCenterProps) {
               return (
                 <article key={batch.export_batch_id} className={canReexport ? "reexport-source" : ""}>
                   <div>
-                    <strong>{batch.export_batch_id}</strong>
-                    <span>{batch.export_type} · {formatDate(batch.exported_at)} · {batch.included_records.length} 条</span>
-                    <small>SHA-256 {batch.file_sha256}</small>
-                    {batch.supersedes_batch_id && <small>替代批次：{batch.supersedes_batch_id}</small>}
+                    <strong>导出记录 {shortBatchId(batch.export_batch_id)}</strong>
+                    <span>工资记录 · {formatDate(batch.exported_at)} · {batch.included_records.length} 条</span>
+                    {batch.supersedes_batch_id && <small>这是在旧文件基础上生成的修正版</small>}
                   </div>
                   <div className="export-batch-actions">
-                    <button type="button" className="text-button" disabled={busyBatchId === batch.export_batch_id} onClick={() => void loadBatchDetail(batch.export_batch_id)}>查看详情</button>
-                    <button type="button" className="button button-secondary" disabled={busyBatchId === batch.export_batch_id} onClick={() => void download(batch)}>下载 {batch.download_name}</button>
-                    {canReexport && <button type="button" className="button button-primary" disabled={creating} onClick={() => void createExport(batch.export_batch_id)}>重导并替代 {batch.export_batch_id}</button>}
+                    <button type="button" className="text-button" disabled={busyBatchId === batch.export_batch_id} onClick={() => void loadBatchDetail(batch.export_batch_id)}>打开记录 {shortBatchId(batch.export_batch_id)} 的追溯详情</button>
+                    <button type="button" className="button button-secondary" disabled={busyBatchId === batch.export_batch_id} onClick={() => void download(batch)}>下载文件</button>
+                    {canReexport && <button type="button" className="button button-primary" disabled={creating} onClick={() => void createExport(batch.export_batch_id)}>用此记录生成修正版</button>}
                     {reexportMode && !canReexport && <>
-                      <button type="button" className="button button-secondary" disabled>不可作为来源 {batch.export_batch_id}</button>
+                      <button type="button" className="button button-secondary" disabled>此记录不可用于重导</button>
                       <small className="reexport-source-warning">该批次未包含每个拟重导表单的旧版本，请缩小筛选范围。</small>
                     </>}
                   </div>
@@ -377,17 +408,22 @@ export function ExportCenter({ api, onBack }: ExportCenterProps) {
           </div>
         ) : <p className="muted">尚无成功导出批次。</p>}
         {batchDetail && (
-          <aside className="export-batch-detail" aria-label={`批次 ${batchDetail.export_batch_id} 详情`}>
+          <aside className="export-batch-detail" aria-label="追溯详情">
             <div className="export-section-heading compact">
-              <div><span className="eyebrow">批次详情</span><h3>{batchDetail.export_batch_id}</h3></div>
-              <button type="button" className="text-button" onClick={() => setBatchDetail(null)}>关闭</button>
+              <div><span className="eyebrow">完整技术信息</span><h3>追溯详情</h3></div>
+              <button type="button" className="text-button" onClick={() => setBatchDetail(null)}>关闭追溯详情</button>
             </div>
             <dl>
+              <div><dt>完整批次 ID</dt><dd>{batchDetail.export_batch_id}</dd></div>
+              <div><dt>任务 ID</dt><dd>{batchDetail.task_id ?? "无"}</dd></div>
               <div><dt>操作者</dt><dd>{batchDetail.exported_by}</dd></div>
               <div><dt>映射哈希</dt><dd>{batchDetail.mapping_hash}</dd></div>
               <div><dt>文件哈希</dt><dd>{batchDetail.file_sha256}</dd></div>
+              <div><dt>内部文件名</dt><dd>{batchDetail.download_name}</dd></div>
+              <div><dt>导出状态代码</dt><dd>{batchDetail.filters.export_status ?? "无"}</dd></div>
               <div><dt>替代批次</dt><dd>{batchDetail.supersedes_batch_id ?? "无"}</dd></div>
             </dl>
+            <button type="button" className="button button-secondary" onClick={() => void copyTrace(batchDetail)}>复制追溯信息</button>
           </aside>
         )}
       </section>
@@ -396,7 +432,47 @@ export function ExportCenter({ api, onBack }: ExportCenterProps) {
 }
 
 function reasonLabel(reason: ExportExclusionReason): string {
-  return [reason.scope, reason.field_key, reason.code].filter(Boolean).join(" · ");
+  return reason.scope === "FIELD" && reason.field_key
+    ? `字段 ${reason.field_key}`
+    : "整张表单";
+}
+
+function taskStatusLabel(status: ExportTask["status"]): string {
+  return {
+    PENDING: "等待生成",
+    RUNNING: "正在生成 Excel",
+    SUCCEEDED: "Excel 已生成",
+    FAILED: "生成失败",
+    CANCEL_REQUESTED: "正在取消",
+    CANCELLED: "已取消",
+    INTERRUPTED: "生成已中断",
+    RECOVERING: "正在恢复生成",
+  }[status];
+}
+
+function taskStepLabel(step: string | null): string {
+  return {
+    PENDING: "正在排队",
+    VALIDATING: "正在检查数据",
+    WRITE_WORKBOOK: "正在写入工作表",
+    COMPLETE: "文件已经可以下载",
+  }[step ?? ""] ?? "正在处理导出数据";
+}
+
+function shortBatchId(batchId: string): string {
+  return batchId.split("-").at(-1)?.slice(-8) || batchId.slice(-8);
+}
+
+function traceText(batch: ExportBatch): string {
+  return [
+    `完整批次 ID: ${batch.export_batch_id}`,
+    `任务 ID: ${batch.task_id ?? "无"}`,
+    `映射哈希: ${batch.mapping_hash}`,
+    `文件哈希: ${batch.file_sha256}`,
+    `内部文件名: ${batch.download_name}`,
+    `导出状态代码: ${batch.filters.export_status ?? "无"}`,
+    `替代批次: ${batch.supersedes_batch_id ?? "无"}`,
+  ].join("\n");
 }
 
 function normalizeFilters(filters: ExportFilters): ExportFilters {
@@ -443,7 +519,7 @@ function formatDate(value: string): string {
 }
 
 function toMessage(cause: unknown): string {
-  if (cause instanceof ApiRequestError) return `${cause.code}：${cause.message}`;
+  if (cause instanceof ApiRequestError) return cause.message;
   return cause instanceof Error ? cause.message : "导出请求无法完成。";
 }
 
