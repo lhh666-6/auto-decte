@@ -9,13 +9,20 @@ import {
   type WorkbenchDetail,
 } from "@form-detection/api-client";
 import { WebNotificationPort } from "@form-detection/shell-ports";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   buildConfirmValues,
   reviewValueIssue,
-  selectReviewEvidence,
 } from "../review-model";
+import { getReviewStatusCopy } from "../ui/business-language";
+import { EvidenceViewer } from "./EvidenceViewer";
+import { FieldDetailPanel } from "./FieldDetailPanel";
+import { FieldReviewTable } from "./FieldReviewTable";
+import { selectFirstIssueFieldId } from "./field-navigation";
+import { WorkbenchActionBar } from "./WorkbenchActionBar";
+import { WorkbenchHeader } from "./WorkbenchHeader";
+import { WorkbenchQueue } from "./WorkbenchQueue";
 import type {
   DuplicateImportInfo,
   MobilePane,
@@ -32,20 +39,11 @@ const QUEUES: Array<{ key: QueueKey; label: string; warning?: boolean }> = [
   { key: "exportable", label: "可导出" },
 ];
 
-function stringValue(value: unknown): string {
-  return value === null || value === undefined ? "" : String(value);
-}
-
-function sourceDimension(region: Record<string, number>, longName: "width" | "height"): number {
-  return region[longName] ?? region[longName === "width" ? "w" : "h"] ?? 0;
-}
-
 interface ReviewWorkbenchPageProps {
   onOpenTemplates: () => void;
   onOpenMasterData: () => void;
   onOpenExports: () => void;
 }
-
 export function ReviewWorkbenchPage({
   onOpenTemplates,
   onOpenMasterData,
@@ -59,7 +57,13 @@ export function ReviewWorkbenchPage({
   const [edits, setEdits] = useState<Record<string, unknown>>({});
   const [ruleFailures, setRuleFailures] = useState<Record<string, string>>({});
   const [lease, setLease] = useState<ReviewLease | null>(null);
-  const [imageSize, setImageSize] = useState({ width: 1, height: 1 });
+  const [hoveredFieldId, setHoveredFieldId] = useState<string | null>(null);
+  const [splitPercent, setSplitPercent] = useState(() => {
+    const stored = Number(globalThis.localStorage?.getItem("review-workbench-split-percent"));
+    return Number.isFinite(stored) && stored >= 35 && stored <= 65 ? stored : 46;
+  });
+  const gridRef = useRef<HTMLElement | null>(null);
+  const splitDragging = useRef(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -77,7 +81,6 @@ export function ReviewWorkbenchPage({
   });
 
   const selectedField = detail?.fields.find((field) => field.field_id === selectedFieldId) ?? null;
-  const reviewEvidence = selectReviewEvidence(detail?.evidence ?? []);
   const hasUnsavedEdits =
     detail !== null &&
     JSON.stringify(edits) !== JSON.stringify(detail.draft?.values ?? {});
@@ -119,7 +122,12 @@ export function ReviewWorkbenchPage({
       setHistory(loadedHistory);
       setEdits(loadedDetail.draft?.values ?? {});
       setRuleFailures({});
-      setSelectedFieldId(loadedDetail.fields[0]?.field_id ?? null);
+      setSelectedFieldId(selectFirstIssueFieldId(
+        loadedDetail.fields,
+        loadedDetail.draft?.values ?? {},
+        {},
+      ));
+      setHoveredFieldId(null);
       setLease(null);
       setClassificationTask(null);
       if (loadedDetail.form.review_status === "NEEDS_CLASSIFICATION") {
@@ -247,7 +255,11 @@ export function ReviewWorkbenchPage({
         setFormIdInput(formId);
         setEdits(updatedDetail.draft?.values ?? {});
         setRuleFailures({});
-        setSelectedFieldId(updatedDetail.fields[0]?.field_id ?? null);
+        setSelectedFieldId(selectFirstIssueFieldId(
+          updatedDetail.fields,
+          updatedDetail.draft?.values ?? {},
+          {},
+        ));
         setClassificationOptions([]);
         setClassificationChoice("");
         await refreshQueues();
@@ -279,7 +291,11 @@ export function ReviewWorkbenchPage({
         setLease(result.next.lease);
         setEdits(result.next.workbench.draft?.values ?? {});
         setRuleFailures({});
-        setSelectedFieldId(result.next.workbench.fields[0]?.field_id ?? null);
+        setSelectedFieldId(selectFirstIssueFieldId(
+          result.next.workbench.fields,
+          result.next.workbench.draft?.values ?? {},
+          {},
+        ));
         setHistory(
           await api.getHistory(result.next.workbench.form.form_id).catch(() => null),
         );
@@ -509,9 +525,16 @@ export function ReviewWorkbenchPage({
     }
   }
 
-  function selectField(field: ReviewField) {
-    setSelectedFieldId(field.field_id);
+  function selectField(fieldId: string, focusFinalValue = false) {
+    setSelectedFieldId(fieldId);
     setMobilePane("fields");
+    if (!focusFinalValue) return;
+    window.requestAnimationFrame(() => {
+      const row = document.getElementById(`review-field-row-${fieldId}`);
+      const input = document.getElementById(`review-final-${fieldId}`) as HTMLElement | null;
+      row?.scrollIntoView({ block: "center" });
+      input?.focus();
+    });
   }
 
   function useCandidate(fieldId: string, candidate: RecognitionCandidate) {
@@ -575,51 +598,20 @@ export function ReviewWorkbenchPage({
       </aside>
 
       <main className="workbench">
-        <section className="context-card">
-          <form
-            className="form-loader"
-            onSubmit={(event) => {
-              event.preventDefault();
-              if (canLeaveCurrentForm()) void loadWorkbench();
-            }}
-          >
-            <label htmlFor="form-id">表单编号</label>
-            <input
-              id="form-id"
-              value={formIdInput}
-              onChange={(event) => setFormIdInput(event.target.value)}
-              placeholder="例如 FORM-1"
-            />
-            <button type="submit" className="button button-secondary" disabled={loading}>加载表单</button>
-            <label className="button button-primary import-image-button">
-              {uploading ? "正在导入…" : "导入图片"}
-              <input
-                id="image-import"
-                type="file"
-                accept="image/png,image/jpeg,image/tiff"
-                disabled={uploading}
-                onChange={(event) => {
-                  const file = event.target.files?.[0] ?? null;
-                  event.target.value = "";
-                  void importImage(file);
-                }}
-              />
-            </label>
-          </form>
-          <div className="form-summary">
-            <strong>{detail?.form.form_id ?? "未加载表单"}</strong>
-            <span>{detail ? `模板 ${detail.form.template_id} · v${detail.form.template_version}` : "输入编号后加载"}</span>
-            {detail && <span>记录版本 {detail.form.current_record_version} · 导出状态 {detail.form.export_status}</span>}
-          </div>
-          <div className="lease-summary">
-            {lease ? <span className="lease-active">审核锁有效至 {new Date(lease.expires_at).toLocaleTimeString()}</span> : <span>未获取审核锁</span>}
-            {lease ? (
-              <button type="button" className="text-button" onClick={() => void releaseLease()}>释放</button>
-            ) : (
-              <button type="button" className="text-button" disabled={!detail} onClick={() => void acquireLease()}>获取审核锁</button>
-            )}
-          </div>
-        </section>
+        <WorkbenchHeader
+          formIdInput={formIdInput}
+          detail={detail}
+          lease={lease}
+          loading={loading}
+          uploading={uploading}
+          onFormIdInputChange={setFormIdInput}
+          onLoad={() => {
+            if (canLeaveCurrentForm()) void loadWorkbench();
+          }}
+          onImportImage={(file) => void importImage(file)}
+          onAcquireLease={() => void acquireLease()}
+          onReleaseLease={() => void releaseLease()}
+        />
 
         {error && <div className="error-banner" role="alert">{error}</div>}
         {duplicateImport && (
@@ -628,7 +620,7 @@ export function ReviewWorkbenchPage({
               <strong>图片已经导入</strong>
               <p>{duplicateImport.detail}</p>
               <span>
-                表单 {duplicateImport.existing_form.form_id} · {reviewStatusLabel(duplicateImport.existing_form.review_status)}
+                表单 {duplicateImport.existing_form.form_id} · {getReviewStatusCopy(duplicateImport.existing_form.review_status).label}
               </span>
               {duplicateImport.existing_form.review_status === "RECAPTURE_REQUIRED" && (
                 <em>该表单已退回，重新采集必须上传内容不同的新照片。</em>
@@ -646,22 +638,11 @@ export function ReviewWorkbenchPage({
           </section>
         )}
 
-        <section className="queue-panel" aria-label="当前审核队列">
-          <div>
-            <span className="eyebrow">当前队列</span>
-            <strong>{QUEUES.find((queue) => queue.key === selectedQueue)?.label}</strong>
-          </div>
-          <div className="queue-form-list">
-            {queueForms[selectedQueue].length === 0 ? (
-              <span className="muted">当前没有表单</span>
-            ) : queueForms[selectedQueue].map((form) => (
-              <button key={form.form_id} type="button" onClick={() => openQueueForm(form.form_id)}>
-                <strong>{form.form_id}</strong>
-                <span>{form.template_id} · {form.review_status} · 优先级 {form.priority}</span>
-              </button>
-            ))}
-          </div>
-        </section>
+        <WorkbenchQueue
+          selectedQueue={selectedQueue}
+          forms={queueForms[selectedQueue]}
+          onOpenForm={openQueueForm}
+        />
 
         {detail?.form.review_status === "NEEDS_CLASSIFICATION" ? (
           <section className="classification-card" aria-label="人工模板分类">
@@ -710,101 +691,80 @@ export function ReviewWorkbenchPage({
         ) : (
           <>
             <div className="mobile-pane-switch" role="tablist" aria-label="审核面板">
-              <button type="button" className={mobilePane === "evidence" ? "active" : ""} onClick={() => setMobilePane("evidence")}>图片</button>
-              <button type="button" className={mobilePane === "fields" ? "active" : ""} onClick={() => setMobilePane("fields")}>电子表格</button>
+              <button type="button" role="tab" aria-selected={mobilePane === "evidence"} className={mobilePane === "evidence" ? "active" : ""} onClick={() => setMobilePane("evidence")}>图片</button>
+              <button type="button" role="tab" aria-selected={mobilePane === "fields"} className={mobilePane === "fields" ? "active" : ""} onClick={() => setMobilePane("fields")}>电子表格</button>
             </div>
 
-            <section className="review-grid" data-mobile-pane={mobilePane}>
-              <EvidenceCanvas
-                evidenceUrl={reviewEvidence.evidence?.download_url ?? null}
-                coordinateSpace={reviewEvidence.coordinateSpace}
+            <section
+              ref={gridRef}
+              className="review-grid"
+              data-testid="review-workbench-grid"
+              data-mobile-pane={mobilePane}
+              style={{ gridTemplateColumns: `${splitPercent}% ${100 - splitPercent}%` }}
+            >
+              <EvidenceViewer
+                evidence={detail?.evidence ?? []}
                 fields={detail?.fields ?? []}
                 selectedFieldId={selectedFieldId}
-                imageSize={imageSize}
-                onImageLoad={setImageSize}
-                onSelectField={selectField}
+                hoveredFieldId={hoveredFieldId}
+                onSelectField={(fieldId) => selectField(fieldId, true)}
+                onHoverField={setHoveredFieldId}
               />
-              <FieldTable
+              <div
+                className="workbench-splitter"
+                role="separator"
+                aria-label="调整图片与电子表格宽度"
+                aria-orientation="vertical"
+                aria-valuemin={35}
+                aria-valuemax={65}
+                aria-valuenow={splitPercent}
+                style={{ left: `${splitPercent}%` }}
+                onPointerDown={() => { splitDragging.current = true; }}
+                onPointerMove={(event) => {
+                  if (!splitDragging.current || !gridRef.current) return;
+                  const bounds = gridRef.current.getBoundingClientRect();
+                  const next = Math.min(65, Math.max(35, Math.round(((event.clientX - bounds.left) / bounds.width) * 100)));
+                  setSplitPercent(next);
+                  globalThis.localStorage?.setItem("review-workbench-split-percent", String(next));
+                }}
+                onPointerUp={() => { splitDragging.current = false; }}
+                onPointerCancel={() => { splitDragging.current = false; }}
+              />
+              <FieldReviewTable
                 fields={detail?.fields ?? []}
                 edits={edits}
                 recordValues={detail?.current_record?.values ?? {}}
                 ruleFailures={ruleFailures}
                 selectedFieldId={selectedFieldId}
-                onSelectField={selectField}
+                hoveredFieldId={hoveredFieldId}
+                onSelectField={(fieldId) => selectField(fieldId)}
+                onHoverField={setHoveredFieldId}
                 onEdit={editField}
               />
             </section>
 
-            <section className="detail-drawer">
-          <div className="drawer-heading">
-            <div>
-              <span className="eyebrow">规则与建议</span>
-              <strong>{selectedField ? selectedField.display_name ?? selectedField.field_name : "选择一个字段查看详情"}</strong>
-            </div>
-            <span className={warningCount > 0 ? "status-pill warning" : "status-pill success"}>
-              {warningCount > 0 ? `${warningCount} 项待确认` : "无待确认项"}
-            </span>
-          </div>
-          <div className="drawer-columns">
-            <div>
-              <span className="drawer-label">识别候选</span>
-              {selectedField?.candidates.length ? selectedField.candidates.map((candidate) => (
-                <button key={candidate.attempt_id} type="button" className="candidate-chip" onClick={() => useCandidate(selectedField.field_id, candidate)}>
-                  {stringValue(candidate.candidate_value)} <span>{Math.round(candidate.confidence * 100)}%</span>
-                </button>
-              )) : <span className="muted">
-                {selectedField?.recognition_engine === "manual"
-                  ? "该字段配置为人工录入，不会自动生成识别候选"
-                  : "暂无 OCR/OMR 候选"}
-              </span>}
-            </div>
-            <div>
-              <span className="drawer-label">历史版本</span>
-              <span className="muted">{history?.versions.length ?? 0} 个版本 · {history?.audits.length ?? 0} 条审计事件</span>
-            </div>
-            <div>
-              <span className="drawer-label">证据</span>
-              <span className="muted">{detail?.evidence.length ?? 0} 个受控文件</span>
-            </div>
-          </div>
-            </section>
+            <FieldDetailPanel
+              selectedField={selectedField}
+              evidence={detail?.evidence ?? []}
+              history={history}
+              warningCount={warningCount}
+              ruleFailure={selectedField ? ruleFailures[selectedField.field_id] ?? ruleFailures[selectedField.field_name] ?? null : null}
+              onUseCandidate={useCandidate}
+            />
 
-            <footer className="action-bar">
-              <button
-                type="button"
-                className="button button-danger-secondary"
-                disabled={!detail || !lease || loading}
-                onClick={() => setReviewAction("return")}
-              >退回</button>
-              <button
-                type="button"
-                className="button button-danger-secondary"
-                disabled={!detail || !lease || loading}
-                onClick={() => setReviewAction("void")}
-              >作废</button>
-              <button
-                type="button"
-                className="button button-secondary"
-                disabled={!detail || !lease || loading || !hasUnsavedEdits}
-                onClick={() => void saveDraft()}
-              >保存草稿</button>
-              <span className="action-hint">
-                {detail?.draft
-                  ? `草稿由 ${detail.draft.saved_by} 保存于 ${new Date(detail.draft.updated_at).toLocaleTimeString()}`
-                  : isCorrection
-                    ? "更正会创建新记录版本，并保留当前表单以便核对重导状态"
-                    : "确认会创建新版本并原子领取下一张"}
-              </span>
-              <button
-                type="button"
-                className="button button-primary"
-                disabled={!detail || !lease || loading || warningCount > 0 || (!isCorrection && selectedQueue !== "review")}
-                title={warningCount > 0 ? "请先处理所有待确认字段" : undefined}
-                onClick={() => void submitPrimaryReviewAction()}
-              >
-                {isCorrection ? "保存更正" : "确认并下一张"}
-              </button>
-            </footer>
+            <WorkbenchActionBar
+              detail={detail}
+              lease={lease}
+              loading={loading}
+              hasUnsavedEdits={hasUnsavedEdits}
+              warningCount={warningCount}
+              isCorrection={isCorrection}
+              selectedQueue={selectedQueue}
+              onReturn={() => setReviewAction("return")}
+              onVoid={() => setReviewAction("void")}
+              onSaveDraft={() => void saveDraft()}
+              onPrimary={() => void submitPrimaryReviewAction()}
+            />
           </>
         )}
       </main>
@@ -887,125 +847,6 @@ function ReviewActionDialog({
   );
 }
 
-function EvidenceCanvas({
-  evidenceUrl,
-  coordinateSpace,
-  fields,
-  selectedFieldId,
-  imageSize,
-  onImageLoad,
-  onSelectField,
-}: {
-  evidenceUrl: string | null;
-  coordinateSpace: "canonical" | "original" | "none";
-  fields: ReviewField[];
-  selectedFieldId: string | null;
-  imageSize: { width: number; height: number };
-  onImageLoad: (size: { width: number; height: number }) => void;
-  onSelectField: (field: ReviewField) => void;
-}) {
-  const alignmentReady = coordinateSpace === "canonical";
-  return (
-    <section className="evidence-panel" aria-label="表单图像证据">
-      <div className="panel-toolbar">
-        <strong>{alignmentReady ? "校正后的表单" : "原始表单证据"}</strong>
-        <span>{alignmentReady ? "四角定位已应用 · 标准坐标" : "未完成四角校正"}</span>
-      </div>
-      {coordinateSpace === "original" && (
-        <div className="alignment-warning" role="status">
-          未生成校正图，已隐藏标准字段框，避免将模板坐标错误覆盖到原图。
-        </div>
-      )}
-      <div className="canvas-stage">
-        {evidenceUrl ? (
-          <div className="image-wrap">
-            <img src={evidenceUrl} alt="原始表单" onLoad={(event) => onImageLoad({ width: event.currentTarget.naturalWidth, height: event.currentTarget.naturalHeight })} />
-            {alignmentReady && fields.map((field) => {
-              const region = field.source_region;
-              const width = sourceDimension(region, "width");
-              const height = sourceDimension(region, "height");
-              return (
-                <button
-                  key={field.field_id}
-                  type="button"
-                  className={`field-overlay ${field.field_id === selectedFieldId ? "selected" : ""}`}
-                  style={{
-                    left: `${(region.x / imageSize.width) * 100}%`,
-                    top: `${(region.y / imageSize.height) * 100}%`,
-                    width: `${(width / imageSize.width) * 100}%`,
-                    height: `${(height / imageSize.height) * 100}%`,
-                  }}
-                  onClick={() => onSelectField(field)}
-                  aria-label={`定位字段 ${field.field_name}`}
-                >
-                  <span>{field.field_name}</span>
-                </button>
-              );
-            })}
-          </div>
-        ) : <div className="empty-canvas">加载表单后在此显示原始证据与字段框</div>}
-      </div>
-    </section>
-  );
-}
-
-function FieldTable({
-  fields,
-  edits,
-  recordValues,
-  ruleFailures,
-  selectedFieldId,
-  onSelectField,
-  onEdit,
-}: {
-  fields: ReviewField[];
-  edits: Record<string, unknown>;
-  recordValues: Record<string, unknown>;
-  ruleFailures: Record<string, string>;
-  selectedFieldId: string | null;
-  onSelectField: (field: ReviewField) => void;
-  onEdit: (fieldId: string, value: string) => void;
-}) {
-  return (
-    <section className="field-panel" aria-label="可编辑电子表格">
-      <div className="panel-toolbar"><strong>电子表格</strong><span>{fields.length} 个字段</span></div>
-      <div className="field-table" role="table">
-        <div className="field-row field-head" role="row"><span>字段</span><span>识别结果</span><span>置信度</span><span>确认值</span><span>状态</span></div>
-        {fields.length === 0 ? <div className="table-empty">尚未加载字段</div> : fields.map((field) => {
-          const candidate = field.candidates[0];
-          const displayValue = valueForField(field, edits, recordValues);
-          const issue = ruleFailures[field.field_name] ?? reviewValueIssue(
-            displayValue, candidate?.confidence,
-            Object.hasOwn(edits, field.field_id) || Object.hasOwn(edits, field.field_name),
-            field.data_type, field.rules,
-          );
-          const hasWarning = issue !== null;
-          return (
-            <div
-              className={`field-row ${field.field_id === selectedFieldId ? "selected" : ""} ${hasWarning ? "has-warning" : ""}`}
-              key={field.field_id}
-              role="button"
-              tabIndex={0}
-              onClick={() => onSelectField(field)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" || event.key === " ") onSelectField(field);
-              }}
-            >
-              <span className="field-name"><strong>{field.display_name ?? field.field_name}</strong>{field.display_name && <small>{field.field_name}</small>}</span>
-              <span className="candidate-value">
-                {candidate ? stringValue(candidate.candidate_value) : field.recognition_engine === "manual" ? "人工录入" : "—"}
-              </span>
-              <span>{candidate ? `${Math.round(candidate.confidence * 100)}%` : "—"}</span>
-              <span onClick={(event) => event.stopPropagation()}>{field.rules && (field.rules.master_data_options.length || field.rules.allowed_values.length) ? <select aria-label={`${field.display_name ?? field.field_name} 确认值`} value={stringValue(displayValue)} onChange={(event) => onEdit(field.field_id, event.target.value)}><option value="">请选择</option>{field.rules.master_data_options.length ? field.rules.master_data_options.map((option) => <option key={option.value} value={option.value}>{option.label}（{option.value}）</option>) : field.rules.allowed_values.map((value) => <option key={value} value={value}>{value}</option>)}</select> : <input aria-label={`${field.display_name ?? field.field_name} 确认值`} value={stringValue(displayValue)} onChange={(event) => onEdit(field.field_id, event.target.value)} />}</span>
-              <span>{hasWarning ? <><em className="inline-warning">待确认</em><small className="field-rule-message">{issue}</small></> : <em className="inline-success">已就绪</em>}</span>
-            </div>
-          );
-        })}
-      </div>
-    </section>
-  );
-}
-
 function fieldValue(
   detail: WorkbenchDetail | null,
   field: ReviewField,
@@ -1042,14 +883,4 @@ async function responseDetail(response: Response, fallback: string): Promise<str
   } catch {
     return fallback;
   }
-}
-
-function reviewStatusLabel(status: string): string {
-  return ({
-    NEEDS_CLASSIFICATION: "待人工分类",
-    CLASSIFIED: "待复核",
-    RECAPTURE_REQUIRED: "已退回，需重新采集",
-    VOIDED: "已作废",
-    CONFIRMED: "已确认",
-  } as Record<string, string>)[status] ?? status;
 }

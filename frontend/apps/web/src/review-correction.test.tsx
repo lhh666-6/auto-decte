@@ -106,13 +106,13 @@ describe("review correction", () => {
     await user.click(screen.getByRole("button", { name: "加载表单" }));
     expect(await screen.findByRole("button", { name: "保存更正" })).toBeTruthy();
     await user.click(screen.getByRole("button", { name: "获取审核锁" }));
-    const field = await screen.findByLabelText("工时 确认值");
+    const field = await screen.findByLabelText("工时 最终填写值");
     await user.clear(field);
     await user.type(field, "9");
     await user.click(screen.getByRole("button", { name: "保存更正" }));
 
-    expect(await screen.findByText("记录版本 2 · 导出状态 REEXPORT_REQUIRED")).toBeTruthy();
-    expect((screen.getByLabelText("工时 确认值") as HTMLInputElement).value).toBe("9");
+    expect(await screen.findByText("记录版本 2 · 已更正 · 待重新导出")).toBeTruthy();
+    expect((screen.getByLabelText("工时 最终填写值") as HTMLInputElement).value).toBe("9");
     const confirmCall = fetcher.mock.calls.find(([path, init]) => (
       String(path) === "/api/v1/forms/FORM-EXPORTED/confirm" && init?.method === "POST"
     ));
@@ -203,7 +203,7 @@ describe("review correction", () => {
 
     await user.type(screen.getByLabelText("表单编号"), "FORM-EXPORTED");
     await user.click(screen.getByRole("button", { name: "加载表单" }));
-    const field = await screen.findByLabelText("工时 确认值");
+    const field = await screen.findByLabelText("工时 最终填写值");
     await user.clear(field);
     await user.type(field, "9");
 
@@ -234,13 +234,13 @@ describe("review correction", () => {
 
     await user.type(screen.getByLabelText("表单编号"), "FORM-EXPORTED");
     await user.click(screen.getByRole("button", { name: "加载表单" }));
-    const field = await screen.findByLabelText("工时 确认值");
+    const field = await screen.findByLabelText("工时 最终填写值");
     await user.clear(field);
     await user.type(field, "9");
     await user.click(screen.getByRole("button", { name: "模板与字段" }));
 
     expect(confirm).toHaveBeenCalledWith("当前有尚未保存的审核修改，确定离开吗？");
     expect(screen.getByRole("button", { name: "模板与字段" })).toBeTruthy();
-    expect(screen.getByLabelText("工时 确认值")).toBeTruthy();
+    expect(screen.getByLabelText("工时 最终填写值")).toBeTruthy();
   });
 });
