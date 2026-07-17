@@ -769,7 +769,7 @@ npm run build:web
 
 预期：全部前端测试、类型检查和生产构建通过。
 
-**2026-07-17 执行记录：** Python `264 passed`，Ruff 通过，mypy `126 source files` 无问题；前端 `25` 个测试文件、`124 passed`，类型检查与 Web 生产构建通过。仓库 `.env` 是管理员试用配置，Python 全量测试显式覆盖为代码默认 `local-operator/OPERATOR`；系统临时目录权限受限时使用仓库内 `.pytest-final`，验证结束后已清理。
+**2026-07-18 最终复测：** Python `265 passed`，Ruff 通过，mypy `126 source files` 无问题；前端 `26` 个测试文件、`125 passed`，类型检查与 Web 生产构建通过。仓库 `.env` 是管理员试用配置，Python 全量测试显式覆盖为代码默认 `local-operator/OPERATOR`；系统临时目录权限受限时使用仓库内临时目录，验证结束后已清理。最终复测包含 `ff03a39` 对人工确认值刷新和导出字段映射的调试修复。
 
 ### 人工验收
 
