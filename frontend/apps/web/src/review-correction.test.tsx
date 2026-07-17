@@ -104,12 +104,12 @@ describe("review correction", () => {
 
     await user.type(screen.getByLabelText("表单编号"), "FORM-EXPORTED");
     await user.click(screen.getByRole("button", { name: "加载表单" }));
-    expect(await screen.findByRole("button", { name: "保存更正" })).toBeTruthy();
+    expect(await screen.findByRole("button", { name: "保存本次修改" })).toBeTruthy();
     await user.click(screen.getByRole("button", { name: "获取审核锁" }));
     const field = await screen.findByLabelText("工时 最终填写值");
     await user.clear(field);
     await user.type(field, "9");
-    await user.click(screen.getByRole("button", { name: "保存更正" }));
+    await user.click(screen.getByRole("button", { name: "保存本次修改" }));
 
     expect(await screen.findByText("记录版本 2 · 已更正 · 待重新导出")).toBeTruthy();
     expect((screen.getByLabelText("工时 最终填写值") as HTMLInputElement).value).toBe("9");
@@ -207,7 +207,7 @@ describe("review correction", () => {
     await user.clear(field);
     await user.type(field, "9");
 
-    for (const name of ["退回", "作废", "保存草稿", "保存更正"]) {
+    for (const name of ["退回", "作废", "保存草稿", "保存本次修改"]) {
       expect((screen.getByRole("button", { name }) as HTMLButtonElement).disabled).toBe(true);
     }
     expect(fetcher.mock.calls.some(([path, init]) => (

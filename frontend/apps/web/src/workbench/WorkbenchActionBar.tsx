@@ -29,11 +29,21 @@ export function WorkbenchActionBar({
   onSaveDraft,
   onPrimary,
 }: WorkbenchActionBarProps) {
+  if (
+    !detail ||
+    detail.form.review_status === "NEEDS_CLASSIFICATION" ||
+    detail.form.review_status === "RECAPTURE_REQUIRED"
+  ) {
+    return null;
+  }
+
   return (
     <footer className="action-bar workbench-action-bar">
-      <button type="button" className="button button-danger-secondary" disabled={!detail || !lease || loading} onClick={onReturn}>退回</button>
-      <button type="button" className="button button-danger-secondary" disabled={!detail || !lease || loading} onClick={onVoid}>作废</button>
-      <button type="button" className="button button-secondary" disabled={!detail || !lease || loading || !hasUnsavedEdits} onClick={onSaveDraft}>保存草稿</button>
+      <button type="button" className="button button-danger-secondary" disabled={!lease || loading} onClick={onReturn}>退回</button>
+      <button type="button" className="button button-danger-secondary" disabled={!lease || loading} onClick={onVoid}>作废</button>
+      {hasUnsavedEdits ? (
+        <button type="button" className="button button-secondary" disabled={!lease || loading} onClick={onSaveDraft}>保存草稿</button>
+      ) : null}
       <span className="action-hint">
         <strong>剩余问题 {warningCount}</strong>
         <span>{lease ? `租约到期 ${new Date(lease.expires_at).toLocaleTimeString()}` : "尚未获取审核锁"}</span>
@@ -41,10 +51,10 @@ export function WorkbenchActionBar({
       <button
         type="button"
         className="button button-primary"
-        disabled={!detail || !lease || loading || warningCount > 0 || (!isCorrection && selectedQueue !== "review")}
+        disabled={!lease || loading || warningCount > 0 || (!isCorrection && selectedQueue !== "review") || (isCorrection && !hasUnsavedEdits)}
         title={warningCount > 0 ? "请先处理所有待确认字段" : undefined}
         onClick={onPrimary}
-      >{isCorrection ? "保存更正" : "确认并下一张"}</button>
+      >{isCorrection ? "保存本次修改" : "确认并下一张"}</button>
     </footer>
   );
 }

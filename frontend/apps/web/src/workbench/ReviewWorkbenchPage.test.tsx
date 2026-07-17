@@ -159,7 +159,15 @@ describe("ReviewWorkbenchPage", () => {
 
   it("persists a dragged desktop split within the 35 to 65 percent bounds", async () => {
     const user = userEvent.setup();
-    vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse([]));
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const path = String(input);
+      if (path.includes("/forms/queue/")) return jsonResponse([]);
+      if (path === "/api/v1/forms/FORM-WORKBENCH") return jsonResponse(workbench());
+      if (path === "/api/v1/forms/FORM-WORKBENCH/review-history") {
+        return jsonResponse({ versions: [], audits: [] });
+      }
+      return jsonResponse({ code: "UNEXPECTED", detail: path }, 404);
+    });
     render(
       <ReviewWorkbenchPage
         onOpenTemplates={() => undefined}
@@ -167,7 +175,9 @@ describe("ReviewWorkbenchPage", () => {
         onOpenExports={() => undefined}
       />,
     );
-    const grid = screen.getByTestId("review-workbench-grid");
+    await user.type(screen.getByLabelText("表单编号"), "FORM-WORKBENCH");
+    await user.click(screen.getByRole("button", { name: "加载表单" }));
+    const grid = await screen.findByTestId("review-workbench-grid");
     vi.spyOn(grid, "getBoundingClientRect").mockReturnValue({
       x: 0, y: 0, left: 0, top: 0, right: 1000, bottom: 500,
       width: 1000, height: 500, toJSON: () => ({}),

@@ -23,8 +23,10 @@ import { FieldDetailPanel } from "./FieldDetailPanel";
 import { FieldReviewTable } from "./FieldReviewTable";
 import { selectFirstIssueFieldId } from "./field-navigation";
 import { WorkbenchActionBar } from "./WorkbenchActionBar";
+import { WorkbenchEmptyState, WorkbenchErrorNotice } from "./WorkbenchEmptyState";
 import { WorkbenchHeader } from "./WorkbenchHeader";
 import { WorkbenchQueue } from "./WorkbenchQueue";
+import { useWorkbenchShortcuts, type ImageShortcutCommand } from "./useWorkbenchShortcuts";
 import type {
   DuplicateImportInfo,
   MobilePane,
@@ -37,7 +39,7 @@ const notificationPort = new WebNotificationPort();
 const QUEUES: Array<{ key: QueueKey; label: string; warning?: boolean }> = [
   { key: "classification", label: "待分类" },
   { key: "review", label: "待复核" },
-  { key: "exceptions", label: "规则异常", warning: true },
+  { key: "exceptions", label: "待重新拍照", warning: true },
   { key: "exportable", label: "可导出" },
 ];
 
@@ -84,7 +86,7 @@ export function ReviewWorkbenchPage({
   const hasUnsavedEdits =
     detail !== null &&
     JSON.stringify(edits) !== JSON.stringify(detail.draft?.values ?? {});
-  const warningCount = detail?.fields.filter((field) => {
+  const issueFieldIds = detail?.fields.filter((field) => {
     const best = field.candidates[0];
     const value = fieldValue(detail, field, edits);
     return Boolean(ruleFailures[field.field_name] ?? reviewValueIssue(
@@ -92,8 +94,38 @@ export function ReviewWorkbenchPage({
       Object.hasOwn(edits, field.field_id) || Object.hasOwn(edits, field.field_name),
       field.data_type, field.rules,
     ));
-  }).length ?? 0;
+  }).map((field) => field.field_id) ?? [];
+  const warningCount = issueFieldIds.length;
   const isCorrection = (detail?.form.current_record_version ?? 0) > 0;
+
+  useWorkbenchShortcuts({
+    fieldIds: detail?.fields.map((field) => field.field_id) ?? [],
+    issueFieldIds,
+    selectedFieldId,
+    hasLease: Boolean(lease),
+    hasUnsavedEdits,
+    onAcceptCandidate: () => {
+      const candidate = selectedField?.candidates[0];
+      if (selectedField && candidate) useCandidate(selectedField.field_id, candidate);
+    },
+    onSelectField: (fieldId) => selectField(fieldId, true),
+    onSaveDraft: () => void saveDraft(),
+    onImageCommand: runImageShortcut,
+  });
+
+  function runImageShortcut(command: ImageShortcutCommand) {
+    const labels: Record<ImageShortcutCommand, string[]> = {
+      "zoom-in": ["放大"],
+      "zoom-out": ["缩小"],
+      reset: ["重置"],
+      rotate: ["旋转", "顺时针"],
+    };
+    const root = document.querySelector("[data-workbench-image-context]");
+    const button = Array.from(root?.querySelectorAll("button") ?? []).find((candidate) =>
+      labels[command].some((label) => candidate.textContent?.includes(label) || candidate.getAttribute("aria-label")?.includes(label)),
+    );
+    button?.click();
+  }
 
   const refreshQueues = useCallback(async () => {
     try {
@@ -575,7 +607,7 @@ export function ReviewWorkbenchPage({
           onReleaseLease={() => void releaseLease()}
         />
 
-        {error && <div className="error-banner" role="alert">{error}</div>}
+        {error && <WorkbenchErrorNotice error={error} />}
         {duplicateImport && (
           <section className="duplicate-import-card" role="alert">
             <div>
@@ -606,7 +638,13 @@ export function ReviewWorkbenchPage({
           onOpenForm={openQueueForm}
         />
 
-        {detail?.form.review_status === "NEEDS_CLASSIFICATION" ? (
+        {!detail ? (
+          <WorkbenchEmptyState
+            queue={selectedQueue === "exportable" ? "review" : selectedQueue}
+            onUpload={() => document.getElementById("image-import")?.click()}
+            onFind={() => document.querySelector<HTMLInputElement>('[aria-label="表单编号"]')?.focus()}
+          />
+        ) : detail.form.review_status === "NEEDS_CLASSIFICATION" ? (
           <ClassificationStage
             key={detail.form.form_id}
             formId={detail.form.form_id}
@@ -642,14 +680,16 @@ export function ReviewWorkbenchPage({
               data-mobile-pane={mobilePane}
               style={{ gridTemplateColumns: `${splitPercent}% ${100 - splitPercent}%` }}
             >
-              <EvidenceViewer
-                evidence={detail?.evidence ?? []}
-                fields={detail?.fields ?? []}
-                selectedFieldId={selectedFieldId}
-                hoveredFieldId={hoveredFieldId}
-                onSelectField={(fieldId) => selectField(fieldId, true)}
-                onHoverField={setHoveredFieldId}
-              />
+              <div className="evidence-shortcut-context" data-workbench-image-context>
+                <EvidenceViewer
+                  evidence={detail.evidence}
+                  fields={detail.fields}
+                  selectedFieldId={selectedFieldId}
+                  hoveredFieldId={hoveredFieldId}
+                  onSelectField={(fieldId) => selectField(fieldId, true)}
+                  onHoverField={setHoveredFieldId}
+                />
+              </div>
               <div
                 className="workbench-splitter"
                 role="separator"
