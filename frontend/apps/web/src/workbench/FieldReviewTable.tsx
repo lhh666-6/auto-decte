@@ -36,10 +36,11 @@ export function FieldReviewTable({
           const candidate = field.candidates[0];
           const displayValue = valueForField(field, edits, recordValues);
           const manuallyEdited = Object.hasOwn(edits, field.field_id) || Object.hasOwn(edits, field.field_name);
+          const manuallyConfirmed = manuallyEdited || field.current_value_source === "HUMAN_CONFIRMED";
           const issue = ruleFailures[field.field_id] ?? ruleFailures[field.field_name] ?? reviewValueIssue(
             displayValue,
             candidate?.confidence,
-            manuallyEdited,
+            manuallyConfirmed,
             field.data_type,
             field.rules,
           );

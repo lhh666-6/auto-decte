@@ -100,7 +100,8 @@ export function ReviewWorkbenchPage({
     const value = fieldValue(detail, field, edits);
     return Boolean(ruleFailures[field.field_name] ?? reviewValueIssue(
       value, best?.confidence,
-      Object.hasOwn(edits, field.field_id) || Object.hasOwn(edits, field.field_name),
+      Object.hasOwn(edits, field.field_id) || Object.hasOwn(edits, field.field_name) ||
+        field.current_value_source === "HUMAN_CONFIRMED",
       field.data_type, field.rules,
     ));
   }).map((field) => field.field_id) ?? [];

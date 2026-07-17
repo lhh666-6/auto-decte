@@ -3,7 +3,13 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from app.api.main import create_app
-from app.domain.models import FormField, RecognitionAttempt
+from app.domain.models import (
+    FormField,
+    RecognitionAttempt,
+    RecordStatus,
+    RecordVersion,
+    ReviewStatus,
+)
 from app.domain.templates_ds import FieldDefinition, FieldRules, PageSpec, Rect, TemplateVersion
 from app.services.container import Services, build_services
 from config.settings import Settings
@@ -80,6 +86,29 @@ def test_form_workbench_detail_exposes_fields_candidates_and_safe_evidence_url(
         f"/evidence/{payload['evidence'][0]['file_id']}"
     )
     assert "uri" not in payload["evidence"][0]
+
+
+def test_workbench_overlays_confirmed_runtime_field_values(tmp_path: Path) -> None:
+    client, services = build_client(tmp_path)
+    services.repository.add_record_version(
+        RecordVersion(
+            record_id="RECORD-1",
+            form_id="FORM-1",
+            version=1,
+            previous_version=None,
+            status=RecordStatus.CONFIRMED,
+            values={"FIELD-1": 12},
+            change_reason="人工确认",
+            confirmed_by="reviewer-a",
+        )
+    )
+    services.repository.set_review_status("FORM-1", ReviewStatus.CONFIRMED)
+
+    payload = client.get("/api/v1/forms/FORM-1", headers=reviewer_headers()).json()
+
+    assert payload["fields"][0]["current_value"] == 12
+    assert payload["fields"][0]["current_value_source"] == "HUMAN_CONFIRMED"
+    assert payload["fields"][0]["current_record_version"] == 1
 
 
 def test_workbench_exposes_template_rules_for_frontend_validation(tmp_path: Path) -> None:

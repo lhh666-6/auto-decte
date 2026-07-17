@@ -14,7 +14,14 @@ from app.application.export_forms import ExportForms
 from app.application.import_forms import ImportForms
 from app.application.query_forms import FormFilters, QueryForms, SearchResult
 from app.application.review_forms import ReviewForms
-from app.domain.models import ExportStatus, Form, RecordStatus, RecordVersion, ReviewStatus
+from app.domain.models import (
+    ExportStatus,
+    Form,
+    FormField,
+    RecordStatus,
+    RecordVersion,
+    ReviewStatus,
+)
 from app.domain.templates_ds import (
     ExportTarget,
     FieldDefinition,
@@ -66,7 +73,7 @@ def test_xlsx_has_four_sheets_persisted_batch_and_reverse_trace(tmp_path: Path) 
     assert Path(batch.file_path).exists()
     assert len(batch.file_sha256) == 64
     assert repository.list_export_batches()[0].included_records == (("FORM-0001", 1),)
-    assert repository.get_form("FORM-0001").export_status is ExportStatus.EXPORTED  # type: ignore[union-attr]
+    assert repository.get_form("FORM-0001").export_status is ExportStatus.EXPORTED
 
 
 def test_correction_after_export_requires_new_export_and_old_file_remains(tmp_path: Path) -> None:
@@ -82,7 +89,7 @@ def test_correction_after_export_requires_new_export_and_old_file_remains(tmp_pa
         (),
     )
 
-    assert repository.get_form("FORM-0001").export_status is ExportStatus.REEXPORT_REQUIRED  # type: ignore[union-attr]
+    assert repository.get_form("FORM-0001").export_status is ExportStatus.REEXPORT_REQUIRED
     assert Path(first.file_path).exists()
     second = service.export(
         "OUTPUT",
@@ -335,7 +342,26 @@ def test_template_export_groups_mappings_and_uses_only_each_forms_template(
         image = tmp_path / f"{form_id}.png"
         image.write_bytes(form_id.encode())
         evidence = imports.import_image(image, form_id, template_id, "1", "operator")
-        reviews.confirm(form_id, 0, values, "reviewer", "confirmed", (evidence.file_id,))
+        runtime_values: dict[str, object] = {}
+        for field_name, value in values.items():
+            field_id = f"{form_id}:RUNTIME:{field_name}"
+            repository.add_form_field(
+                FormField(
+                    field_id=field_id,
+                    form_id=form_id,
+                    field_name=field_name,
+                    source_region={"x": 0, "y": 0, "width": 1, "height": 1},
+                )
+            )
+            runtime_values[field_id] = value
+        reviews.confirm(
+            form_id,
+            0,
+            runtime_values,
+            "reviewer",
+            "confirmed",
+            (evidence.file_id,),
+        )
 
     service = ExportForms(
         repository,

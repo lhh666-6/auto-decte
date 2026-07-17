@@ -20,7 +20,15 @@ from app.api.schemas.workbench import (
     WorkbenchDetailResponse,
 )
 from app.application.query_forms import FormWorkbench
-from app.domain.models import EvidenceFile, EvidenceType, ExportStatus, RecordVersion, ReviewStatus
+from app.domain.models import (
+    EvidenceFile,
+    EvidenceType,
+    ExportStatus,
+    RecordStatus,
+    RecordVersion,
+    ReviewStatus,
+    ValueSource,
+)
 from app.modules.identity_access.models_ds import Actor, Permission
 from app.modules.identity_access.policy_ds import PermissionPolicy
 from app.services.container import Services
@@ -155,6 +163,19 @@ def build_workbench_response(
     template_fields = (
         {field.field_key: field for field in template.fields} if template is not None else {}
     )
+    latest_record = workbench.trace.versions[-1] if workbench.trace.versions else None
+    confirmed_values_by_field_id: dict[str, object] = {}
+    if latest_record is not None and latest_record.status in {
+        RecordStatus.CONFIRMED,
+        RecordStatus.CORRECTED,
+    }:
+        for field in workbench.fields:
+            if field.field_name in latest_record.values:
+                confirmed_values_by_field_id[field.field_id] = latest_record.values[
+                    field.field_name
+                ]
+            elif field.field_id in latest_record.values:
+                confirmed_values_by_field_id[field.field_id] = latest_record.values[field.field_id]
     master_data_options: dict[str, list[dict[str, str]]] = {}
     for definition in template_fields.values():
         source = definition.rules.master_data_source
@@ -212,11 +233,23 @@ def build_workbench_response(
                     else None
                 ),
                 source_region=field.source_region,
-                current_value=field.current_value,
-                current_value_source=(
-                    field.current_value_source.value if field.current_value_source else None
+                current_value=(
+                    confirmed_values_by_field_id[field.field_id]
+                    if field.field_id in confirmed_values_by_field_id
+                    else field.current_value
                 ),
-                current_record_version=field.current_record_version,
+                current_value_source=(
+                    ValueSource.HUMAN_CONFIRMED.value
+                    if field.field_id in confirmed_values_by_field_id
+                    else field.current_value_source.value
+                    if field.current_value_source
+                    else None
+                ),
+                current_record_version=(
+                    latest_record.version
+                    if field.field_id in confirmed_values_by_field_id and latest_record is not None
+                    else field.current_record_version
+                ),
                 candidates=attempts_by_field.get(field.field_id, []),
             )
             for field in workbench.fields

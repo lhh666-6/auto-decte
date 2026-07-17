@@ -155,6 +155,7 @@ class ExportForms:
                     )
                 )
                 continue
+            result = self._canonicalize_result_values(result)
             template = self._resolve_template(form.template_id, form.template_version)
             if template is None:
                 excluded.append(
@@ -205,6 +206,16 @@ class ExportForms:
         except ValueError:
             return None
         return self._template_repository.get_version_by_key_version(template_id, version)
+
+    def _canonicalize_result_values(self, result: SearchResult) -> SearchResult:
+        """Expose historical runtime field IDs through stable template field keys."""
+        values = dict(result.current_record.values)
+        for field in self._queries.workbench(result.form.form_id).fields:
+            if field.field_name not in values and field.field_id in values:
+                values[field.field_name] = values[field.field_id]
+        if values == result.current_record.values:
+            return result
+        return replace(result, current_record=replace(result.current_record, values=values))
 
     @staticmethod
     def _template_mappings(template: TemplateVersion) -> tuple[ExportMapping, ...]:
@@ -352,7 +363,10 @@ class ExportForms:
     ) -> ExportBatch:
         """Validate and write an unpublished immutable workbook candidate."""
         confirmed_filters = replace(filters, review_status=ReviewStatus.CONFIRMED)
-        results = self._queries.search(confirmed_filters)
+        results = [
+            self._canonicalize_result_values(result)
+            for result in self._queries.search(confirmed_filters)
+        ]
         mapping_snapshot: tuple[ExportMapping, ...] | None = None
         template_snapshot: dict[str, object] = {}
         if self._template_repository is not None:

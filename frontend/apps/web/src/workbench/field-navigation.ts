@@ -70,7 +70,7 @@ function fieldIssuePriority(
   const issue = reviewValueIssue(
     value,
     field.candidates[0]?.confidence,
-    editedById || editedByName,
+    editedById || editedByName || field.current_value_source === "HUMAN_CONFIRMED",
     field.data_type,
     field.rules,
   );
