@@ -26,9 +26,6 @@ function ReviewRoute() {
           : nextQueue === "exceptions" ? "/workbench/recapture"
             : "/workbench/review",
       )}
-      onOpenTemplates={() => navigate("/templates")}
-      onOpenMasterData={() => navigate("/master-data/employees")}
-      onOpenExports={() => navigate("/exports")}
     />
   );
 }
@@ -45,7 +42,6 @@ function TemplatesRoute() {
   return (
     <TemplateStudio
       initialScreen={initialScreen}
-      onBack={() => navigate("/workbench/review")}
       onScreenChange={(screen) => {
         if (screen.kind === "library") navigate("/templates");
         else if (screen.kind === "preview") navigate(`/templates/${screen.versionId}/versions/${screen.versionId}`);
@@ -66,14 +62,12 @@ function MasterDataRoute() {
     <MasterDataCenter
       initialCatalog={catalog}
       onCatalogChange={(nextCatalog) => navigate(`/master-data/${nextCatalog}`)}
-      onBack={() => navigate("/workbench/review")}
     />
   );
 }
 
 function ExportsRoute() {
-  const navigate = useNavigate();
-  return <ExportCenter onBack={() => navigate("/workbench/review")} />;
+  return <ExportCenter />;
 }
 
 function NotFound() {

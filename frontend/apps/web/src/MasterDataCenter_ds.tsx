@@ -25,14 +25,12 @@ const CATALOGS: Array<{ key: MasterDataCatalog; label: string; hint: string }> =
 ];
 
 interface MasterDataCenterProps {
-  onBack: () => void;
   api?: MasterDataApi;
   initialCatalog?: MasterDataCatalog;
   onCatalogChange?: (catalog: MasterDataCatalog) => void;
 }
 
 export function MasterDataCenter({
-  onBack,
   api,
   initialCatalog = "employees",
   onCatalogChange,
@@ -216,7 +214,6 @@ export function MasterDataCenter({
     <main className="master-data-center">
       <header className="master-data-header">
         <div>
-          <button type="button" className="text-button" onClick={onBack}>← 返回审核工作台</button>
           <span className="eyebrow">主数据中心</span>
           <h1>员工、工单、产品与工序</h1>
           <p>统一维护复核和模板下拉项使用的业务基础数据；编码不可改，记录只停用、不删除。</p>

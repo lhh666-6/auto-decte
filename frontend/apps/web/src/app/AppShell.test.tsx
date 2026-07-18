@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it } from "vitest";
 import {
@@ -41,9 +41,12 @@ describe("AppShell", () => {
       </MemoryRouter>,
     );
 
-    expect(screen.getByText("产量采集工作台")).toBeTruthy();
+    expect(screen.getByText("工业工资表系统")).toBeTruthy();
+    expect(screen.queryByRole("link", { name: "工业工资表系统" })).toBeNull();
+    const primaryNavigation = within(screen.getByRole("navigation", { name: "一级导航" }));
+    expect(primaryNavigation.getAllByRole("link")).toHaveLength(4);
     for (const name of ["审核工作台", "模板中心", "基础数据", "导出数据"]) {
-      expect(screen.getByRole("link", { name })).toBeTruthy();
+      expect(primaryNavigation.getByRole("link", { name })).toBeTruthy();
     }
     expect(screen.getByRole("link", { name: "模板中心" }).getAttribute("aria-current")).toBe("page");
     expect(screen.getByText("本地单机模式 · 服务正常")).toBeTruthy();

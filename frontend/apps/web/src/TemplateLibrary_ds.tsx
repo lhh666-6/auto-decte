@@ -6,7 +6,6 @@ import { ProblemNotice } from "./ui/ProblemNotice";
 
 type Props = {
   api: TemplateApi;
-  onBack: () => void;
   onSelectPublished: (versionId: string) => void;
   onOpenDraft: (versionId: string) => void;
   onCreateBlank: (
@@ -19,7 +18,7 @@ type Props = {
 
 type StatusFilter = "ALL" | "PUBLISHED" | "EDITABLE";
 
-export function TemplateLibrary({ api, onBack, onSelectPublished, onOpenDraft, onCreateBlank }: Props) {
+export function TemplateLibrary({ api, onSelectPublished, onOpenDraft, onCreateBlank }: Props) {
   const [templates, setTemplates] = useState<TemplateLibraryItem[]>([]);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<StatusFilter>("ALL");
@@ -57,7 +56,6 @@ export function TemplateLibrary({ api, onBack, onSelectPublished, onOpenDraft, o
     <main className="template-center">
       <header className="template-center-header">
         <div><span className="eyebrow">模板中心</span><h1>纸质表单模板库</h1><p>选择已发布版本查看打印内容；调优始终复制为新的草稿版本。</p></div>
-        <button className="text-button" onClick={onBack}>返回审核工作台</button>
       </header>
 
       <section

@@ -34,7 +34,6 @@ describe("TemplateLibrary", () => {
     render(
       <TemplateLibrary
         api={api}
-        onBack={vi.fn()}
         onSelectPublished={vi.fn()}
         onOpenDraft={vi.fn()}
         onCreateBlank={onCreateBlank}
@@ -64,7 +63,7 @@ describe("TemplateLibrary", () => {
     const user = userEvent.setup();
     const api = { listTemplates: vi.fn().mockResolvedValue([ITEM]) } as unknown as TemplateApi;
     render(
-      <TemplateLibrary api={api} onBack={vi.fn()} onSelectPublished={vi.fn()} onOpenDraft={vi.fn()} onCreateBlank={vi.fn()} />,
+      <TemplateLibrary api={api} onSelectPublished={vi.fn()} onOpenDraft={vi.fn()} onCreateBlank={vi.fn()} />,
     );
 
     const card = (await screen.findByRole("heading", { name: "小时工资表" })).closest("article")!;

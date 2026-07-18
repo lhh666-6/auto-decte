@@ -21,7 +21,6 @@ import {
 import { nextScreen, type StudioAction, type StudioScreen } from "./template-studio-state";
 
 type Props = {
-  onBack: () => void;
   initialScreen?: StudioScreen;
   onScreenChange?: (screen: StudioScreen) => void;
 };
@@ -49,7 +48,7 @@ const INITIAL_FIELD: TemplateField = {
   region: { x: 0.1, y: 0.2, width: 0.22, height: 0.05 },
 };
 
-export function TemplateStudio({ onBack, initialScreen, onScreenChange }: Props) {
+export function TemplateStudio({ initialScreen, onScreenChange }: Props) {
   const api = useMemo(() => new TemplateApi("/api/v1"), []);
   const [screen, setScreen] = useState<StudioScreen>(initialScreen ?? { kind: "library" });
 
@@ -87,7 +86,6 @@ export function TemplateStudio({ onBack, initialScreen, onScreenChange }: Props)
     return (
       <TemplateLibrary
         api={api}
-        onBack={onBack}
         onSelectPublished={(versionId) => navigate({ type: "select", versionId })}
         onOpenDraft={(versionId) => navigate({ type: "editDraft", versionId })}
         onCreateBlank={createBlank}

@@ -60,6 +60,12 @@
 - 原因：保持 Web 可运行，同时为 Tauri 封装、设备端口和 Windows 安装包保留演进路径。
 - 证据：`frontend/apps/web/`、`frontend/packages/api-client/`、`frontend/packages/shell-ports/`。
 
+### D-010：模块入口只存在于全局导航，审核队列只存在于工作台内部
+
+- 决定：产品品牌不可点击；审核、模板、基础数据和导出只从全局一级导航进入。待确认表单类型、待核对和待重新拍照是审核工作台内部标签，不再与模块入口混排，也不设置“可导出”审核队列。
+- 原因：模块导航和业务队列属于不同层级；重复页头、侧栏入口和返回按钮会制造多套导航语义，“可导出”则是导出模块的筛选结果而不是审核任务。
+- 证据：`frontend/apps/web/src/app/AppShell.tsx`、`frontend/apps/web/src/app/router.tsx`、`frontend/apps/web/src/workbench/ReviewWorkbenchPage.tsx`、Task 2 组件测试与浏览器路由验收。
+
 ## 已否决方案及原因
 
 | 已否决方案 | 原因 |

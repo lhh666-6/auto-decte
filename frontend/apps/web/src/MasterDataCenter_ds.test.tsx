@@ -22,7 +22,7 @@ describe("MasterDataCenter", () => {
     const user = userEvent.setup();
     const client = api();
     const onCatalogChange = vi.fn();
-    render(<MasterDataCenter api={client} initialCatalog="products" onCatalogChange={onCatalogChange} onBack={vi.fn()} />);
+    render(<MasterDataCenter api={client} initialCatalog="products" onCatalogChange={onCatalogChange} />);
 
     const tabs = within(screen.getByRole("navigation", { name: "主数据类型" }));
     for (const name of ["员工", "工单", "产品", "工序"]) {
@@ -38,7 +38,7 @@ describe("MasterDataCenter", () => {
 
   it("distinguishes an empty directory from a search with no results", async () => {
     const user = userEvent.setup();
-    render(<MasterDataCenter api={api()} initialCatalog="employees" onBack={vi.fn()} />);
+    render(<MasterDataCenter api={api()} initialCatalog="employees" />);
     expect(await screen.findByText("员工目录为空")).toBeTruthy();
 
     await user.type(screen.getByLabelText("搜索主数据"), "E001");
@@ -48,7 +48,7 @@ describe("MasterDataCenter", () => {
 
   it("uses business fields instead of a raw JSON editor", async () => {
     const user = userEvent.setup();
-    render(<MasterDataCenter api={api()} initialCatalog="products" onBack={vi.fn()} />);
+    render(<MasterDataCenter api={api()} initialCatalog="products" />);
     await user.click(screen.getByRole("button", { name: "新增产品" }));
 
     for (const label of ["产品编码", "产品名称", "规格型号", "计量单位", "更多信息", "变更原因"]) {

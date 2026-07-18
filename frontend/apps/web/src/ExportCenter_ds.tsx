@@ -26,7 +26,6 @@ export interface ExportCenterApi {
 
 interface ExportCenterProps {
   api?: ExportCenterApi;
-  onBack: () => void;
 }
 
 interface PreviewSnapshot {
@@ -43,7 +42,7 @@ const EMPTY_FILTERS: ExportFilters = {
   export_status: "NOT_EXPORTED",
 };
 
-export function ExportCenter({ api, onBack }: ExportCenterProps) {
+export function ExportCenter({ api }: ExportCenterProps) {
   const client = useMemo<ExportCenterApi>(() => api ?? new ExportApi("/api/v1"), [api]);
   const [filters, setFilters] = useState<ExportFilters>(EMPTY_FILTERS);
   const [exportType, setExportType] = useState("PAYROLL");
@@ -227,7 +226,6 @@ export function ExportCenter({ api, onBack }: ExportCenterProps) {
     <main className="export-center">
       <header className="export-center-header">
         <div>
-          <button type="button" className="text-button" onClick={onBack}>← 返回审核工作台</button>
           <span className="eyebrow">模板驱动 · 可追溯</span>
           <h1>导出中心</h1>
           <p>预览最终校验结果，创建异步 XLSX 任务并从授权接口下载。</p>

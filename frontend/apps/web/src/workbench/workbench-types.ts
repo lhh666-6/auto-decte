@@ -1,6 +1,6 @@
 export type MobilePane = "evidence" | "fields";
 
-export type QueueKey = "classification" | "review" | "exceptions" | "exportable";
+export type QueueKey = "classification" | "review" | "exceptions";
 
 export type ReviewAction = "return" | "void";
 

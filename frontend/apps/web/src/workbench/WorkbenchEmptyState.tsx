@@ -3,7 +3,7 @@ import type { QueueKey } from "./workbench-types";
 import { ProblemNotice } from "../ui/ProblemNotice";
 
 interface WorkbenchEmptyStateProps {
-  queue: Exclude<QueueKey, "exportable">;
+  queue: QueueKey;
   onUpload(): void;
   onFind(): void;
 }

@@ -40,24 +40,17 @@ import type {
 const notificationPort = new WebNotificationPort();
 
 const QUEUES: Array<{ key: QueueKey; label: string; warning?: boolean }> = [
-  { key: "classification", label: "待分类" },
-  { key: "review", label: "待复核" },
+  { key: "classification", label: "待确认表单类型" },
+  { key: "review", label: "待核对" },
   { key: "exceptions", label: "待重新拍照", warning: true },
-  { key: "exportable", label: "可导出" },
 ];
 
 interface ReviewWorkbenchPageProps {
-  onOpenTemplates: () => void;
-  onOpenMasterData: () => void;
-  onOpenExports: () => void;
-  routeQueue?: Exclude<QueueKey, "exportable">;
+  routeQueue?: QueueKey;
   routeFormId?: string;
-  onQueueRouteChange?: (queue: Exclude<QueueKey, "exportable">) => void;
+  onQueueRouteChange?: (queue: QueueKey) => void;
 }
 export function ReviewWorkbenchPage({
-  onOpenTemplates,
-  onOpenMasterData,
-  onOpenExports,
   routeQueue,
   routeFormId,
   onQueueRouteChange,
@@ -88,7 +81,7 @@ export function ReviewWorkbenchPage({
   const [reviewAction, setReviewAction] = useState<ReviewAction | null>(null);
   const [actionReason, setActionReason] = useState("");
   const [queueForms, setQueueForms] = useState<Record<QueueKey, WorkbenchDetail["form"][]>>({
-    classification: [], review: [], exceptions: [], exportable: [],
+    classification: [], review: [], exceptions: [],
   });
   const routedFormLoad = useRef<string | null>(null);
 
@@ -222,11 +215,6 @@ export function ReviewWorkbenchPage({
 
   function chooseQueue(queueKey: QueueKey) {
     if (!canLeaveCurrentForm()) return;
-    if (queueKey === "exportable") {
-      setSelectedQueue("review");
-      onOpenExports();
-      return;
-    }
     setSelectedQueue(queueKey);
     onQueueRouteChange?.(queueKey);
   }
@@ -575,17 +563,11 @@ export function ReviewWorkbenchPage({
   }
 
   return (
-    <div className="app-shell">
-      <header className="topbar">
-        <div className="brand"><span className="brand-mark">▦</span> 产量采集工作台</div>
-        <div className="topbar-context">人工审核 <span className="connection-dot" /> 本地服务</div>
-      </header>
-
-      <aside className="queue-sidebar" aria-label="工作队列">
-        <div className="queue-title">审核队列</div>
-        <nav>
+    <div className="review-workbench-shell">
+      <main className="workbench">
+        <nav className="workbench-queue-tabs" aria-label="审核任务" role="tablist">
           {QUEUES.map((queue) => (
-            <QueueItem
+            <QueueTab
               key={queue.key}
               label={queue.label}
               count={String(queueForms[queue.key].length)}
@@ -595,25 +577,6 @@ export function ReviewWorkbenchPage({
             />
           ))}
         </nav>
-        <div className="sidebar-divider" />
-        <nav className="secondary-nav">
-          <button type="button" onClick={() => {
-            if (!canLeaveCurrentForm()) return;
-            window.setTimeout(() => document.getElementById("image-import")?.click(), 0);
-          }}>数据管理</button>
-          <button type="button" onClick={() => {
-            if (canLeaveCurrentForm()) onOpenTemplates();
-          }}>模板与字段</button>
-          <button type="button" onClick={() => {
-            if (canLeaveCurrentForm()) onOpenMasterData();
-          }}>员工 / 工单</button>
-          <button type="button" onClick={() => {
-            if (canLeaveCurrentForm()) onOpenMasterData();
-          }}>产品 / 工序</button>
-        </nav>
-      </aside>
-
-      <main className="workbench">
         <WorkbenchHeader
           formIdInput={formIdInput}
           detail={detail}
@@ -662,7 +625,7 @@ export function ReviewWorkbenchPage({
 
         {!detail ? (
           <WorkbenchEmptyState
-            queue={selectedQueue === "exportable" ? "review" : selectedQueue}
+            queue={selectedQueue}
             onUpload={() => document.getElementById("image-import")?.click()}
             onFind={() => document.querySelector<HTMLInputElement>('[aria-label="表单编号"]')?.focus()}
           />
@@ -793,8 +756,18 @@ export function ReviewWorkbenchPage({
   );
 }
 
-function QueueItem({ label, count, active = false, warning = false, onClick }: { label: string; count: string; active?: boolean; warning?: boolean; onClick: () => void }) {
-  return <button type="button" onClick={onClick} className={`queue-item ${active ? "active" : ""} ${warning ? "warning" : ""}`}><span>{label}</span><span>{count}</span></button>;
+function QueueTab({ label, count, active = false, warning = false, onClick }: { label: string; count: string; active?: boolean; warning?: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={active}
+      onClick={onClick}
+      className={`workbench-queue-tab ${active ? "active" : ""} ${warning ? "warning" : ""}`}
+    >
+      <span>{label}</span><strong>{count}</strong>
+    </button>
+  );
 }
 
 function ReviewActionDialog({

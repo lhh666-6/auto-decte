@@ -7,7 +7,6 @@ const QUEUE_LABELS: Record<QueueKey, string> = {
   classification: "待确认表单类型",
   review: "待核对",
   exceptions: "待重新拍照",
-  exportable: "可导出",
 };
 
 interface WorkbenchQueueProps {
@@ -17,6 +16,8 @@ interface WorkbenchQueueProps {
 }
 
 export function WorkbenchQueue({ selectedQueue, forms, onOpenForm }: WorkbenchQueueProps) {
+  if (forms.length === 0) return null;
+
   return (
     <section className="queue-panel" aria-label="当前审核队列">
       <div>
@@ -25,9 +26,7 @@ export function WorkbenchQueue({ selectedQueue, forms, onOpenForm }: WorkbenchQu
         {selectedQueue === "review" && <span className="visually-hidden">待复核</span>}
       </div>
       <div className="queue-form-list">
-        {forms.length === 0 ? (
-          <span className="muted">当前没有表单</span>
-        ) : forms.map((form) => {
+        {forms.map((form) => {
           const status = getReviewStatusCopy(form.review_status);
           return (
             <button key={form.form_id} type="button" onClick={() => onOpenForm(form.form_id)}>

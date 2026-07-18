@@ -237,10 +237,10 @@ describe("review correction", () => {
     const field = await screen.findByLabelText("工时 最终填写值");
     await user.clear(field);
     await user.type(field, "9");
-    await user.click(screen.getByRole("button", { name: "模板与字段" }));
+    await user.click(screen.getByRole("link", { name: "模板中心" }));
 
     expect(confirm).toHaveBeenCalledWith("当前有尚未保存的审核修改，确定离开吗？");
-    expect(screen.getByRole("button", { name: "模板与字段" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "模板中心" })).toBeTruthy();
     expect(screen.getByLabelText("工时 最终填写值")).toBeTruthy();
   });
 });

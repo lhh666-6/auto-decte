@@ -12,7 +12,6 @@ import type {
 } from "@form-detection/api-client";
 
 import { ExportCenter, type ExportCenterApi } from "./ExportCenter_ds";
-import { App } from "./App";
 
 const preview: ExportPreview = {
   included: [{ form_id: "FORM-1", record_version: 2, reasons: [] }],
@@ -107,7 +106,7 @@ describe("ExportCenter", () => {
   it("presents export as four business steps and hides technical details until requested", async () => {
     const user = userEvent.setup();
     const api = makeApi();
-    render(<ExportCenter api={api} onBack={vi.fn()} />);
+    render(<ExportCenter api={api} />);
 
     for (const name of ["选择数据", "检查数据", "生成 Excel", "下载文件"]) {
       expect(screen.getByRole("heading", { name })).toBeTruthy();
@@ -134,7 +133,7 @@ describe("ExportCenter", () => {
   it("defaults preview and ordinary create to NOT_EXPORTED without an ALL bypass", async () => {
     const user = userEvent.setup();
     const api = makeApi();
-    render(<ExportCenter api={api} onBack={vi.fn()} />);
+    render(<ExportCenter api={api} />);
 
     const status = screen.getByLabelText("导出状态") as HTMLSelectElement;
     expect(status.value).toBe("NOT_EXPORTED");
@@ -159,7 +158,7 @@ describe("ExportCenter", () => {
   it("previews included records, FORM/FIELD exclusions, rule details and mappings", async () => {
     const user = userEvent.setup();
     const api = makeApi();
-    render(<ExportCenter api={api} onBack={vi.fn()} />);
+    render(<ExportCenter api={api} />);
 
     await user.type(screen.getByLabelText("表单编号"), "FORM/一");
     await user.type(screen.getByLabelText("员工编号"), "E&01");
@@ -194,7 +193,7 @@ describe("ExportCenter", () => {
       })
       .mockImplementationOnce((_filters: ExportFilters, _signal?: AbortSignal) => second.promise);
     const api = makeApi({ preview: previewRequest });
-    render(<ExportCenter api={api} onBack={vi.fn()} />);
+    render(<ExportCenter api={api} />);
 
     const formId = screen.getByLabelText("表单编号");
     await user.type(formId, "FORM-A");
@@ -246,7 +245,7 @@ describe("ExportCenter", () => {
     Object.defineProperty(URL, "createObjectURL", { configurable: true, value: createObjectURL });
     Object.defineProperty(URL, "revokeObjectURL", { configurable: true, value: revokeObjectURL });
     vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
-    render(<ExportCenter api={api} onBack={vi.fn()} />);
+    render(<ExportCenter api={api} />);
 
     await user.click(screen.getByRole("button", { name: "检查可导出的数据" }));
     await user.click(await screen.findByRole("button", { name: "生成 Excel" }));
@@ -267,7 +266,7 @@ describe("ExportCenter", () => {
   it("shows REEXPORT_REQUIRED and submits the actual source batch as supersedes_batch_id", async () => {
     const user = userEvent.setup();
     const api = makeApi();
-    render(<ExportCenter api={api} onBack={vi.fn()} />);
+    render(<ExportCenter api={api} />);
 
     await user.selectOptions(screen.getByLabelText("导出状态"), "REEXPORT_REQUIRED");
     await user.click(screen.getByRole("button", { name: "检查可导出的数据" }));
@@ -310,7 +309,7 @@ describe("ExportCenter", () => {
       preview: vi.fn().mockResolvedValue(multiPreview),
       listBatches: vi.fn().mockResolvedValue([partialBatch]),
     });
-    render(<ExportCenter api={api} onBack={vi.fn()} />);
+    render(<ExportCenter api={api} />);
 
     await user.selectOptions(screen.getByLabelText("导出状态"), "REEXPORT_REQUIRED");
     await user.click(screen.getByRole("button", { name: "检查可导出的数据" }));
@@ -338,7 +337,7 @@ describe("ExportCenter", () => {
       });
     });
     const api = makeApi({ waitForTask });
-    const rendered = render(<ExportCenter api={api} onBack={vi.fn()} />);
+    const rendered = render(<ExportCenter api={api} />);
 
     await waitFor(() => expect(api.listBatches).toHaveBeenCalledTimes(1));
     await user.click(screen.getByRole("button", { name: "检查可导出的数据" }));
@@ -366,7 +365,7 @@ describe("ExportCenter", () => {
       .mockImplementationOnce(() => initial.promise)
       .mockImplementationOnce(() => refreshed.promise);
     const api = makeApi({ listBatches });
-    render(<ExportCenter api={api} onBack={vi.fn()} />);
+    render(<ExportCenter api={api} />);
 
     await waitFor(() => expect(listBatches).toHaveBeenCalledTimes(1));
     await user.click(screen.getByRole("button", { name: "检查可导出的数据" }));
@@ -380,74 +379,4 @@ describe("ExportCenter", () => {
     expect(screen.queryByText("导出记录 OLD")).toBeNull();
   });
 
-  it("opens the export feature from 可导出 only after unsaved review navigation is confirmed", async () => {
-    const user = userEvent.setup();
-    const fetcher = vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
-      const path = String(input);
-      if (path.includes("/forms/queue/")) return new Response("[]", { status: 200 });
-      if (path.endsWith("/forms/FORM-1/review-history")) {
-        return new Response(JSON.stringify({ versions: [], audits: [] }), { status: 200 });
-      }
-      if (path.endsWith("/forms/FORM-1")) {
-        return new Response(JSON.stringify({
-          form: {
-            form_id: "FORM-1",
-            template_id: "PAYROLL_HOURLY",
-            template_version: "1",
-            coordinate_version: "1",
-            review_status: "CONFIRMED",
-            export_status: "NOT_EXPORTED",
-            current_record_version: 1,
-            priority: 1,
-            created_at: "2026-07-16T00:00:00Z",
-          },
-          fields: [{
-            field_id: "FIELD-1",
-            field_name: "hours",
-            display_name: "工时",
-            data_type: "number",
-            recognition_engine: "manual",
-            rules: null,
-            source_region: { x: 0, y: 0, width: 1, height: 1 },
-            current_value: 8,
-            current_value_source: "confirmed",
-            current_record_version: 1,
-            candidates: [],
-          }],
-          evidence: [],
-          current_record: {
-            record_id: "RECORD-1",
-            version: 1,
-            previous_version: null,
-            status: "CONFIRMED",
-            values: { hours: 8 },
-            change_reason: "confirmed",
-            confirmed_by: "reviewer",
-            created_at: "2026-07-16T00:00:00Z",
-          },
-          draft: null,
-        }), { status: 200 });
-      }
-      if (path.endsWith("/exports/batches")) return new Response("[]", { status: 200 });
-      return new Response(JSON.stringify({ code: "UNEXPECTED", detail: path }), { status: 404 });
-    });
-    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
-    render(<App />);
-
-    await user.type(screen.getByLabelText("表单编号"), "FORM-1");
-    await user.click(screen.getByRole("button", { name: "加载表单" }));
-    const field = await screen.findByLabelText("工时 确认值");
-    await user.clear(field);
-    await user.type(field, "9");
-    await user.click(screen.getByRole("button", { name: /可导出/ }));
-
-    expect(confirm).toHaveBeenCalledWith("当前有尚未保存的审核修改，确定离开吗？");
-    expect(screen.queryByRole("heading", { name: "导出中心" })).toBeNull();
-    confirm.mockReturnValue(true);
-    await user.click(screen.getByRole("button", { name: /可导出/ }));
-    expect(await screen.findByRole("heading", { name: "导出中心" })).toBeTruthy();
-    expect(fetcher).toHaveBeenCalledWith("/api/v1/exports/batches", expect.any(Object));
-    await user.click(screen.getByRole("button", { name: "← 返回审核工作台" }));
-    expect(within(screen.getByRole("region", { name: "当前审核队列" })).getByText("待复核")).toBeTruthy();
-  });
 });

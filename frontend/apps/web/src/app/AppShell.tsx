@@ -26,7 +26,7 @@ export function AppShell() {
   return (
     <div className="routed-app-shell">
       <header className="global-app-header">
-        <strong className="global-product-name">产量采集工作台</strong>
+        <strong className="global-product-name">工业工资表系统</strong>
         <nav aria-label="一级导航">
           {PRIMARY_NAV.map((item) => {
             const current = location.pathname.startsWith(item.prefix);

@@ -116,13 +116,7 @@ describe("ReviewWorkbenchPage", () => {
       }
       return jsonResponse({ code: "UNEXPECTED", detail: `${method} ${path}` }, 404);
     });
-    render(
-      <ReviewWorkbenchPage
-        onOpenTemplates={() => undefined}
-        onOpenMasterData={() => undefined}
-        onOpenExports={() => undefined}
-      />,
-    );
+    render(<ReviewWorkbenchPage />);
 
     await user.type(screen.getByLabelText("表单编号"), "FORM-WORKBENCH");
     await user.click(screen.getByRole("button", { name: "加载表单" }));
@@ -168,13 +162,7 @@ describe("ReviewWorkbenchPage", () => {
       }
       return jsonResponse({ code: "UNEXPECTED", detail: path }, 404);
     });
-    render(
-      <ReviewWorkbenchPage
-        onOpenTemplates={() => undefined}
-        onOpenMasterData={() => undefined}
-        onOpenExports={() => undefined}
-      />,
-    );
+    render(<ReviewWorkbenchPage />);
     await user.type(screen.getByLabelText("表单编号"), "FORM-WORKBENCH");
     await user.click(screen.getByRole("button", { name: "加载表单" }));
     const grid = await screen.findByTestId("review-workbench-grid");
@@ -191,5 +179,21 @@ describe("ReviewWorkbenchPage", () => {
     expect(grid.getAttribute("style")).toContain("grid-template-columns: 65% 35%");
     await user.click(screen.getByRole("tab", { name: "图片" }));
     await user.click(screen.getByRole("tab", { name: "电子表格" }));
+  });
+
+  it("shows three internal queues and one empty state for an empty queue", async () => {
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(jsonResponse([]));
+    render(<ReviewWorkbenchPage routeQueue="review" />);
+
+    await waitFor(() => expect(globalThis.fetch).toHaveBeenCalled());
+    const tabs = screen.getByRole("tablist", { name: "审核任务" });
+    expect(tabs.querySelectorAll('[role="tab"]')).toHaveLength(3);
+    for (const name of ["待确认表单类型", "待核对", "待重新拍照"]) {
+      expect(screen.getByRole("tab", { name: new RegExp(name) })).toBeTruthy();
+    }
+    expect(screen.queryByText("可导出")).toBeNull();
+    expect(screen.getAllByText("没有待审核的表单")).toHaveLength(1);
+    expect(screen.queryByText("当前没有表单")).toBeNull();
+    expect(screen.queryByRole("navigation", { name: "工作队列" })).toBeNull();
   });
 });
