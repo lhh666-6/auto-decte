@@ -2,20 +2,32 @@ import { describe, expect, expectTypeOf, it, vi } from "vitest";
 
 import { isEditableTemplateStatus } from "@form-detection/api-client";
 import type {
+  FillPolicy,
+  PaperEntryMode,
+  RecognitionMode,
   TemplateField,
   TemplateFieldInput,
   TemplateLibraryItem,
   TemplatePage,
+  TemplatePageInput,
+  TemplatePrintImposition,
   TemplateRect,
+  TemplateStaticElement,
 } from "@form-detection/api-client";
 import { TemplateApi } from "../../../packages/api-client/src/templates_ds";
 
 describe("TemplateApi", () => {
   it("re-exports the template contracts from the package entry point", () => {
     expectTypeOf<TemplateField>().toEqualTypeOf<TemplateField>();
+    expectTypeOf<PaperEntryMode>().toEqualTypeOf<PaperEntryMode>();
+    expectTypeOf<RecognitionMode>().toEqualTypeOf<RecognitionMode>();
+    expectTypeOf<FillPolicy>().toEqualTypeOf<FillPolicy>();
     expectTypeOf<TemplateFieldInput>().toEqualTypeOf<TemplateFieldInput>();
     expectTypeOf<TemplateLibraryItem>().toEqualTypeOf<TemplateLibraryItem>();
     expectTypeOf<TemplatePage>().toEqualTypeOf<TemplatePage>();
+    expectTypeOf<TemplatePageInput>().toEqualTypeOf<TemplatePageInput>();
+    expectTypeOf<TemplateStaticElement>().toEqualTypeOf<TemplateStaticElement>();
+    expectTypeOf<TemplatePrintImposition>().toEqualTypeOf<TemplatePrintImposition>();
     expectTypeOf<TemplateRect>().toEqualTypeOf<TemplateRect>();
   });
 
@@ -72,6 +84,33 @@ describe("TemplateApi", () => {
     });
   });
 
+  it("creates a custom physical page with a typed request", async () => {
+    const fetcher = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ version_id: "TPL-CUSTOM" }), { status: 201 }),
+    );
+    const api = new TemplateApi("/api/v1", fetcher);
+    const page: TemplatePageInput = {
+      size: "CUSTOM",
+      orientation: "landscape",
+      width_mm: 123.4,
+      height_mm: 87.6,
+      canonical_dpi: 300,
+    };
+
+    await api.createDraftForPage("PAYROLL_CUSTOM", page, "自定义工资表", "横向小表");
+
+    expect(fetcher).toHaveBeenCalledWith("/api/v1/templates", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        template_key: "PAYROLL_CUSTOM",
+        page,
+        display_name: "自定义工资表",
+        description: "横向小表",
+      }),
+    });
+  });
+
   it("updates metadata, discards drafts and retires templates", async () => {
     const fetcher = vi.fn()
       .mockResolvedValueOnce(new Response(JSON.stringify({ template_key: "T1" }), { status: 200 }))
@@ -110,6 +149,12 @@ describe("TemplateApi", () => {
       input_type: "text_box",
       recognition_engine: "manual",
       minimum_prefill_confidence: 0.97,
+      paper_entry_mode: "HANDWRITTEN_TEXT",
+      recognition_mode: "NONE",
+      fill_policy: "MANUAL_ONLY",
+      confidence_threshold: null,
+      requires_manual_confirmation: true,
+      calculation_expression: null,
       rules: {
         required: false,
         minimum_value: null,

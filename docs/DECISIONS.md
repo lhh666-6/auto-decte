@@ -84,6 +84,12 @@
 - 原因：批量重写历史 JSON 会增加迁移失败和历史语义改变风险；读取兼容可以保留旧 V1，同时让新草稿使用明确模型。仓储防线可阻止脚本或适配器绕过领域对象修改发布事实。
 - 证据：`alembic/versions/008_template_layout_behavior_ds.py`、`app/adapters/database/template_repository_ds.py`、Task 5 空库/旧库和不可变仓储测试。
 
+### D-014：API 以结构化纸张扩展，旧 page_size 只作为兼容入口
+
+- 决定：新版调用使用结构化 `page` 和严格 TypeScript 判别联合表达标准/自定义纸张；旧客户端仍可发送 `page_size: A4/A5`。模板详情始终返回完整物理版面和字段行为，不能用 `unknown` 或任意字典代替契约。
+- 原因：仅扩展 `page_size` 字符串无法安全携带毫米尺寸、方向和 DPI；直接删除旧参数又会中断现有模板中心。双入口、单一完整响应可以渐进迁移且保持类型安全。
+- 证据：`app/api/routers/templates_ds.py`、`frontend/packages/api-client/src/templates_ds.ts`、Task 6 API 与类型测试。
+
 ## 已否决方案及原因
 
 | 已否决方案 | 原因 |

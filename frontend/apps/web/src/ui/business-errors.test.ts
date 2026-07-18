@@ -28,4 +28,19 @@ describe("business error boundary", () => {
       "图片导入失败。",
     )).toBe("图片导入失败。 请稍后重试；如问题持续，请查看追溯详情。");
   });
+
+  it("maps template lifecycle, field and page failures to actionable Chinese", () => {
+    expect(businessErrorMessage(
+      new ApiRequestError(409, "INVALID_LIFECYCLE", "published template versions cannot be mutated"),
+      "模板请求无法完成。",
+    )).toContain("克隆为新草稿");
+    expect(businessErrorMessage(
+      new ApiRequestError(422, "INVALID_FIELD", "FIELD_BEHAVIOR_MISMATCH"),
+      "模板请求无法完成。",
+    )).toContain("纸面填写方式");
+    expect(businessErrorMessage(
+      new ApiRequestError(422, "INVALID_PAGE_SIZE", "custom page width must be between 80 and 420 mm"),
+      "模板请求无法完成。",
+    )).toContain("毫米宽高");
+  });
 });

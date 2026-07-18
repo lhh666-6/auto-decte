@@ -20,10 +20,15 @@ const VERSION = {
     size: "A4", orientation: "portrait", width_mm: 210, height_mm: 297,
     canonical_dpi: 300, canonical_width_px: 2480, canonical_height_px: 3508,
   },
+  static_elements: [],
+  print_imposition: null,
   fields: [
     {
       field_key: "hours", display_name: "工时", data_type: "decimal", input_type: "text_box",
       recognition_engine: "digit_template", minimum_prefill_confidence: 0.9,
+      paper_entry_mode: "DIGIT_BOXES", recognition_mode: "DIGIT_OCR",
+      fill_policy: "PREFILL_WHEN_CONFIDENT", confidence_threshold: 0.9,
+      requires_manual_confirmation: false, calculation_expression: null,
       rules: { required: true, minimum_value: 0, maximum_value: 24, allowed_values: [], master_data_source: null, allow_exception_reason: false },
       export_target: { workbook: "records.xlsx", worksheet: "records", business_column: "hours" },
       region: { x: 0.1, y: 0.2, width: 0.2, height: 0.05 },
@@ -31,6 +36,9 @@ const VERSION = {
     {
       field_key: "worker", display_name: "员工", data_type: "text", input_type: "text_box",
       recognition_engine: "manual", minimum_prefill_confidence: 1,
+      paper_entry_mode: "HANDWRITTEN_TEXT", recognition_mode: "NONE",
+      fill_policy: "MANUAL_ONLY", confidence_threshold: null,
+      requires_manual_confirmation: false, calculation_expression: null,
       rules: { required: true, minimum_value: null, maximum_value: null, allowed_values: [], master_data_source: "employees", allow_exception_reason: false },
       export_target: { workbook: "records.xlsx", worksheet: "records", business_column: "worker" },
       region: { x: 0.1, y: 0.3, width: 0.2, height: 0.05 },

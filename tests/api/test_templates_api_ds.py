@@ -27,7 +27,13 @@ def _field(display_name: str = "Worker name") -> dict[str, object]:
         "data_type": "text",
         "input_type": "text_box",
         "recognition_engine": "manual",
-        "minimum_prefill_confidence": 0.98,
+        "minimum_prefill_confidence": 1.0,
+        "paper_entry_mode": "HANDWRITTEN_TEXT",
+        "recognition_mode": "NONE",
+        "fill_policy": "MANUAL_ONLY",
+        "confidence_threshold": None,
+        "requires_manual_confirmation": True,
+        "calculation_expression": None,
         "rules": {
             "required": False,
             "minimum_value": None,
@@ -79,6 +85,8 @@ def test_admin_creates_preflights_publishes_and_downloads_template_artifact(tmp_
     assert preflight.json()["ok"] is True
     assert published.status_code == 200
     assert published.json()["status"] == "PUBLISHED"
+    assert published.json()["static_elements"] == []
+    assert published.json()["print_imposition"] is None
     artifact = published.json()["artifacts"][0]
     download = client.get(artifact["download_url"], headers=_headers())
     assert download.status_code == 200
@@ -97,7 +105,6 @@ def test_admin_can_list_read_clone_patch_and_delete_template_draft(tmp_path: Pat
     clone_detail = client.get(f"/api/v1/template-versions/{clone_id}", headers=_headers())
     patched_field = _field("Employee name")
     patched_field["region"] = {"x": 0.15, "y": 0.2, "width": 0.2, "height": 0.05}
-    patched_field["minimum_prefill_confidence"] = 0.95
     patched = client.patch(
         f"/api/v1/template-versions/{clone_id}/fields/worker_name",
         headers=_headers(),
@@ -118,6 +125,8 @@ def test_admin_can_list_read_clone_patch_and_delete_template_draft(tmp_path: Pat
     assert detail.json()["parent_version_id"] is None
     assert detail.json()["page"]["size"] == "A4"
     assert detail.json()["page"]["orientation"] == "portrait"
+    assert detail.json()["static_elements"] == []
+    assert detail.json()["print_imposition"] is None
     assert detail.json()["fields"] == [_field()]
     assert detail.json()["artifacts"]
     assert "internal_uri" not in repr(detail.json())
@@ -244,6 +253,81 @@ def test_template_field_payload_validation_uses_invalid_field_problem_code(tmp_p
 
     assert response.status_code == 422
     assert response.json()["code"] == "INVALID_FIELD"
+
+
+def test_api_creates_custom_millimetre_page_and_returns_typed_field_behavior(
+    tmp_path: Path,
+) -> None:
+    client = _client(tmp_path)
+    created = client.post(
+        "/api/v1/templates",
+        headers=_headers(),
+        json={
+            "template_key": "PAYROLL_CUSTOM",
+            "page": {
+                "size": "CUSTOM",
+                "orientation": "landscape",
+                "width_mm": 123.4,
+                "height_mm": 87.6,
+                "canonical_dpi": 300,
+            },
+        },
+    )
+    field = {
+        **_field("工号"),
+        "field_key": "worker_number",
+        "data_type": "integer",
+        "input_type": "digit_boxes",
+        "recognition_engine": "digit_template",
+        "minimum_prefill_confidence": 0.97,
+        "paper_entry_mode": "DIGIT_BOXES",
+        "recognition_mode": "DIGIT_OCR",
+        "fill_policy": "PREFILL_WHEN_CONFIDENT",
+        "confidence_threshold": 0.97,
+        "requires_manual_confirmation": False,
+        "export_target": {
+            "workbook": "records.xlsx",
+            "worksheet": "records",
+            "business_column": "worker_number",
+        },
+    }
+    added = client.post(
+        f"/api/v1/template-versions/{created.json()['version_id']}/fields",
+        headers=_headers(),
+        json=field,
+    )
+
+    assert created.status_code == 201
+    assert created.json()["page"] == {
+        "size": "CUSTOM",
+        "orientation": "landscape",
+        "width_mm": 123.4,
+        "height_mm": 87.6,
+        "canonical_dpi": 300,
+        "canonical_width_px": 1457,
+        "canonical_height_px": 1035,
+    }
+    assert added.status_code == 200
+    assert added.json()["fields"] == [field]
+
+
+def test_custom_page_validation_returns_a_business_problem(tmp_path: Path) -> None:
+    response = _client(tmp_path).post(
+        "/api/v1/templates",
+        headers=_headers(),
+        json={
+            "template_key": "PAYROLL_TOO_SMALL",
+            "page": {
+                "size": "CUSTOM",
+                "orientation": "portrait",
+                "width_mm": 70,
+                "height_mm": 50,
+            },
+        },
+    )
+
+    assert response.status_code == 422
+    assert response.json()["code"] == "INVALID_PAGE_SIZE"
 
 
 def test_template_field_routes_declare_openapi_request_bodies(tmp_path: Path) -> None:

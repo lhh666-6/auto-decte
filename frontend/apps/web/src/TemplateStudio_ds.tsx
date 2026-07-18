@@ -32,6 +32,12 @@ const INITIAL_FIELD: TemplateField = {
   input_type: "text_box",
   recognition_engine: "manual",
   minimum_prefill_confidence: 0.97,
+  paper_entry_mode: "HANDWRITTEN_TEXT",
+  recognition_mode: "NONE",
+  fill_policy: "MANUAL_ONLY",
+  confidence_threshold: null,
+  requires_manual_confirmation: true,
+  calculation_expression: null,
   rules: {
     required: false,
     minimum_value: null,

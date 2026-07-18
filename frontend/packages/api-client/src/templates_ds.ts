@@ -30,6 +30,29 @@ export interface TemplateExportTarget {
   business_column: string;
 }
 
+export type PaperEntryMode =
+  | "HANDWRITTEN_TEXT"
+  | "DIGIT_BOXES"
+  | "CHECKBOX"
+  | "SIGNATURE"
+  | "PREPRINTED"
+  | "NONE";
+
+export type RecognitionMode =
+  | "NONE"
+  | "HANDWRITING_OCR"
+  | "DIGIT_OCR"
+  | "PRINTED_OCR"
+  | "OMR"
+  | "QR"
+  | "CALCULATED";
+
+export type FillPolicy =
+  | "MANUAL_ONLY"
+  | "SUGGEST_ONLY"
+  | "PREFILL_WHEN_CONFIDENT"
+  | "CALCULATED";
+
 export interface TemplateField {
   field_key: string;
   display_name: string;
@@ -37,19 +60,63 @@ export interface TemplateField {
   input_type: string;
   recognition_engine: string;
   minimum_prefill_confidence: number;
+  paper_entry_mode: PaperEntryMode;
+  recognition_mode: RecognitionMode;
+  fill_policy: FillPolicy;
+  confidence_threshold: number | null;
+  requires_manual_confirmation: boolean;
+  calculation_expression: string | null;
   rules: TemplateFieldRules;
   export_target: TemplateExportTarget;
   region: TemplateRect;
 }
 
 export interface TemplatePage {
-  size: string;
-  orientation: string;
+  size: "A4" | "A5" | "CUSTOM";
+  orientation: "portrait" | "landscape";
   width_mm: number;
   height_mm: number;
   canonical_dpi: number;
   canonical_width_px: number;
   canonical_height_px: number;
+}
+
+export type TemplatePageInput =
+  | { size: "A4" | "A5"; orientation: "portrait" | "landscape" }
+  | {
+      size: "CUSTOM";
+      orientation: "portrait" | "landscape";
+      width_mm: number;
+      height_mm: number;
+      canonical_dpi?: number;
+    };
+
+export type TemplateElementKind =
+  | "TITLE"
+  | "LABEL"
+  | "LINE"
+  | "BOX"
+  | "TABLE_GRID"
+  | "CHECKBOX"
+  | "SIGNATURE_LINE"
+  | "ROLE_SECTION"
+  | "CUT_LINE";
+
+export interface TemplateStaticElement {
+  element_id: string;
+  kind: TemplateElementKind;
+  text: string;
+  region: TemplateRect;
+}
+
+export interface TemplatePrintImposition {
+  carrier: TemplatePage;
+  columns: number;
+  rows: number;
+  horizontal_gap_mm: number;
+  vertical_gap_mm: number;
+  margin_mm: number;
+  include_cut_lines: boolean;
 }
 
 export interface TemplateVersion {
@@ -61,6 +128,8 @@ export interface TemplateVersion {
   status: TemplateStatus;
   parent_version_id: string | null;
   page: TemplatePage;
+  static_elements: TemplateStaticElement[];
+  print_imposition: TemplatePrintImposition | null;
   fields: TemplateField[];
   artifacts: TemplateArtifact[];
 }
@@ -130,6 +199,23 @@ export class TemplateApi {
       body: {
         template_key: templateKey,
         page_size: pageSize,
+        display_name: displayName,
+        description,
+      },
+    });
+  }
+
+  createDraftForPage(
+    templateKey: string,
+    page: TemplatePageInput,
+    displayName: string,
+    description: string,
+  ): Promise<TemplateVersion> {
+    return this.request("/templates", {
+      method: "POST",
+      body: {
+        template_key: templateKey,
+        page,
         display_name: displayName,
         description,
       },

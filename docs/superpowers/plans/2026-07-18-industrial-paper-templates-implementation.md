@@ -552,12 +552,12 @@ A5 竖向 · V3
 
 ### Task 6：扩展模板 API 与前端类型
 
-- [ ] API 返回纸张、静态元素、拼版、字段行为。
-- [ ] 旧客户端 `page_size: A4/A5` 保持兼容。
-- [ ] 发布版修改被拒绝。
-- [ ] 前端类型禁止使用 `unknown` 或任意字典逃避检查。
-- [ ] 错误可映射成中文业务提示。
-- [ ] 提交：`feat(api): expose physical layout and field behavior`
+- [x] API 返回纸张、静态元素、拼版、字段行为。
+- [x] 旧客户端 `page_size: A4/A5` 保持兼容。
+- [x] 发布版修改被拒绝。
+- [x] 前端类型禁止使用 `unknown` 或任意字典逃避检查。
+- [x] 错误可映射成中文业务提示。
+- [x] 提交：`feat(api): expose physical layout and field behavior`
 
 ### Task 7：修复添加字段 Bug 并建立毫米模块编辑器
 

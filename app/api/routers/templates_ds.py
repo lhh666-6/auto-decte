@@ -1,6 +1,7 @@
 """Authorized template draft, publication and printable-artifact endpoints."""
 
 from pathlib import Path
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import FileResponse
@@ -13,7 +14,10 @@ from app.domain.templates_ds import (
     ExportTarget,
     FieldDefinition,
     FieldRules,
+    FillPolicy,
     PageSpec,
+    PaperEntryMode,
+    RecognitionMode,
     Rect,
     TemplateArtifact,
     TemplateStatus,
@@ -26,9 +30,18 @@ from app.services.container import Services
 router = APIRouter(prefix="/api/v1", tags=["templates"])
 
 
+class TemplatePageRequest(BaseModel):
+    size: Literal["A4", "A5", "CUSTOM"]
+    orientation: Literal["portrait", "landscape"] = "portrait"
+    width_mm: float | None = None
+    height_mm: float | None = None
+    canonical_dpi: int = 300
+
+
 class CreateTemplateRequest(BaseModel):
     template_key: str
-    page_size: str = "A4"
+    page_size: Literal["A4", "A5"] | None = "A4"
+    page: TemplatePageRequest | None = None
     display_name: str | None = None
     description: str = ""
 
@@ -68,6 +81,12 @@ class FieldRequest(BaseModel):
     region: RegionRequest
     recognition_engine: str = "manual"
     minimum_prefill_confidence: float = 1.0
+    paper_entry_mode: PaperEntryMode | None = None
+    recognition_mode: RecognitionMode | None = None
+    fill_policy: FillPolicy | None = None
+    confidence_threshold: float | None = None
+    requires_manual_confirmation: bool = False
+    calculation_expression: str | None = None
     rules: FieldRulesRequest = PydanticField(default_factory=FieldRulesRequest)
     export_target: ExportTargetRequest = PydanticField(default_factory=ExportTargetRequest)
 
@@ -93,7 +112,7 @@ def create_template(
     services: Services = Depends(get_services),  # noqa: B008
 ) -> dict[str, object]:
     _require(_actor(request, services), Permission.TEMPLATE_CREATE_VERSION)
-    page = _page_spec(body.page_size)
+    page = _page_spec(body.page_size, body.page)
     try:
         version = services.templates.create_draft(
             body.template_key, page, body.display_name, body.description
@@ -365,25 +384,54 @@ def download_artifact(
     return FileResponse(path, filename=artifact.download_name)
 
 
-def _page_spec(page_size: str) -> PageSpec:
-    if page_size == "A4":
-        return PageSpec.a4_portrait()
-    if page_size == "A5":
-        return PageSpec.a5_portrait()
-    raise HTTPException(status_code=422, detail={"code": "INVALID_PAGE_SIZE"})
+def _page_spec(
+    page_size: Literal["A4", "A5"] | None,
+    page: TemplatePageRequest | None,
+) -> PageSpec:
+    if page is None:
+        return PageSpec.a5_portrait() if page_size == "A5" else PageSpec.a4_portrait()
+    if page.size == "A4":
+        return (
+            PageSpec.a4_landscape()
+            if page.orientation == "landscape"
+            else PageSpec.a4_portrait()
+        )
+    if page.size == "A5":
+        return (
+            PageSpec.a5_landscape()
+            if page.orientation == "landscape"
+            else PageSpec.a5_portrait()
+        )
+    if page.width_mm is None or page.height_mm is None:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "INVALID_PAGE_SIZE", "detail": "自定义纸张需要宽度和高度。"},
+        )
+    try:
+        return PageSpec.custom(
+            page.width_mm,
+            page.height_mm,
+            orientation=page.orientation,
+            canonical_dpi=page.canonical_dpi,
+        )
+    except ValueError as error:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "INVALID_PAGE_SIZE", "detail": str(error)},
+        ) from error
 
 
 def _field_definition(body: FieldRequest, page: PageSpec) -> FieldDefinition:
     return FieldDefinition(
-        body.field_key,
-        body.display_name,
-        body.data_type,
-        body.input_type,
-        Rect(body.region.x, body.region.y, body.region.width, body.region.height),
-        page,
-        body.recognition_engine,
-        body.minimum_prefill_confidence,
-        FieldRules(
+        field_key=body.field_key,
+        display_name=body.display_name,
+        data_type=body.data_type,
+        input_type=body.input_type,
+        region=Rect(body.region.x, body.region.y, body.region.width, body.region.height),
+        page=page,
+        recognition_engine=body.recognition_engine,
+        minimum_prefill_confidence=body.minimum_prefill_confidence,
+        rules=FieldRules(
             required=body.rules.required,
             minimum_value=body.rules.minimum_value,
             maximum_value=body.rules.maximum_value,
@@ -391,11 +439,17 @@ def _field_definition(body: FieldRequest, page: PageSpec) -> FieldDefinition:
             master_data_source=body.rules.master_data_source,
             allow_exception_reason=body.rules.allow_exception_reason,
         ),
-        ExportTarget(
+        export_target=ExportTarget(
             body.export_target.workbook,
             body.export_target.worksheet,
             body.export_target.business_column or body.field_key,
         ),
+        paper_entry_mode=body.paper_entry_mode,
+        recognition_mode=body.recognition_mode,
+        fill_policy=body.fill_policy,
+        confidence_threshold=body.confidence_threshold,
+        requires_manual_confirmation=body.requires_manual_confirmation,
+        calculation_expression=body.calculation_expression,
     )
 
 
@@ -458,6 +512,33 @@ def _version_payload(
         "status": version.status.value,
         "parent_version_id": version.parent_version_id,
         "page": _page_payload(version.page),
+        "static_elements": [
+            {
+                "element_id": element.element_id,
+                "kind": element.kind.value,
+                "text": element.text,
+                "region": {
+                    "x": element.region.x,
+                    "y": element.region.y,
+                    "width": element.region.width,
+                    "height": element.region.height,
+                },
+            }
+            for element in version.static_elements
+        ],
+        "print_imposition": (
+            {
+                "carrier": _page_payload(version.print_imposition.carrier),
+                "columns": version.print_imposition.columns,
+                "rows": version.print_imposition.rows,
+                "horizontal_gap_mm": version.print_imposition.horizontal_gap_mm,
+                "vertical_gap_mm": version.print_imposition.vertical_gap_mm,
+                "margin_mm": version.print_imposition.margin_mm,
+                "include_cut_lines": version.print_imposition.include_cut_lines,
+            }
+            if version.print_imposition is not None
+            else None
+        ),
         "fields": [
             {
                 "field_key": field.field_key,
@@ -466,6 +547,16 @@ def _version_payload(
                 "input_type": field.input_type,
                 "recognition_engine": field.recognition_engine,
                 "minimum_prefill_confidence": field.minimum_prefill_confidence,
+                "paper_entry_mode": (
+                    field.paper_entry_mode.value if field.paper_entry_mode is not None else None
+                ),
+                "recognition_mode": (
+                    field.recognition_mode.value if field.recognition_mode is not None else None
+                ),
+                "fill_policy": field.fill_policy.value if field.fill_policy is not None else None,
+                "confidence_threshold": field.confidence_threshold,
+                "requires_manual_confirmation": field.requires_manual_confirmation,
+                "calculation_expression": field.calculation_expression,
                 "rules": {
                     "required": field.rules.required,
                     "minimum_value": field.rules.minimum_value,

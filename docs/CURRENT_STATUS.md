@@ -4,7 +4,7 @@
 
 ## 本轮结论
 
-工业表单前端重建实施计划的任务 1—16 已按顺序完成。协作同步基线为 `ff03a39 fix(review): preserve confirmed values across reload and export`，并已在其上完成新主线 Task 1—5；集成分支为 `modular-architecture`。
+工业表单前端重建实施计划的任务 1—16 已按顺序完成。协作同步基线为 `ff03a39 fix(review): preserve confirmed values across reload and export`，并已在其上完成新主线 Task 1—6；集成分支为 `modular-architecture`。
 
 **项目整体尚未完成。** 已完成的任务只构成前端基础能力，不能证明真实工业纸质工资表已经可投入使用。当前已明确授权并采用新的唯一开发主线：[工业纸质工资表闭环与前端交互重构最终计划](superpowers/plans/2026-07-18-industrial-paper-templates-implementation.md)。该计划包含本地无登录完整权限、前端信息架构、字段行为模型、3 类母版、10 个车间模板、任意毫米纸张、拼版、二维码、工号核验、姓名人工确认、Excel 导出和实物闭环。
 
@@ -64,7 +64,17 @@ Task 4 定向验证：领域与应用测试 `23 passed`；相关 Ruff 和 mypy �
 
 Task 5 定向验证：领域、应用、仓储和迁移测试 `45 passed`；相关 Ruff 和 mypy 通过。验证了空库直接升级到 `008`、`007` 旧库保留旧模板数据后升级，以及发布版仓储保护。完整回归仍按计划只在 Task 16 运行。
 
-当前下一项为 Task 6“扩展模板 API 与前端类型”。
+### Task 6：模板 API 与前端类型（已完成）
+
+- 建模板接口保留旧 `page_size: A4/A5`，并新增结构化 `page` 请求，支持 A4/A5 横向和规定范围内的自定义毫米纸张。
+- 模板版本响应统一返回规范纸张、静态元素、拼版和完整字段行为；字段请求可发送三个新枚举、阈值、姓名人工确认和计算式，同时保留旧输入/识别键。
+- TypeScript 新增严格的 `TemplatePageInput` 判别联合、纸面/识别/填入枚举、静态元素和拼版接口；模板领域契约没有用 `unknown` 或任意字典绕过检查。
+- 旧 `createDraft(..., "A4" | "A5", ...)` 保持不变，新增 `createDraftForPage(...)` 发送结构化纸张。
+- 发布版字段修改继续返回 `INVALID_LIFECYCLE`；生命周期、字段和纸张错误会映射为包含下一步操作的中文提示。
+
+Task 6 定向验证：Python API/仓储测试 `15 passed`；前端 `3` 个测试文件、`14 passed`；TypeScript、相关 Ruff 和 mypy 通过。完整回归仍按计划只在 Task 16 运行。
+
+当前下一项为 Task 7“修复添加字段 Bug 并建立毫米模块编辑器”。
 
 ## 已完成的前端能力
 
