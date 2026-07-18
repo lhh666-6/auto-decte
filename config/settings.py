@@ -1,7 +1,9 @@
 """Environment-driven application settings."""
 
 from pathlib import Path
+from typing import Literal
 
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -12,6 +14,7 @@ class Settings(BaseSettings):
         env_file=".env",
         env_prefix="FORM_DEMO_",
         extra="ignore",
+        populate_by_name=True,
     )
 
     data_root: Path = Path("data")
@@ -24,8 +27,10 @@ class Settings(BaseSettings):
     review_lease_seconds: int = 300
     api_host: str = "127.0.0.1"
     api_port: int = 8000
-    # Keep the built-in fallback least-privileged. A standalone Demo that needs broader
-    # capabilities must grant them explicitly through local environment configuration.
+    app_auth_mode: Literal["local_full_access", "authenticated"] = Field(
+        default="local_full_access",
+        validation_alias=AliasChoices("APP_AUTH_MODE", "FORM_DEMO_APP_AUTH_MODE"),
+    )
     local_default_user_id: str = "local-operator"
     local_default_roles: tuple[str, ...] = ("OPERATOR",)
 

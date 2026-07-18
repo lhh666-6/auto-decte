@@ -44,3 +44,4 @@ class Actor:
     actor_id: str
     roles: frozenset[Role]
     authenticated: bool = True
+    local_full_access: bool = False

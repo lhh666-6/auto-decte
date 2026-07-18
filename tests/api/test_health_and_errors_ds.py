@@ -9,7 +9,11 @@ from config.settings import Settings
 
 def build_client(tmp_path: Path, *, raise_server_exceptions: bool = True) -> TestClient:
     return TestClient(
-        create_app(build_services(Settings(data_root=tmp_path))),
+        create_app(build_services(Settings(
+            data_root=tmp_path,
+            local_default_user_id="local-operator",
+            local_default_roles=("OPERATOR",),
+        ))),
         raise_server_exceptions=raise_server_exceptions,
     )
 
@@ -44,4 +48,6 @@ def test_unhandled_error_uses_problem_details_without_traceback(tmp_path: Path) 
 
     assert response.status_code == 500
     assert response.json()["code"] == "INTERNAL_ERROR"
+    assert response.json()["title"] == "服务暂时无法完成请求"
+    assert "请稍后重试" in response.json()["detail"]
     assert "traceback" not in response.text.lower()

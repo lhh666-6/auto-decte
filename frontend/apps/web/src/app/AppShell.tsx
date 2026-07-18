@@ -43,9 +43,7 @@ export function AppShell() {
           })}
         </nav>
         <div className="global-context">
-          <span><i className="connection-dot" /> 本地服务</span>
-          <span>当前身份：本机审核人员</span>
-          <button type="button" aria-label="用户菜单" title="用户菜单占位">用户</button>
+          <span><i className="connection-dot" /> 本地单机模式 · 服务正常</span>
         </div>
       </header>
       <main className="routed-app-content">

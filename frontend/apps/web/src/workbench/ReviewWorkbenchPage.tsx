@@ -16,6 +16,7 @@ import {
   buildConfirmValues,
   reviewValueIssue,
 } from "../review-model";
+import { businessErrorMessage, businessProblemMessage } from "../ui/business-errors";
 import { getReviewStatusCopy } from "../ui/business-language";
 import { ConfirmDialog } from "../ui/ConfirmDialog";
 import { EvidenceViewer } from "./EvidenceViewer";
@@ -858,8 +859,7 @@ function valueForField(
 }
 
 function toMessage(cause: unknown): string {
-  if (cause instanceof ApiRequestError) return `${cause.code}：${cause.message}`;
-  return cause instanceof Error ? cause.message : "请求无法完成。";
+  return businessErrorMessage(cause, "审核请求无法完成。");
 }
 
 async function responseDetail(response: Response, fallback: string): Promise<string> {
@@ -868,8 +868,7 @@ async function responseDetail(response: Response, fallback: string): Promise<str
       code?: string;
       detail?: string | { code?: string };
     };
-    if (typeof payload.detail === "string") return payload.detail;
-    return payload.detail?.code ?? payload.code ?? fallback;
+    return businessProblemMessage(payload, fallback);
   } catch {
     return fallback;
   }

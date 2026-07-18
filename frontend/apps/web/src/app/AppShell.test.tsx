@@ -30,7 +30,7 @@ function Page() {
 afterEach(cleanup);
 
 describe("AppShell", () => {
-  it("shows the four primary destinations, service context and current page", () => {
+  it("shows the four primary destinations and local service context without fake identity controls", () => {
     render(
       <MemoryRouter initialEntries={["/templates"]}>
         <Routes>
@@ -46,9 +46,9 @@ describe("AppShell", () => {
       expect(screen.getByRole("link", { name })).toBeTruthy();
     }
     expect(screen.getByRole("link", { name: "模板中心" }).getAttribute("aria-current")).toBe("page");
-    expect(screen.getByText(/本地服务/)).toBeTruthy();
-    expect(screen.getByText(/当前身份/)).toBeTruthy();
-    expect(screen.getByRole("button", { name: "用户菜单" })).toBeTruthy();
+    expect(screen.getByText("本地单机模式 · 服务正常")).toBeTruthy();
+    expect(screen.queryByText(/当前身份/)).toBeNull();
+    expect(screen.queryByRole("button", { name: "用户菜单" })).toBeNull();
   });
 
   it("uses browser history to return to the previous module", async () => {

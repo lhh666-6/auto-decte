@@ -38,10 +38,10 @@ def create_app(services: Services) -> FastAPI:
         request_id = getattr(request.state, "request_id", "unknown")
         detail = error.detail if isinstance(error.detail, dict) else {"detail": str(error.detail)}
         problem = ProblemDetails(
-            title="Request failed",
+            title="请求未能完成",
             status=error.status_code,
             code=str(detail.pop("code", "HTTP_ERROR")),
-            detail=str(detail.pop("detail", "The request could not be completed.")),
+            detail=str(detail.pop("detail", "当前请求无法继续，请检查输入后重试。")),
             request_id=request_id,
         )
         return JSONResponse(
@@ -55,10 +55,10 @@ def create_app(services: Services) -> FastAPI:
         del error
         request_id = getattr(request.state, "request_id", "unknown")
         problem = ProblemDetails(
-            title="Internal server error",
+            title="服务暂时无法完成请求",
             status=500,
             code="INTERNAL_ERROR",
-            detail="An unexpected error occurred.",
+            detail="服务发生异常，请稍后重试；如问题持续，请记录请求编号以便追溯。",
             request_id=request_id,
         )
         return JSONResponse(

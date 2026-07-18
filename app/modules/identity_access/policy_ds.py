@@ -58,10 +58,13 @@ ROLE_PERMISSIONS: dict[Role, frozenset[Permission]] = {
 
 class PermissionPolicy:
     def allows(self, actor: Actor, permission: Permission) -> bool:
-        return actor.authenticated and any(
-            permission in ROLE_PERMISSIONS[role] for role in actor.roles
+        return actor.authenticated and (
+            actor.local_full_access
+            or any(permission in ROLE_PERMISSIONS[role] for role in actor.roles)
         )
 
     def require(self, actor: Actor, permission: Permission) -> None:
         if not self.allows(actor, permission):
-            raise PermissionError(f"Actor {actor.actor_id} lacks {permission.value}")
+            raise PermissionError(
+                "当前操作未获得授权。请确认登录状态或联系管理员配置业务权限。"
+            )

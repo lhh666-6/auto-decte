@@ -1,5 +1,4 @@
 import {
-  ApiRequestError,
   TemplateApi,
   type PreflightReport,
   type TemplateField,
@@ -12,6 +11,7 @@ import { FieldInspector } from "./FieldInspector_ds";
 import { TemplateCanvasEditor } from "./TemplateCanvasEditor_ds";
 import { TemplateLibrary } from "./TemplateLibrary_ds";
 import { TemplatePreview } from "./TemplatePreview_ds";
+import { businessErrorMessage } from "./ui/business-errors";
 import {
   PROTECTED_PLACEMENT_MESSAGE,
   PROTECTED_ZONES,
@@ -347,7 +347,5 @@ function TemplateEditor({
 }
 
 function message(cause: unknown): string {
-  return cause instanceof ApiRequestError
-    ? `${cause.code}：${cause.message}`
-    : cause instanceof Error ? cause.message : "模板请求无法完成。";
+  return businessErrorMessage(cause, "模板请求无法完成。");
 }

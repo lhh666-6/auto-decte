@@ -1,5 +1,4 @@
 import {
-  ApiRequestError,
   ExportApi,
   type CreateExportInput,
   type CreateExportResponse,
@@ -14,6 +13,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { ProblemNotice } from "./ui/ProblemNotice";
 import { TraceDetails } from "./ui/TraceDetails";
+import { businessErrorMessage } from "./ui/business-errors";
 
 export interface ExportCenterApi {
   preview(filters: ExportFilters, signal?: AbortSignal): Promise<ExportPreview>;
@@ -519,8 +519,7 @@ function formatDate(value: string): string {
 }
 
 function toMessage(cause: unknown): string {
-  if (cause instanceof ApiRequestError) return cause.message;
-  return cause instanceof Error ? cause.message : "导出请求无法完成。";
+  return businessErrorMessage(cause, "导出请求无法完成。");
 }
 
 function isAbortError(cause: unknown): boolean {

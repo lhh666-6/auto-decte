@@ -15,6 +15,7 @@ import {
 import { ConfirmDialog } from "./ui/ConfirmDialog";
 import { ProblemNotice } from "./ui/ProblemNotice";
 import { TraceDetails } from "./ui/TraceDetails";
+import { businessErrorMessage } from "./ui/business-errors";
 
 const CATALOGS: Array<{ key: MasterDataCatalog; label: string; hint: string }> = [
   { key: "employees", label: "员工", hint: "员工编号、姓名、班组与岗位" },
@@ -299,7 +300,7 @@ export function MasterDataCenter({
                   <TraceDetails items={[{ label: "当前修订版本", value: String(selected.revision) }]} />
                   <section className="master-data-audit">
                     <h3>变更轨迹</h3>
-                    {audits.length === 0 ? <p>当前身份无审计读取权限，或暂无轨迹。</p> : <ol>{audits.map((audit) => <li key={audit.audit_id}><strong>{audit.event_type}</strong><span>版本 {audit.revision} · {audit.actor_id} · {new Date(audit.timestamp).toLocaleString()}</span><p>{audit.reason}</p></li>)}</ol>}
+                    {audits.length === 0 ? <p>暂无审计记录。</p> : <ol>{audits.map((audit) => <li key={audit.audit_id}><strong>{audit.event_type}</strong><span>版本 {audit.revision} · {audit.actor_id} · {new Date(audit.timestamp).toLocaleString()}</span><p>{audit.reason}</p></li>)}</ol>}
                   </section>
                 </>
               )}
@@ -327,7 +328,7 @@ export function MasterDataCenter({
 }
 
 function toMessage(cause: unknown): string {
-  return cause instanceof Error ? cause.message : "主数据请求失败。";
+  return businessErrorMessage(cause, "基础数据请求无法完成。");
 }
 
 function conflictMessage(cause: unknown): string {
@@ -335,7 +336,7 @@ function conflictMessage(cause: unknown): string {
     return "该记录已被其他人修改，请刷新后重试";
   }
   if (cause instanceof ApiRequestError && cause.code === "PERMISSION_DENIED") {
-    return "当前身份只有读取权限；主数据写入需要管理员权限。";
+    return businessErrorMessage(cause, "基础数据请求无法完成。");
   }
   return toMessage(cause);
 }
