@@ -4,8 +4,11 @@ from app.application.template_versions_ds import TemplateVersions
 from app.domain.templates_ds import (
     ElementKind,
     FieldDefinition,
+    FillPolicy,
     PageSpec,
+    PaperEntryMode,
     PrintImposition,
+    RecognitionMode,
     Rect,
     StaticElement,
     TemplateStatus,
@@ -123,8 +126,8 @@ def test_preflight_rejects_incompatible_recognition_engine_and_field_shape() -> 
     service.add_field(
         draft.version_id,
         FieldDefinition(
-            "worker_name",
-            "Name",
+            "notes",
+            "Notes",
             "text",
             "text_box",
             Rect(0.1, 0.2, 0.2, 0.05),
@@ -136,6 +139,123 @@ def test_preflight_rejects_incompatible_recognition_engine_and_field_shape() -> 
     report = service.preflight(draft.version_id)
 
     assert {issue.code for issue in report.issues} == {"RECOGNITION_ENGINE_MISMATCH"}
+
+
+def test_preflight_accepts_suggestion_and_conditional_prefill_policies() -> None:
+    for field_key, data_type, paper_mode, recognition_mode, fill_policy, threshold in (
+        (
+            "worker_name",
+            "text",
+            PaperEntryMode.HANDWRITTEN_TEXT,
+            RecognitionMode.HANDWRITING_OCR,
+            FillPolicy.SUGGEST_ONLY,
+            None,
+        ),
+        (
+            "worker_number",
+            "integer",
+            PaperEntryMode.DIGIT_BOXES,
+            RecognitionMode.DIGIT_OCR,
+            FillPolicy.PREFILL_WHEN_CONFIDENT,
+            0.97,
+        ),
+        (
+            "quality_ok",
+            "boolean",
+            PaperEntryMode.CHECKBOX,
+            RecognitionMode.OMR,
+            FillPolicy.SUGGEST_ONLY,
+            None,
+        ),
+    ):
+        service = TemplateVersions(InMemoryTemplateRepository())
+        draft = service.create_draft("PAYROLL_BEHAVIOR", PageSpec.a4_portrait())
+        service.add_field(
+            draft.version_id,
+            FieldDefinition(
+                field_key,
+                {"worker_name": "姓名", "worker_number": "工号", "quality_ok": "质量合格"}[
+                    field_key
+                ],
+                data_type,
+                {
+                    PaperEntryMode.HANDWRITTEN_TEXT: "text_box",
+                    PaperEntryMode.DIGIT_BOXES: "digit_boxes",
+                    PaperEntryMode.CHECKBOX: "checkbox",
+                }[paper_mode],
+                Rect(0.1, 0.2, 0.3, 0.05),
+                draft.page,
+                paper_entry_mode=paper_mode,
+                recognition_mode=recognition_mode,
+                fill_policy=fill_policy,
+                confidence_threshold=threshold,
+            ),
+        )
+
+        assert service.preflight(draft.version_id).ok is True
+
+
+def test_preflight_rejects_manual_threshold_calculation_ocr_and_name_autofill() -> None:
+    invalid_fields = (
+        FieldDefinition(
+            "manual_note",
+            "人工说明",
+            "text",
+            "text_box",
+            Rect(0.1, 0.2, 0.3, 0.05),
+            PageSpec.a4_portrait(),
+            recognition_mode=RecognitionMode.NONE,
+            fill_policy=FillPolicy.MANUAL_ONLY,
+            confidence_threshold=0.8,
+        ),
+        FieldDefinition(
+            "manual_prefill",
+            "人工字段",
+            "text",
+            "text_box",
+            Rect(0.1, 0.25, 0.3, 0.05),
+            PageSpec.a4_portrait(),
+            recognition_mode=RecognitionMode.NONE,
+            fill_policy=FillPolicy.PREFILL_WHEN_CONFIDENT,
+            confidence_threshold=0.8,
+        ),
+        FieldDefinition(
+            "calculated_total",
+            "自动合计",
+            "decimal",
+            "none",
+            Rect(0.1, 0.3, 0.3, 0.05),
+            PageSpec.a4_portrait(),
+            paper_entry_mode=PaperEntryMode.NONE,
+            recognition_mode=RecognitionMode.CALCULATED,
+            fill_policy=FillPolicy.CALCULATED,
+            confidence_threshold=0.9,
+        ),
+        FieldDefinition(
+            "worker_name",
+            "姓名",
+            "text",
+            "text_box",
+            Rect(0.1, 0.4, 0.3, 0.05),
+            PageSpec.a4_portrait(),
+            recognition_mode=RecognitionMode.HANDWRITING_OCR,
+            fill_policy=FillPolicy.PREFILL_WHEN_CONFIDENT,
+            confidence_threshold=0.99,
+        ),
+    )
+    service = TemplateVersions(InMemoryTemplateRepository())
+    draft = service.create_draft("PAYROLL_INVALID_BEHAVIOR", PageSpec.a4_portrait())
+    for definition in invalid_fields:
+        service.add_field(draft.version_id, definition)
+
+    report = service.preflight(draft.version_id)
+
+    assert {issue.code for issue in report.issues} >= {
+        "CONFIDENCE_THRESHOLD_NOT_ALLOWED",
+        "FIELD_BEHAVIOR_MISMATCH",
+        "CALCULATION_RULE_REQUIRED",
+        "NAME_REQUIRES_MANUAL_CONFIRMATION",
+    }
 
 
 def test_preflight_uses_physical_field_sizes_and_five_millimetre_margin() -> None:

@@ -5,8 +5,11 @@ import pytest
 from app.domain.templates_ds import (
     ElementKind,
     FieldDefinition,
+    FillPolicy,
     PageSpec,
+    PaperEntryMode,
     PrintImposition,
+    RecognitionMode,
     Rect,
     StaticElement,
     TemplateStatus,
@@ -138,6 +141,50 @@ def test_field_definition_declares_immutable_recognition_and_prefill_policy() ->
             page,
             minimum_prefill_confidence=1.1,
         )
+
+
+def test_field_behavior_separates_paper_recognition_and_fill_modes() -> None:
+    page = PageSpec.a4_portrait()
+    field = FieldDefinition(
+        "worker_name",
+        "姓名",
+        "text",
+        "text_box",
+        Rect(0.1, 0.2, 0.3, 0.05),
+        page,
+        paper_entry_mode=PaperEntryMode.HANDWRITTEN_TEXT,
+        recognition_mode=RecognitionMode.HANDWRITING_OCR,
+        fill_policy=FillPolicy.SUGGEST_ONLY,
+    )
+
+    assert field.paper_entry_mode is PaperEntryMode.HANDWRITTEN_TEXT
+    assert field.recognition_mode is RecognitionMode.HANDWRITING_OCR
+    assert field.fill_policy is FillPolicy.SUGGEST_ONLY
+    assert field.confidence_threshold is None
+    assert field.requires_manual_confirmation is True
+
+
+def test_switching_recognition_mode_clears_stale_policy_configuration() -> None:
+    page = PageSpec.a4_portrait()
+    field = FieldDefinition(
+        "quantity",
+        "数量",
+        "integer",
+        "digit_boxes",
+        Rect(0.1, 0.2, 0.3, 0.05),
+        page,
+        recognition_mode=RecognitionMode.DIGIT_OCR,
+        fill_policy=FillPolicy.PREFILL_WHEN_CONFIDENT,
+        confidence_threshold=0.96,
+    )
+
+    manual = field.with_recognition_mode(RecognitionMode.NONE)
+
+    assert manual.recognition_mode is RecognitionMode.NONE
+    assert manual.fill_policy is FillPolicy.MANUAL_ONLY
+    assert manual.confidence_threshold is None
+    assert manual.calculation_expression is None
+    assert manual.recognition_engine == "manual"
 
 
 def test_draft_version_can_replace_then_remove_a_field() -> None:

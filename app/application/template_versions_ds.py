@@ -9,8 +9,11 @@ from uuid import uuid4
 from app.domain.templates_ds import (
     ElementKind,
     FieldDefinition,
+    FillPolicy,
     PageSpec,
+    PaperEntryMode,
     PrintImposition,
+    RecognitionMode,
     Rect,
     StaticElement,
     TemplateStatus,
@@ -232,6 +235,10 @@ class TemplateVersions:
             )
             for field in version.fields
             if not _recognition_configuration_is_valid(field)
+        ) + tuple(
+            issue
+            for field in version.fields
+            for issue in _field_behavior_issues(field)
         )
         if version.print_imposition is not None and not version.print_imposition.fits(version.page):
             issues += (
@@ -278,13 +285,104 @@ def _overlaps(left: Rect, right: Rect) -> bool:
 
 
 def _recognition_configuration_is_valid(field: FieldDefinition) -> bool:
-    if field.recognition_engine == "manual":
+    if field.recognition_mode is RecognitionMode.NONE:
         return True
-    if field.recognition_engine == "digit_template":
-        return field.input_type == "digit_boxes" and field.data_type in {"integer", "decimal"}
-    if field.recognition_engine == "omr":
-        return field.input_type == "checkbox" and field.data_type == "boolean"
+    if field.recognition_mode is RecognitionMode.HANDWRITING_OCR:
+        return field.paper_entry_mode is PaperEntryMode.HANDWRITTEN_TEXT
+    if field.recognition_mode is RecognitionMode.DIGIT_OCR:
+        return field.paper_entry_mode is PaperEntryMode.DIGIT_BOXES and field.data_type in {
+            "integer",
+            "decimal",
+        }
+    if field.recognition_mode is RecognitionMode.PRINTED_OCR:
+        return field.paper_entry_mode is PaperEntryMode.PREPRINTED
+    if field.recognition_mode is RecognitionMode.OMR:
+        return field.paper_entry_mode is PaperEntryMode.CHECKBOX and field.data_type == "boolean"
+    if field.recognition_mode is RecognitionMode.QR:
+        return field.paper_entry_mode in {PaperEntryMode.PREPRINTED, PaperEntryMode.NONE}
+    if field.recognition_mode is RecognitionMode.CALCULATED:
+        return field.paper_entry_mode is PaperEntryMode.NONE
     return False
+
+
+def _field_behavior_issues(field: FieldDefinition) -> tuple[PreflightIssue, ...]:
+    mode = field.recognition_mode
+    policy = field.fill_policy
+    allowed_policies = {
+        RecognitionMode.NONE: {FillPolicy.MANUAL_ONLY},
+        RecognitionMode.HANDWRITING_OCR: {
+            FillPolicy.SUGGEST_ONLY,
+            FillPolicy.PREFILL_WHEN_CONFIDENT,
+        },
+        RecognitionMode.DIGIT_OCR: {
+            FillPolicy.SUGGEST_ONLY,
+            FillPolicy.PREFILL_WHEN_CONFIDENT,
+        },
+        RecognitionMode.PRINTED_OCR: {
+            FillPolicy.SUGGEST_ONLY,
+            FillPolicy.PREFILL_WHEN_CONFIDENT,
+        },
+        RecognitionMode.OMR: {
+            FillPolicy.SUGGEST_ONLY,
+            FillPolicy.PREFILL_WHEN_CONFIDENT,
+        },
+        RecognitionMode.QR: {
+            FillPolicy.SUGGEST_ONLY,
+            FillPolicy.PREFILL_WHEN_CONFIDENT,
+        },
+        RecognitionMode.CALCULATED: {FillPolicy.CALCULATED},
+    }
+    issues: list[PreflightIssue] = []
+    if mode is None or policy not in allowed_policies[mode]:
+        issues.append(
+            PreflightIssue(
+                code="FIELD_BEHAVIOR_MISMATCH",
+                detail=f"Field {field.field_key} uses an incompatible recognition and fill policy.",
+            )
+        )
+    if mode in {RecognitionMode.NONE, RecognitionMode.CALCULATED}:
+        if field.confidence_threshold is not None:
+            issues.append(
+                PreflightIssue(
+                    code="CONFIDENCE_THRESHOLD_NOT_ALLOWED",
+                    detail=f"Field {field.field_key} cannot configure a confidence threshold.",
+                )
+            )
+    elif policy is FillPolicy.PREFILL_WHEN_CONFIDENT and (
+        field.confidence_threshold is None and mode is not RecognitionMode.QR
+    ):
+        issues.append(
+            PreflightIssue(
+                code="CONFIDENCE_THRESHOLD_REQUIRED",
+                detail=f"Field {field.field_key} requires a confidence threshold for prefill.",
+            )
+        )
+    if mode is RecognitionMode.CALCULATED:
+        if not field.calculation_expression or not field.calculation_expression.strip():
+            issues.append(
+                PreflightIssue(
+                    code="CALCULATION_RULE_REQUIRED",
+                    detail=f"Field {field.field_key} requires a calculation expression.",
+                )
+            )
+    elif field.calculation_expression is not None:
+        issues.append(
+            PreflightIssue(
+                code="CALCULATION_RULE_NOT_ALLOWED",
+                detail=f"Field {field.field_key} is not a calculated field.",
+            )
+        )
+    if field.field_key in {"worker_name", "employee_name"} and (
+        not field.requires_manual_confirmation
+        or policy not in {FillPolicy.MANUAL_ONLY, FillPolicy.SUGGEST_ONLY}
+    ):
+        issues.append(
+            PreflightIssue(
+                code="NAME_REQUIRES_MANUAL_CONFIRMATION",
+                detail=f"Field {field.field_key} must always be confirmed from image evidence.",
+            )
+        )
+    return tuple(issues)
 
 
 def _protected_zone_issues(

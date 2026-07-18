@@ -72,6 +72,12 @@
 - 原因：归一化坐标保持现有识别链兼容，毫米约束才能保证跨纸张尺寸的可填写、可打印和可裁切；把拼版坐标写回单表会破坏二维码和历史版本绑定。
 - 证据：`app/domain/templates_ds.py`、`app/application/template_versions_ds.py`、Task 3 领域与发布前检查测试。
 
+### D-012：识别候选、审核预填和正式确认是三种不同状态
+
+- 决定：`RecognitionMode` 只决定是否以及怎样产生候选，`FillPolicy` 只决定候选是否进入最终填写值控件，正式记录仍必须经过审核确认；`PaperEntryMode` 独立描述纸面交互。姓名只能人工确认，自动计算没有 OCR 候选和可靠度阈值。
+- 原因：把识别、预填和确认混成一个“自动”开关会让高可靠度候选绕过人工审核，也会让不识别或计算字段残留隐藏阈值。
+- 证据：`app/domain/templates_ds.py`、`app/application/template_versions_ds.py`、Task 4 字段行为与发布前检查测试。
+
 ## 已否决方案及原因
 
 | 已否决方案 | 原因 |

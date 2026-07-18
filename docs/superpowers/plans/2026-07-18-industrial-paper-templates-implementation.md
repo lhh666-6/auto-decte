@@ -532,14 +532,14 @@ A5 竖向 · V3
 
 ### Task 4：建立字段填写、识别和审核填入规则
 
-- [ ] 定义 `PaperEntryMode`、`RecognitionMode`、`FillPolicy`。
-- [ ] 不自动识别只能人工录入，且不得保存可靠度阈值。
-- [ ] OCR / OMR 可以仅提供建议或达到条件自动填入。
-- [ ] 自动计算字段不能配置 OCR 和阈值。
-- [ ] 姓名必须人工确认。
-- [ ] 切换识别方式时清理旧配置。
-- [ ] 发布前检查阻止非法组合。
-- [ ] 提交：`feat(templates): model field recognition and review policies`
+- [x] 定义 `PaperEntryMode`、`RecognitionMode`、`FillPolicy`。
+- [x] 不自动识别只能人工录入，且不得保存可靠度阈值。
+- [x] OCR / OMR 可以仅提供建议或达到条件自动填入。
+- [x] 自动计算字段不能配置 OCR 和阈值。
+- [x] 姓名必须人工确认。
+- [x] 切换识别方式时清理旧配置。
+- [x] 发布前检查阻止非法组合。
+- [x] 提交：`feat(templates): model field recognition and review policies`
 
 ### Task 5：持久化新版版面和字段行为，兼容旧模板
 

@@ -4,7 +4,7 @@
 
 ## 本轮结论
 
-工业表单前端重建实施计划的任务 1—16 已按顺序完成。协作同步基线为 `ff03a39 fix(review): preserve confirmed values across reload and export`，并已在其上完成新主线 Task 1—3；集成分支为 `modular-architecture`。
+工业表单前端重建实施计划的任务 1—16 已按顺序完成。协作同步基线为 `ff03a39 fix(review): preserve confirmed values across reload and export`，并已在其上完成新主线 Task 1—4；集成分支为 `modular-architecture`。
 
 **项目整体尚未完成。** 已完成的任务只构成前端基础能力，不能证明真实工业纸质工资表已经可投入使用。当前已明确授权并采用新的唯一开发主线：[工业纸质工资表闭环与前端交互重构最终计划](superpowers/plans/2026-07-18-industrial-paper-templates-implementation.md)。该计划包含本地无登录完整权限、前端信息架构、字段行为模型、3 类母版、10 个车间模板、任意毫米纸张、拼版、二维码、工号核验、姓名人工确认、Excel 导出和实物闭环。
 
@@ -43,7 +43,18 @@ Task 2 定向验证：前端 `7` 个测试文件、`38 passed`；TypeScript 类�
 
 Task 3 定向验证：领域与应用测试 `19 passed`；相关 Ruff 和 mypy 通过。数据库持久化、API 与前端类型分别属于 Task 5、Task 6，本 Task 没有越界提前实现。完整回归仍按计划只在 Task 16 运行。
 
-当前下一项为 Task 4“建立字段填写、识别和审核填入规则”。
+### Task 4：字段填写、识别和审核填入规则（已完成）
+
+- 新增 `PaperEntryMode`、`RecognitionMode`、`FillPolicy`，分别表达纸面怎么填、系统怎么产生候选、候选怎样进入最终填写值；现有 `input_type/recognition_engine` 仅作为兼容映射。
+- 不自动识别只允许人工填写且不接受可靠度阈值；手写、逐位数字、印刷文字和 OMR 支持仅建议或按阈值预填；二维码支持建议或条件预填。
+- 自动计算只能使用计算填入策略、无需纸面填写且必须有计算表达式，不能带 OCR/OMR 或可靠度阈值。
+- `worker_name/employee_name` 自动标记为必须人工确认；即使 OCR 可靠度高也不能使用条件自动预填。
+- `with_recognition_mode(...)` 在切换识别方式时清除旧阈值和计算式，并为不识别、候选识别、自动计算设置对应默认填入策略。
+- 发布前检查新增字段行为、阈值、计算规则和姓名人工确认问题；非法草稿不能进入发布状态。
+
+Task 4 定向验证：领域与应用测试 `23 passed`；相关 Ruff 和 mypy 通过。持久化兼容迁移属于 Task 5，API/前端契约属于 Task 6。完整回归仍按计划只在 Task 16 运行。
+
+当前下一项为 Task 5“持久化新版版面和字段行为，兼容旧模板”。
 
 ## 已完成的前端能力
 

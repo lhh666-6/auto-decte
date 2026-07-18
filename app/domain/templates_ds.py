@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 import zlib
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import StrEnum
 
 _TEMPLATE_KEY = re.compile(r"^[A-Z][A-Z0-9_]*$")
@@ -38,6 +38,38 @@ class ElementKind(StrEnum):
     SIGNATURE_LINE = "SIGNATURE_LINE"
     ROLE_SECTION = "ROLE_SECTION"
     CUT_LINE = "CUT_LINE"
+
+
+class PaperEntryMode(StrEnum):
+    """How a worker interacts with the printed field."""
+
+    HANDWRITTEN_TEXT = "HANDWRITTEN_TEXT"
+    DIGIT_BOXES = "DIGIT_BOXES"
+    CHECKBOX = "CHECKBOX"
+    SIGNATURE = "SIGNATURE"
+    PREPRINTED = "PREPRINTED"
+    NONE = "NONE"
+
+
+class RecognitionMode(StrEnum):
+    """How the system may create a candidate for a field."""
+
+    NONE = "NONE"
+    HANDWRITING_OCR = "HANDWRITING_OCR"
+    DIGIT_OCR = "DIGIT_OCR"
+    PRINTED_OCR = "PRINTED_OCR"
+    OMR = "OMR"
+    QR = "QR"
+    CALCULATED = "CALCULATED"
+
+
+class FillPolicy(StrEnum):
+    """How a candidate may reach the reviewer's final-value control."""
+
+    MANUAL_ONLY = "MANUAL_ONLY"
+    SUGGEST_ONLY = "SUGGEST_ONLY"
+    PREFILL_WHEN_CONFIDENT = "PREFILL_WHEN_CONFIDENT"
+    CALCULATED = "CALCULATED"
 
 
 @dataclass(frozen=True, slots=True)
@@ -258,8 +290,17 @@ class FieldDefinition:
     minimum_prefill_confidence: float = 1.0
     rules: FieldRules = field(default_factory=FieldRules)
     export_target: ExportTarget | None = None
+    paper_entry_mode: PaperEntryMode | None = None
+    recognition_mode: RecognitionMode | None = None
+    fill_policy: FillPolicy | None = None
+    confidence_threshold: float | None = None
+    requires_manual_confirmation: bool = False
+    calculation_expression: str | None = None
 
     def __post_init__(self) -> None:
+        explicit_paper_mode = self.paper_entry_mode is not None
+        explicit_recognition_mode = self.recognition_mode is not None
+        explicit_fill_policy = self.fill_policy is not None
         if not self.field_key or not re.fullmatch(r"[a-z][a-z0-9_]*", self.field_key):
             raise ValueError("field_key must be lower snake case")
         if not self.display_name.strip():
@@ -272,6 +313,8 @@ class FieldDefinition:
             raise ValueError("recognition_engine is required")
         if not 0 <= self.minimum_prefill_confidence <= 1:
             raise ValueError("minimum_prefill_confidence must be between 0 and 1")
+        if self.confidence_threshold is not None and not 0 <= self.confidence_threshold <= 1:
+            raise ValueError("confidence_threshold must be between 0 and 1")
         if self.data_type not in {"integer", "decimal"} and (
             self.rules.minimum_value is not None or self.rules.maximum_value is not None
         ):
@@ -282,6 +325,61 @@ class FieldDefinition:
                 "export_target",
                 ExportTarget("records.xlsx", "records", self.field_key),
             )
+
+        paper_mode = self.paper_entry_mode or _paper_entry_mode_from_legacy(self.input_type)
+        recognition_mode = self.recognition_mode or _recognition_mode_from_legacy(
+            self.recognition_engine
+        )
+        fill_policy = self.fill_policy or _fill_policy_from_legacy(recognition_mode)
+        confidence_threshold = self.confidence_threshold
+        if (
+            confidence_threshold is None
+            and not explicit_fill_policy
+            and fill_policy is FillPolicy.PREFILL_WHEN_CONFIDENT
+        ):
+            confidence_threshold = self.minimum_prefill_confidence
+
+        object.__setattr__(self, "paper_entry_mode", paper_mode)
+        object.__setattr__(self, "recognition_mode", recognition_mode)
+        object.__setattr__(self, "fill_policy", fill_policy)
+        object.__setattr__(self, "confidence_threshold", confidence_threshold)
+        if self.field_key in {"worker_name", "employee_name"}:
+            object.__setattr__(self, "requires_manual_confirmation", True)
+        if explicit_paper_mode:
+            object.__setattr__(self, "input_type", _legacy_input_type(paper_mode))
+        if explicit_recognition_mode:
+            object.__setattr__(
+                self,
+                "recognition_engine",
+                _legacy_recognition_engine(recognition_mode),
+            )
+        if explicit_fill_policy or self.confidence_threshold is not None:
+            object.__setattr__(
+                self,
+                "minimum_prefill_confidence",
+                confidence_threshold if confidence_threshold is not None else 1.0,
+            )
+
+    def with_recognition_mode(self, recognition_mode: RecognitionMode) -> FieldDefinition:
+        """Switch recognition semantics without retaining hidden threshold or calculation state."""
+        if recognition_mode is RecognitionMode.NONE:
+            fill_policy = FillPolicy.MANUAL_ONLY
+            paper_entry_mode = self.paper_entry_mode
+        elif recognition_mode is RecognitionMode.CALCULATED:
+            fill_policy = FillPolicy.CALCULATED
+            paper_entry_mode = PaperEntryMode.NONE
+        else:
+            fill_policy = FillPolicy.SUGGEST_ONLY
+            paper_entry_mode = self.paper_entry_mode
+        return replace(
+            self,
+            paper_entry_mode=paper_entry_mode,
+            recognition_mode=recognition_mode,
+            fill_policy=fill_policy,
+            confidence_threshold=None,
+            minimum_prefill_confidence=1.0,
+            calculation_expression=None,
+        )
 
 
 @dataclass(slots=True)
@@ -464,6 +562,60 @@ def build_sheet_payload(print_batch: str, sequence: int) -> str:
     padded = f"{sequence:06d}"
     checksum = _checksum(f"{print_batch}|{padded}")
     return f"SHEET|{print_batch}|{padded}|{checksum}"
+
+
+def _paper_entry_mode_from_legacy(input_type: str) -> PaperEntryMode:
+    return {
+        "digit_boxes": PaperEntryMode.DIGIT_BOXES,
+        "employee_id_boxes": PaperEntryMode.DIGIT_BOXES,
+        "checkbox": PaperEntryMode.CHECKBOX,
+        "signature": PaperEntryMode.SIGNATURE,
+        "preprinted": PaperEntryMode.PREPRINTED,
+        "none": PaperEntryMode.NONE,
+    }.get(input_type, PaperEntryMode.HANDWRITTEN_TEXT)
+
+
+def _recognition_mode_from_legacy(recognition_engine: str) -> RecognitionMode:
+    return {
+        "manual": RecognitionMode.NONE,
+        "handwriting_ocr": RecognitionMode.HANDWRITING_OCR,
+        "digit_template": RecognitionMode.DIGIT_OCR,
+        "printed_ocr": RecognitionMode.PRINTED_OCR,
+        "omr": RecognitionMode.OMR,
+        "qr": RecognitionMode.QR,
+        "calculated": RecognitionMode.CALCULATED,
+    }.get(recognition_engine, RecognitionMode.NONE)
+
+
+def _fill_policy_from_legacy(recognition_mode: RecognitionMode) -> FillPolicy:
+    if recognition_mode is RecognitionMode.NONE:
+        return FillPolicy.MANUAL_ONLY
+    if recognition_mode is RecognitionMode.CALCULATED:
+        return FillPolicy.CALCULATED
+    return FillPolicy.PREFILL_WHEN_CONFIDENT
+
+
+def _legacy_input_type(paper_entry_mode: PaperEntryMode) -> str:
+    return {
+        PaperEntryMode.HANDWRITTEN_TEXT: "text_box",
+        PaperEntryMode.DIGIT_BOXES: "digit_boxes",
+        PaperEntryMode.CHECKBOX: "checkbox",
+        PaperEntryMode.SIGNATURE: "signature",
+        PaperEntryMode.PREPRINTED: "preprinted",
+        PaperEntryMode.NONE: "none",
+    }[paper_entry_mode]
+
+
+def _legacy_recognition_engine(recognition_mode: RecognitionMode) -> str:
+    return {
+        RecognitionMode.NONE: "manual",
+        RecognitionMode.HANDWRITING_OCR: "handwriting_ocr",
+        RecognitionMode.DIGIT_OCR: "digit_template",
+        RecognitionMode.PRINTED_OCR: "printed_ocr",
+        RecognitionMode.OMR: "omr",
+        RecognitionMode.QR: "qr",
+        RecognitionMode.CALCULATED: "calculated",
+    }[recognition_mode]
 
 
 def _validate_template_key(template_key: str) -> None:
