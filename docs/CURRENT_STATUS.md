@@ -1,10 +1,12 @@
 # 当前项目状态
 
-最后更新：2026-07-17
+最后更新：2026-07-18
 
 ## 本轮结论
 
-工业表单前端重建实施计划的任务 1—16 已按顺序完成。当前功能基线为 `ff03a39 fix(review): preserve confirmed values across reload and export`，集成分支为 `modular-architecture`；2026-07-18 已完成远端核对和推送，最终清单提交随本文件一并同步。
+工业表单前端重建实施计划的任务 1—16 已按顺序完成。当前功能基线为 `ff03a39 fix(review): preserve confirmed values across reload and export`，集成分支为 `modular-architecture`；2026-07-18 已完成该阶段的远端核对和推送。
+
+**项目整体尚未完成。** 已完成的任务只构成前端基础能力，不能证明真实工业纸质工资表已经可投入使用。当前已明确授权并采用新的唯一开发主线：[工业纸质工资表闭环与前端交互重构最终计划](superpowers/plans/2026-07-18-industrial-paper-templates-implementation.md)。该计划包含本地无登录完整权限、前端信息架构、字段行为模型、3 类母版、10 个车间模板、任意毫米纸张、拼版、二维码、工号核验、姓名人工确认、Excel 导出和实物闭环。
 
 本轮没有改变审核事务、模板版本、主数据乐观锁、导出批次或识别算法等后端业务不变量。前端已从单页功能区切换重建为有固定路由、统一外壳和中文业务语言的 React Web 应用。
 
@@ -48,11 +50,11 @@
 3. **生产任务消费未完全独立化**：`FORM_IMPORT`、`FORM_RECOGNITION`、`XLSX_EXPORT` 尚未全部由独立生产 Worker/Handler 消费。
 4. **模板包和纸张实例未实现**：安全 ZIP 导入/导出、manifest/hash 校验、打印批次和唯一 `sheet_instance_id` 仍需独立任务。
 5. **中文 OCR 与桌面设备接入未完成**：文本字段仍以人工核对为主；Tauri、相机、扫描仪、Windows 安装包仍是后续工程。
-6. **纸面模板产品化方向尚待授权**：自定义毫米尺寸、受约束小模块、网格吸附、人员匹配和权限体验不属于本轮前端重建范围。
+6. **纸面模板产品化已授权但尚未实现**：自定义毫米尺寸、受约束小模块、网格吸附、3 类母版、10 个车间模板、人员匹配和本地完整权限已进入当前开发主线；在最终计划 Task 1—16 和实物闭环完成前，不得标记项目完成。
 
 ## 继续协作
 
-协作者应先读取 [NEXT_TASK.md](NEXT_TASK.md)、[前端交互闭环说明](FRONTEND_INTERACTION_GUIDE.md)、[实施计划](superpowers/plans/2026-07-17-frontend-rebuild-implementation.md) 和 [DECISIONS.md](DECISIONS.md)。拉取命令：
+协作者应先读取 [NEXT_TASK.md](NEXT_TASK.md)、[当前最终实施计划](superpowers/plans/2026-07-18-industrial-paper-templates-implementation.md) 和 [DECISIONS.md](DECISIONS.md)。旧的[前端重建计划](superpowers/plans/2026-07-17-frontend-rebuild-implementation.md)只保留为历史记录，不需要重新执行。拉取命令：
 
 ```powershell
 git fetch origin
@@ -61,4 +63,4 @@ git pull --ff-only origin modular-architecture
 git status --short
 ```
 
-预期工作树干净。新增工作必须从 `NEXT_TASK.md` 的真实未完成项中获得明确授权，不应重新实现已完成的前端重建。
+预期工作树干净。新增工作按最终计划的 Task 1—16 顺序实施。已验证且本轮未修改的简单功能不得重复研究或重复人工验收；每个任务只运行相关测试，完整自动回归只在 Task 16 运行一次，实物闭环只覆盖三个代表模板。
