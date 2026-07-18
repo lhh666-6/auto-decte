@@ -5,7 +5,7 @@ import {
   type TemplateRect,
   type TemplateVersion,
 } from "@form-detection/api-client";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { FieldInspector } from "./FieldInspector_ds";
 import { TemplateCanvasEditor } from "./TemplateCanvasEditor_ds";
@@ -16,7 +16,12 @@ import {
   PROTECTED_PLACEMENT_MESSAGE,
   PROTECTED_ZONES,
   canEdit,
+  createFieldDraft,
+  hasDuplicateFieldKey,
   isProtectedOverlap,
+  moveRect,
+  withDataType,
+  withRecognitionMode,
 } from "./template-studio-model";
 import { nextScreen, type StudioAction, type StudioScreen } from "./template-studio-state";
 
@@ -25,34 +30,11 @@ type Props = {
   onScreenChange?: (screen: StudioScreen) => void;
 };
 
-const INITIAL_FIELD: TemplateField = {
-  field_key: "worker_name",
-  display_name: "姓名",
-  data_type: "text",
-  input_type: "text_box",
-  recognition_engine: "manual",
-  minimum_prefill_confidence: 0.97,
-  paper_entry_mode: "HANDWRITTEN_TEXT",
-  recognition_mode: "NONE",
-  fill_policy: "MANUAL_ONLY",
-  confidence_threshold: null,
-  requires_manual_confirmation: true,
-  calculation_expression: null,
-  rules: {
-    required: false,
-    minimum_value: null,
-    maximum_value: null,
-    allowed_values: [],
-    master_data_source: null,
-    allow_exception_reason: false,
-  },
-  export_target: {
-    workbook: "records.xlsx",
-    worksheet: "records",
-    business_column: "worker_name",
-  },
-  region: { x: 0.1, y: 0.2, width: 0.22, height: 0.05 },
-};
+type StructuralChange =
+  | { kind: "add"; field: TemplateField }
+  | { kind: "delete"; field: TemplateField };
+
+type AddFieldDialogState = { internalId: string; field: TemplateField };
 
 export function TemplateStudio({ initialScreen, onScreenChange }: Props) {
   const api = useMemo(() => new TemplateApi("/api/v1"), []);
@@ -113,6 +95,7 @@ export function TemplateStudio({ initialScreen, onScreenChange }: Props) {
       api={api}
       versionId={screen.versionId}
       onBack={() => navigate({ type: "backToLibrary" })}
+      onClone={cloneAndOpenEditor}
     />
   );
 }
@@ -121,19 +104,24 @@ function TemplateEditor({
   api,
   versionId,
   onBack,
+  onClone,
 }: {
   api: TemplateApi;
   versionId: string;
   onBack: () => void;
+  onClone: (versionId: string) => Promise<void>;
 }) {
   const [version, setVersion] = useState<TemplateVersion | null>(null);
   const [report, setReport] = useState<PreflightReport | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selectedFieldKey, setSelectedFieldKey] = useState<string | null>(null);
-  const [newField, setNewField] = useState<TemplateField>(INITIAL_FIELD);
+  const [addDialog, setAddDialog] = useState<AddFieldDialogState | null>(null);
+  const [structuralPast, setStructuralPast] = useState<StructuralChange[]>([]);
+  const [structuralFuture, setStructuralFuture] = useState<StructuralChange[]>([]);
   const [metadataName, setMetadataName] = useState("");
   const [metadataDescription, setMetadataDescription] = useState("");
   const [working, setWorking] = useState(false);
+  const addingRef = useRef(false);
 
   useEffect(() => {
     let active = true;
@@ -161,25 +149,72 @@ function TemplateEditor({
     setError(null);
   }
 
+  function openAddDialog() {
+    if (!version || !editable) return;
+    setAddDialog({
+      internalId: globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`,
+      field: createFieldDraft(version.fields.map((field) => field.field_key)),
+    });
+  }
+
   async function addField() {
-    if (!version) return;
-    if (isProtectedOverlap(newField.region, PROTECTED_ZONES)) {
+    if (!version || !addDialog || addingRef.current) return;
+    const field = {
+      ...addDialog.field,
+      field_key: addDialog.field.field_key.trim(),
+      display_name: addDialog.field.display_name.trim(),
+      export_target: {
+        ...addDialog.field.export_target,
+        business_column: addDialog.field.field_key.trim(),
+      },
+    };
+    if (!field.field_key || !field.display_name) {
+      setError("字段键和显示名不能为空。");
+      return;
+    }
+    if (hasDuplicateFieldKey(field.field_key, version.fields)) {
+      setError(`字段键“${field.field_key}”已存在，请使用唯一字段键。`);
+      return;
+    }
+    if (isProtectedOverlap(field.region, PROTECTED_ZONES)) {
       setError(PROTECTED_PLACEMENT_MESSAGE);
       return;
     }
+    const previousVersion = version;
+    const previousSelection = selectedFieldKey;
+    addingRef.current = true;
     setWorking(true);
     try {
-      const updated = await api.addField(version.version_id, newField);
-      acceptMutation(updated, newField.field_key);
-      setNewField({
-        ...INITIAL_FIELD,
-        field_key: `field_${updated.fields.length + 1}`,
-        display_name: `新字段 ${updated.fields.length + 1}`,
-        export_target: {
-          ...INITIAL_FIELD.export_target,
-          business_column: `field_${updated.fields.length + 1}`,
-        },
-      });
+      const updated = await api.addField(version.version_id, field);
+      acceptMutation(updated, field.field_key);
+      setStructuralPast((items) => [...items, { kind: "add", field }]);
+      setStructuralFuture([]);
+      setAddDialog(null);
+    } catch (cause) {
+      setVersion(previousVersion);
+      setSelectedFieldKey(previousSelection);
+      setError(message(cause));
+    } finally {
+      addingRef.current = false;
+      setWorking(false);
+    }
+  }
+
+  async function duplicateField(field: TemplateField) {
+    if (!version || working) return;
+    const draft = createFieldDraft(version.fields.map((item) => item.field_key));
+    const copy: TemplateField = {
+      ...structuredClone(field),
+      field_key: draft.field_key,
+      display_name: `${field.display_name} 副本`,
+      export_target: { ...field.export_target, business_column: draft.field_key },
+      region: moveRect(field.region, 5 / version.page.width_mm, 5 / version.page.height_mm, []),
+    };
+    setWorking(true);
+    try {
+      acceptMutation(await api.addField(version.version_id, copy), copy.field_key);
+      setStructuralPast((items) => [...items, { kind: "add", field: copy }]);
+      setStructuralFuture([]);
     } catch (cause) {
       setError(message(cause));
     } finally {
@@ -210,16 +245,53 @@ function TemplateEditor({
 
   async function deleteField(fieldKey: string) {
     if (!version) return;
+    const deleted = version.fields.find((field) => field.field_key === fieldKey);
+    if (!deleted) return;
     setWorking(true);
     try {
       const updated = await api.deleteField(version.version_id, fieldKey);
       acceptMutation(updated, updated.fields[0]?.field_key ?? null);
+      setStructuralPast((items) => [...items, { kind: "delete", field: deleted }]);
+      setStructuralFuture([]);
     } catch (cause) {
       setError(message(cause));
       throw cause;
     } finally {
       setWorking(false);
     }
+  }
+
+  async function applyStructuralChange(change: StructuralChange, direction: "undo" | "redo") {
+    if (!version || working) return;
+    const shouldAdd = (change.kind === "delete") === (direction === "undo");
+    setWorking(true);
+    try {
+      const updated = shouldAdd
+        ? await api.addField(version.version_id, change.field)
+        : await api.deleteField(version.version_id, change.field.field_key);
+      acceptMutation(updated, shouldAdd ? change.field.field_key : (updated.fields[0]?.field_key ?? null));
+      if (direction === "undo") {
+        setStructuralPast((items) => items.slice(0, -1));
+        setStructuralFuture((items) => [...items, change]);
+      } else {
+        setStructuralFuture((items) => items.slice(0, -1));
+        setStructuralPast((items) => [...items, change]);
+      }
+    } catch (cause) {
+      setError(message(cause));
+    } finally {
+      setWorking(false);
+    }
+  }
+
+  function undoStructuralChange() {
+    const change = structuralPast.at(-1);
+    if (change) void applyStructuralChange(change, "undo");
+  }
+
+  function redoStructuralChange() {
+    const change = structuralFuture.at(-1);
+    if (change) void applyStructuralChange(change, "redo");
   }
 
   async function preflight() {
@@ -274,6 +346,18 @@ function TemplateEditor({
     }
   }
 
+  async function cloneReadOnlyVersion() {
+    if (!version || editable || working) return;
+    setWorking(true);
+    try {
+      setError(null);
+      await onClone(version.version_id);
+    } catch (cause) {
+      setError(message(cause));
+      setWorking(false);
+    }
+  }
+
   async function discardDraft() {
     if (!version || !editable) return;
     if (!window.confirm("确定放弃这个草稿吗？草稿字段和未发布修改将被永久删除。")) return;
@@ -296,34 +380,31 @@ function TemplateEditor({
         <span className={`status-pill ${version?.status === "PUBLISHED" ? "success" : "warning"}`}>{version?.status ?? "加载中"}</span>
       </header>
       {error && <div className="error-banner studio-message" role="alert">{error}</div>}
+      {version && (
+        <nav className="studio-command-bar" aria-label="模板设计操作">
+          <button className="button button-secondary" disabled={working || structuralPast.length === 0} onClick={undoStructuralChange}>撤销结构操作</button>
+          <button className="button button-secondary" disabled={working || structuralFuture.length === 0} onClick={redoStructuralChange}>重做结构操作</button>
+          {editable ? <>
+            <button className="button button-secondary" disabled={working} onClick={() => void preflight()}>发布前检查</button>
+            <button className="button button-primary" disabled={version.status !== "READY_TO_PUBLISH" || working} onClick={() => void publish()}>发布模板</button>
+            <button className="button button-danger-secondary" disabled={working} onClick={() => void discardDraft()}>放弃草稿</button>
+          </> : <button className="button button-primary" disabled={working} onClick={() => void cloneReadOnlyVersion()}>克隆为新草稿后修改</button>}
+        </nav>
+      )}
       {version ? (
         <section className="studio-grid">
           <aside className="studio-card studio-layers">
-            <div><span className="eyebrow">组件与图层</span><h2>V{version.version} · {version.page.size}</h2><p className="muted">{version.fields.length} 个字段；发布终态保持只读。</p></div>
-            <section className="template-metadata-editor">
-              <h3>模板信息</h3>
-              <label>模板名称<input value={metadataName} maxLength={100} disabled={working} onChange={(event) => setMetadataName(event.target.value)} /></label>
-              <label>用途说明<textarea value={metadataDescription} maxLength={500} disabled={working} onChange={(event) => setMetadataDescription(event.target.value)} /></label>
-              <button className="button button-secondary" disabled={working || !metadataName.trim() || (metadataName === version.display_name && metadataDescription === version.description)} onClick={() => void saveMetadata()}>保存模板信息</button>
+            <div><span className="eyebrow">模块与图层</span><h2>V{version.version} · {version.page.width_mm} × {version.page.height_mm} mm</h2><p className="muted">{version.fields.length} 个业务字段；系统定位模块不可修改。</p></div>
+            <section className="module-palette" aria-label="模块">
+              <h3>模块</h3>
+              <button className="button button-secondary" disabled={!editable || working} onClick={openAddDialog}>＋ 添加业务字段</button>
+              <div className="locked-layers"><span>系统模块</span><span>模板二维码</span><span>纸张实例码</span><span>定位标记 10–13</span></div>
             </section>
-            <div className="locked-layers"><span>锁定组件</span><span>QR</span><span>SHEET</span><span>ArUco 10–13</span></div>
             <section className="layer-list" aria-label="字段图层">
-              <h3>字段图层</h3>
-              {version.fields.map((field) => <button key={field.field_key} type="button" className={field.field_key === selectedFieldKey ? "selected" : ""} onClick={() => setSelectedFieldKey(field.field_key)}><strong>{field.display_name}</strong><span>{field.field_key}</span></button>)}
+              <h3>图层</h3>
+              {version.fields.map((field) => <div className="layer-row" key={field.field_key}><button type="button" className={field.field_key === selectedFieldKey ? "selected" : ""} onClick={() => setSelectedFieldKey(field.field_key)}><strong>{field.display_name}</strong><span>{field.field_key}</span></button><button type="button" className="layer-copy" aria-label={`复制字段 ${field.display_name}`} disabled={!editable || working} onClick={() => void duplicateField(field)}>复制</button></div>)}
               {version.fields.length === 0 && <p className="muted">尚未添加字段。</p>}
             </section>
-            <section className="new-field-panel">
-              <h3>加入新字段</h3>
-              <label>字段键<input value={newField.field_key} disabled={!editable || working} onChange={(event) => setNewField({ ...newField, field_key: event.target.value })} /></label>
-              <label>显示名<input value={newField.display_name} disabled={!editable || working} onChange={(event) => setNewField({ ...newField, display_name: event.target.value })} /></label>
-              <label>识别引擎<select value={newField.recognition_engine} disabled={!editable || working} onChange={(event) => setNewField({ ...newField, recognition_engine: event.target.value })}><option value="manual">人工填写</option><option value="digit_template">数字格识别</option><option value="omr">OMR 勾选</option></select></label>
-              <button className="button button-secondary" disabled={!editable || working} onClick={() => void addField()}>加入字段</button>
-            </section>
-            <div className="studio-lifecycle-actions">
-              <button className="button button-secondary" disabled={!editable || working} onClick={() => void preflight()}>运行发布预检</button>
-              <button className="button button-primary" disabled={version.status !== "READY_TO_PUBLISH" || working} onClick={() => void publish()}>发布模板</button>
-              <button className="button button-danger-secondary" disabled={!editable || working} onClick={() => void discardDraft()}>放弃草稿</button>
-            </div>
           </aside>
           <TemplateCanvasEditor
             version={version}
@@ -333,7 +414,15 @@ function TemplateEditor({
             onPersist={persistRegion}
             onReject={setError}
           />
-          <FieldInspector field={selectedField} editable={editable && !working} onSave={saveField} onDelete={deleteField} />
+          <div className="studio-properties">
+            <FieldInspector field={selectedField} page={version.page} editable={editable && !working} onSave={saveField} onDelete={deleteField} />
+            <aside className="studio-card template-metadata-editor">
+              <h2>模板设置</h2>
+              <label>模板名称<input value={metadataName} maxLength={100} disabled={!editable || working} onChange={(event) => setMetadataName(event.target.value)} /></label>
+              <label>用途说明<textarea value={metadataDescription} maxLength={500} disabled={!editable || working} onChange={(event) => setMetadataDescription(event.target.value)} /></label>
+              <button className="button button-secondary" disabled={!editable || working || !metadataName.trim() || (metadataName === version.display_name && metadataDescription === version.description)} onClick={() => void saveMetadata()}>保存模板信息</button>
+            </aside>
+          </div>
         </section>
       ) : <section className="preview-loading">正在读取模板版本…</section>}
       <section className="studio-card preflight">
@@ -346,6 +435,18 @@ function TemplateEditor({
           {version?.artifacts.map((artifact) => <a key={artifact.artifact_id} className="candidate-chip" href={artifact.download_url} target="_blank" rel="noreferrer">打开 {artifact.download_name}</a>)}
         </div>
       </section>
+      {addDialog && (
+        <div className="dialog-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !working) setAddDialog(null); }}>
+          <section key={addDialog.internalId} className="add-field-dialog" role="dialog" aria-modal="true" aria-labelledby="add-field-title">
+            <div><span className="eyebrow">独立新增状态</span><h2 id="add-field-title">添加业务字段</h2><p className="muted">新增草稿不会读取或修改当前选中字段；创建失败时画布保持原状。</p></div>
+            <label>字段键<input autoFocus value={addDialog.field.field_key} disabled={working} onChange={(event) => setAddDialog({ ...addDialog, field: { ...addDialog.field, field_key: event.target.value, export_target: { ...addDialog.field.export_target, business_column: event.target.value } } })} /></label>
+            <label>显示名<input value={addDialog.field.display_name} disabled={working} onChange={(event) => setAddDialog({ ...addDialog, field: { ...addDialog.field, display_name: event.target.value } })} /></label>
+            <label>数据类型<select value={addDialog.field.data_type} disabled={working} onChange={(event) => setAddDialog({ ...addDialog, field: withDataType(addDialog.field, event.target.value) })}><option value="text">文本</option><option value="integer">整数</option><option value="decimal">小数</option><option value="boolean">是/否</option></select></label>
+            <label>识别方式<select value={addDialog.field.recognition_mode} disabled={working} onChange={(event) => setAddDialog({ ...addDialog, field: withRecognitionMode(addDialog.field, event.target.value as TemplateField["recognition_mode"]) })}><option value="NONE">不自动识别</option><option value="HANDWRITING_OCR">手写识别</option><option value="DIGIT_OCR">数字格识别</option><option value="PRINTED_OCR">印刷体识别</option><option value="OMR">勾选识别</option><option value="QR">二维码</option><option value="CALCULATED">计算字段</option></select></label>
+            <div className="dialog-actions"><button className="button button-secondary" disabled={working} onClick={() => setAddDialog(null)}>取消</button><button className="button button-primary" disabled={working} onClick={() => void addField()}>{working ? "正在添加…" : "添加字段"}</button></div>
+          </section>
+        </div>
+      )}
     </main>
   );
 }

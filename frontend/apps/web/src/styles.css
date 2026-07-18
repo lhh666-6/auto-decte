@@ -140,21 +140,35 @@ button { cursor: pointer; }
 @media (max-width: 360px) { .template-studio { padding: 8px; }.studio-card, .studio-canvas { border-radius: 9px; padding: 10px; }.paper-preview { padding: 30px 10px; }.marker { width: 22px; height: 22px; font-size: 9px; }.safe-zone { top: 25px; right: 8px; font-size: 9px; }.studio-card .button { width: 100%; } }
 
 .studio-message { max-width: 1280px; margin: 0 auto 16px; }
-.studio-layers h3, .new-field-panel h3 { margin: 0; color: #172f4d; font-size: 13px; }
+.studio-layers h3, .module-palette h3 { margin: 0; color: #172f4d; font-size: 13px; }
 .locked-layers { display: flex; flex-wrap: wrap; gap: 5px; border-radius: 8px; padding: 9px; background: #f8fafc; }
 .locked-layers span { border: 1px solid #dbe4ef; border-radius: 999px; padding: 3px 6px; color: #475569; background: white; font-size: 10px; }
 .locked-layers span:first-child { width: 100%; border: 0; padding: 0; color: #64748b; background: transparent; font-weight: 700; }
-.layer-list, .new-field-panel, .studio-lifecycle-actions, .field-inspector form { display: grid; gap: 8px; }
+.layer-list, .module-palette, .studio-lifecycle-actions, .field-inspector form, .studio-properties { display: grid; gap: 8px; }
 .layer-list { max-height: 230px; overflow: auto; }
 .layer-list button { display: grid; gap: 2px; border: 1px solid #dbe4ef; border-radius: 7px; padding: 8px; color: #334155; background: white; text-align: left; }
 .layer-list button:hover, .layer-list button.selected { border-color: #2563eb; color: #1d4ed8; background: #eff6ff; }
 .layer-list button span { color: #64748b; font-size: 10px; }
-.new-field-panel { border-top: 1px solid #e2e8f0; padding-top: 11px; }
+.layer-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 5px; }
+.layer-row .layer-copy { align-self: stretch; padding: 0 7px; color: #475569; font-size: 10px; }
+.module-palette { border-top: 1px solid #e2e8f0; padding-top: 11px; }
 .studio-lifecycle-actions { border-top: 1px solid #e2e8f0; padding-top: 11px; }
+.studio-command-bar { position: sticky; z-index: 20; top: 0; display: flex; flex-wrap: wrap; gap: 8px; max-width: 1520px; margin: 0 auto 16px; border: 1px solid #d7dee8; border-radius: 10px; padding: 10px; background: rgb(255 255 255 / 96%); box-shadow: 0 4px 14px rgb(15 39 66 / 9%); backdrop-filter: blur(8px); }
 .canvas-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: #64748b; font-size: 11px; }
 .canvas-toolbar > div { display: grid; gap: 2px; }
 .canvas-toolbar strong { color: #172f4d; font-size: 13px; }
-.template-canvas-paper { box-sizing: border-box; padding: 0; overflow: hidden; touch-action: none; user-select: none; background-color: #fff; background-image: linear-gradient(rgb(148 163 184 / 13%) 1px, transparent 1px), linear-gradient(90deg, rgb(148 163 184 / 13%) 1px, transparent 1px); background-size: 5% 5%; }
+.canvas-tool-actions, .alignment-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; }
+.canvas-tool-actions button, .alignment-toolbar button { border: 1px solid #cbd5e1; border-radius: 5px; padding: 5px 7px; color: #334155; background: #fff; font-size: 10px; }
+.canvas-tool-actions button.active, .canvas-tool-actions button[aria-pressed="true"] { border-color: #2563eb; color: #1d4ed8; background: #eff6ff; }
+.canvas-tool-actions output { min-width: 38px; color: #334155; text-align: center; }
+.canvas-viewport { position: relative; min-height: 460px; overflow: auto; border-radius: 8px; padding: 28px 18px 18px 32px; background: #e8edf3; }
+.millimeter-ruler { position: absolute; z-index: 8; color: #64748b; font-size: 8px; pointer-events: none; }
+.millimeter-ruler span { position: absolute; }
+.horizontal-ruler { top: 8px; right: 18px; left: 32px; height: 16px; border-bottom: 1px solid #94a3b8; }
+.horizontal-ruler span::after { position: absolute; top: 10px; left: 0; width: 1px; height: 6px; background: #94a3b8; content: ""; }
+.vertical-ruler { top: 28px; bottom: 18px; left: 8px; width: 18px; border-right: 1px solid #94a3b8; writing-mode: vertical-rl; }
+.vertical-ruler span { right: 3px; }
+.template-canvas-paper { box-sizing: border-box; padding: 0; overflow: hidden; transform-origin: top center; touch-action: none; user-select: none; background-color: #fff; background-image: linear-gradient(rgb(148 163 184 / 13%) 1px, transparent 1px), linear-gradient(90deg, rgb(148 163 184 / 13%) 1px, transparent 1px); background-size: 5% 5%; }
 .template-canvas-paper.read-only { background-image: none; }
 .printable-boundary { position: absolute; z-index: 1; inset: 2.5%; border: 1px dashed #94a3b8; pointer-events: none; }
 .protected-zone { position: absolute; z-index: 2; display: grid; place-items: center; border: 1px dashed #f59e0b; color: #92400e; background: rgb(254 243 199 / 82%); pointer-events: none; font-size: 9px; text-align: center; }
@@ -171,6 +185,16 @@ button { cursor: pointer; }
 .inspector-heading { display: flex; align-items: start; justify-content: space-between; gap: 8px; }
 .inspector-heading h2 { margin-top: 3px; }
 .field-inspector form { min-width: 0; }
+.field-inspector fieldset { display: grid; gap: 8px; margin: 0; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px; }
+.field-inspector legend { padding: 0 5px; color: #334155; font-size: 12px; font-weight: 800; }
+.advanced-field-settings { border-top: 1px solid #e2e8f0; padding-top: 8px; }
+.advanced-field-settings summary { margin-bottom: 8px; color: #334155; cursor: pointer; font-size: 12px; font-weight: 800; }
+.template-metadata-editor textarea { min-height: 72px; border: 1px solid #cbd5e1; border-radius: 6px; padding: 8px; resize: vertical; font: inherit; }
+.add-field-dialog { display: grid; gap: 12px; width: min(100%, 520px); border-radius: 12px; padding: 22px; background: #fff; box-shadow: 0 22px 60px rgb(15 23 42 / 35%); }
+.add-field-dialog h2 { margin: 3px 0; color: #172f4d; }
+.add-field-dialog p { margin: 0; }
+.add-field-dialog label { display: grid; gap: 5px; color: #475569; font-size: 12px; font-weight: 700; }
+.add-field-dialog input, .add-field-dialog select { border: 1px solid #cbd5e1; border-radius: 6px; padding: 9px; color: #172f4d; background: #fff; font: inherit; }
 .field-inspector input:read-only { color: #64748b; background: #f1f5f9; }
 .studio-card .checkbox-label { grid-template-columns: auto 1fr; align-items: center; }
 .studio-card .checkbox-label input { width: auto; }

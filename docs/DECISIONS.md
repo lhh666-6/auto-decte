@@ -90,6 +90,12 @@
 - 原因：仅扩展 `page_size` 字符串无法安全携带毫米尺寸、方向和 DPI；直接删除旧参数又会中断现有模板中心。双入口、单一完整响应可以渐进迁移且保持类型安全。
 - 证据：`app/api/routers/templates_ds.py`、`frontend/packages/api-client/src/templates_ds.ts`、Task 6 API 与类型测试。
 
+### D-015：字段新增是独立事务，编辑器交互以毫米约束但继续保存归一化坐标
+
+- 决定：添加字段使用独立对话框和新内部草稿，唯一键校验、重复提交锁和失败回滚在客户端请求边界完成；移动、缩放和对齐以 1 mm 网格工作，持久化仍转换为单表归一化坐标。结构操作与几何操作分别保留撤销/重做历史。发布版只读，只能克隆后修改。
+- 原因：复用选中字段状态会造成误覆盖、重复创建和失败后画布漂移；直接把毫米值写入现有字段坐标又会破坏识别与历史模板兼容。独立事务与毫米交互层可以同时保证安全编辑和既有后端契约。
+- 证据：`frontend/apps/web/src/TemplateStudio_ds.tsx`、`TemplateCanvasEditor_ds.tsx`、`FieldInspector_ds.tsx`、`template-studio-model.ts` 及 Task 7 组件/模型测试和浏览器验收。
+
 ## 已否决方案及原因
 
 | 已否决方案 | 原因 |

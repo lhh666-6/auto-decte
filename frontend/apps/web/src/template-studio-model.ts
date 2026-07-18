@@ -1,4 +1,9 @@
-import type { TemplateRect } from "../../../packages/api-client/src/templates_ds";
+import type {
+  RecognitionMode,
+  TemplateField,
+  TemplatePage,
+  TemplateRect,
+} from "../../../packages/api-client/src/templates_ds";
 
 export const QR_SAFE_ZONE: TemplateRect = { x: 0.78, y: 0.02, width: 0.16, height: 0.12 };
 export const SHEET_CODE_SAFE_ZONE: TemplateRect = { x: 0.62, y: 0.02, width: 0.14, height: 0.12 };
@@ -76,6 +81,162 @@ export function canEdit(status: string): boolean {
   return status === "DRAFT" || status === "PREFLIGHT_FAILED" || status === "READY_TO_PUBLISH";
 }
 
+export type Alignment = "left" | "horizontal-center" | "right" | "top" | "vertical-center" | "bottom";
+
+export function snapRectToMillimeters(
+  rect: TemplateRect,
+  page: Pick<TemplatePage, "width_mm" | "height_mm">,
+  gridMm = 1,
+): TemplateRect {
+  if (gridMm <= 0) return normalizeRect(rect);
+  const snap = (value: number, extent: number) => Math.round((value * extent) / gridMm) * gridMm / extent;
+  return normalizeRect({
+    x: snap(rect.x, page.width_mm),
+    y: snap(rect.y, page.height_mm),
+    width: snap(rect.width, page.width_mm),
+    height: snap(rect.height, page.height_mm),
+  });
+}
+
+export function rectInMillimeters(
+  rect: TemplateRect,
+  page: Pick<TemplatePage, "width_mm" | "height_mm">,
+): TemplateRect {
+  return {
+    x: round(rect.x * page.width_mm),
+    y: round(rect.y * page.height_mm),
+    width: round(rect.width * page.width_mm),
+    height: round(rect.height * page.height_mm),
+  };
+}
+
+export function alignRect(
+  rect: TemplateRect,
+  alignment: Alignment,
+  protectedRegion: ProtectedRegion = PROTECTED_ZONES,
+): TemplateRect {
+  const current = normalizeRect(rect);
+  const candidate = { ...current };
+  if (alignment === "left") candidate.x = PAGE_EDGE;
+  if (alignment === "horizontal-center") candidate.x = (1 - current.width) / 2;
+  if (alignment === "right") candidate.x = 1 - PAGE_EDGE - current.width;
+  if (alignment === "top") candidate.y = PAGE_EDGE;
+  if (alignment === "vertical-center") candidate.y = (1 - current.height) / 2;
+  if (alignment === "bottom") candidate.y = 1 - PAGE_EDGE - current.height;
+  const normalized = normalizeRect(candidate);
+  return isProtectedOverlap(normalized, protectedRegion) ? rect : normalized;
+}
+
+export function createFieldDraft(existingKeys: readonly string[]): TemplateField {
+  let suffix = existingKeys.length + 1;
+  while (existingKeys.includes(`field_${suffix}`)) suffix += 1;
+  const fieldKey = `field_${suffix}`;
+  return {
+    field_key: fieldKey,
+    display_name: `新字段 ${suffix}`,
+    data_type: "text",
+    input_type: "text_box",
+    recognition_engine: "manual",
+    minimum_prefill_confidence: 1,
+    paper_entry_mode: "HANDWRITTEN_TEXT",
+    recognition_mode: "NONE",
+    fill_policy: "MANUAL_ONLY",
+    confidence_threshold: null,
+    requires_manual_confirmation: true,
+    calculation_expression: null,
+    rules: {
+      required: false,
+      minimum_value: null,
+      maximum_value: null,
+      allowed_values: [],
+      master_data_source: null,
+      allow_exception_reason: false,
+    },
+    export_target: {
+      workbook: "records.xlsx",
+      worksheet: "records",
+      business_column: fieldKey,
+    },
+    region: { x: 0.1, y: 0.2, width: 0.22, height: 0.05 },
+  };
+}
+
+export function hasDuplicateFieldKey(fieldKey: string, fields: readonly TemplateField[]): boolean {
+  return fields.some((field) => field.field_key.trim() === fieldKey.trim());
+}
+
+export function withDataType(field: TemplateField, dataType: string): TemplateField {
+  const numeric = dataType === "integer" || dataType === "decimal";
+  const updated = {
+    ...field,
+    data_type: dataType,
+    rules: {
+      ...field.rules,
+      minimum_value: numeric ? field.rules.minimum_value : null,
+      maximum_value: numeric ? field.rules.maximum_value : null,
+      allowed_values: dataType === "boolean" ? [] : field.rules.allowed_values,
+    },
+  };
+  if (field.recognition_mode === "DIGIT_OCR" && !numeric) return withRecognitionMode(updated, "NONE");
+  if (field.recognition_mode === "OMR" && dataType !== "boolean") return withRecognitionMode(updated, "NONE");
+  return updated;
+}
+
+export function withRecognitionMode(field: TemplateField, recognitionMode: RecognitionMode): TemplateField {
+  const legacyEngine = {
+    NONE: "manual",
+    HANDWRITING_OCR: "handwriting_ocr",
+    DIGIT_OCR: "digit_template",
+    PRINTED_OCR: "printed_ocr",
+    OMR: "omr",
+    QR: "qr",
+    CALCULATED: "calculated",
+  }[recognitionMode];
+  if (recognitionMode === "NONE") {
+    return {
+      ...field,
+      recognition_mode: recognitionMode,
+      recognition_engine: legacyEngine,
+      fill_policy: "MANUAL_ONLY",
+      confidence_threshold: null,
+      calculation_expression: null,
+    };
+  }
+  if (recognitionMode === "CALCULATED") {
+    return {
+      ...field,
+      paper_entry_mode: "NONE",
+      input_type: "none",
+      recognition_mode: recognitionMode,
+      recognition_engine: legacyEngine,
+      fill_policy: "CALCULATED",
+      confidence_threshold: null,
+      requires_manual_confirmation: false,
+    };
+  }
+  const compatibility = ({
+    HANDWRITING_OCR: { paper_entry_mode: "HANDWRITTEN_TEXT", input_type: "text_box" },
+    DIGIT_OCR: { paper_entry_mode: "DIGIT_BOXES", input_type: "digit_boxes" },
+    PRINTED_OCR: { paper_entry_mode: "PREPRINTED", input_type: "preprinted" },
+    OMR: { paper_entry_mode: "CHECKBOX", input_type: "checkbox" },
+    QR: { paper_entry_mode: "PREPRINTED", input_type: "preprinted" },
+  } as const)[recognitionMode];
+  return {
+    ...field,
+    ...compatibility,
+    data_type: recognitionMode === "OMR"
+      ? "boolean"
+      : recognitionMode === "DIGIT_OCR" && !["integer", "decimal"].includes(field.data_type)
+        ? "decimal"
+        : field.data_type,
+    recognition_mode: recognitionMode,
+    recognition_engine: legacyEngine,
+    fill_policy: "SUGGEST_ONLY",
+    confidence_threshold: null,
+    calculation_expression: null,
+  };
+}
+
 function normalizeRect(rect: TemplateRect): TemplateRect {
   const x = clamp(rect.x, 0, 1);
   const y = clamp(rect.y, 0, 1);
@@ -89,4 +250,8 @@ function normalizeRect(rect: TemplateRect): TemplateRect {
 
 function clamp(value: number, minimum: number, maximum: number): number {
   return Math.round(Math.min(Math.max(value, minimum), maximum) * 1_000_000_000_000) / 1_000_000_000_000;
+}
+
+function round(value: number): number {
+  return Math.round(value * 1000) / 1000;
 }
