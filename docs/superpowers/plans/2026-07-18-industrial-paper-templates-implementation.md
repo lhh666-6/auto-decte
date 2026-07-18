@@ -543,12 +543,12 @@ A5 竖向 · V3
 
 ### Task 5：持久化新版版面和字段行为，兼容旧模板
 
-- [ ] 新增追加式 Alembic 迁移。
-- [ ] 自定义纸张、静态元素、拼版、字段行为完整读写。
-- [ ] 旧模板按兼容策略读取。
-- [ ] 发布版不得被仓库层绕过修改。
-- [ ] 验证空库升级和旧库升级。
-- [ ] 提交：`feat(storage): persist template layout and field behavior`
+- [x] 新增追加式 Alembic 迁移。
+- [x] 自定义纸张、静态元素、拼版、字段行为完整读写。
+- [x] 旧模板按兼容策略读取。
+- [x] 发布版不得被仓库层绕过修改。
+- [x] 验证空库升级和旧库升级。
+- [x] 提交：`feat(storage): persist template layout and field behavior`
 
 ### Task 6：扩展模板 API 与前端类型
 

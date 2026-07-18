@@ -13,11 +13,17 @@ from app.adapters.database.models import (
     TemplateVersionRow,
 )
 from app.domain.templates_ds import (
+    ElementKind,
     ExportTarget,
     FieldDefinition,
     FieldRules,
+    FillPolicy,
     PageSpec,
+    PaperEntryMode,
+    PrintImposition,
+    RecognitionMode,
     Rect,
+    StaticElement,
     TemplateArtifact,
     TemplateStatus,
     TemplateVersion,
@@ -58,6 +64,10 @@ class SqlAlchemyTemplateRepository:
                     status=version.status.value,
                     page=_page_to_dict(version.page),
                     parent_version_id=version.parent_version_id,
+                    static_elements=[
+                        _static_element_to_dict(element) for element in version.static_elements
+                    ],
+                    print_imposition=_print_imposition_to_dict(version.print_imposition),
                 )
             )
             session.flush()
@@ -77,21 +87,7 @@ class SqlAlchemyTemplateRepository:
             row = session.get(TemplateVersionRow, version_id)
             if row is None:
                 return None
-            fields = session.scalars(
-                select(TemplateFieldRow)
-                .where(TemplateFieldRow.version_id == version_id)
-                .order_by(TemplateFieldRow.position, TemplateFieldRow.field_id)
-            ).all()
-            page = _page_from_dict(row.page)
-            return TemplateVersion(
-                version_id=row.version_id,
-                template_key=row.template_key,
-                version=row.version,
-                page=page,
-                status=TemplateStatus(row.status),
-                fields=[_field_from_dict(item.field_key, item.definition, page) for item in fields],
-                parent_version_id=row.parent_version_id,
-            )
+            return _version_from_row(session, row)
 
     def get_version_by_key_version(
         self, template_key: str, version: int
@@ -111,9 +107,22 @@ class SqlAlchemyTemplateRepository:
             row = session.get(TemplateVersionRow, version.version_id)
             if row is None:
                 raise KeyError(f"Unknown template version: {version.version_id}")
+            persisted = _version_from_row(session, row)
+            _validate_repository_transition(persisted, version)
+            if persisted.status in {
+                TemplateStatus.PUBLISHED,
+                TemplateStatus.DEPRECATED,
+                TemplateStatus.RETIRED,
+            }:
+                row.status = version.status.value
+                return
             row.status = version.status.value
             row.page = _page_to_dict(version.page)
             row.parent_version_id = version.parent_version_id
+            row.static_elements = [
+                _static_element_to_dict(element) for element in version.static_elements
+            ]
+            row.print_imposition = _print_imposition_to_dict(version.print_imposition)
             session.execute(
                 delete(TemplateFieldRow).where(TemplateFieldRow.version_id == version.version_id)
             )
@@ -215,6 +224,12 @@ class SqlAlchemyTemplateRepository:
             row = session.get(TemplateVersionRow, version_id)
             if row is None:
                 raise KeyError(f"Unknown template version: {version_id}")
+            if TemplateStatus(row.status) in {
+                TemplateStatus.PUBLISHED,
+                TemplateStatus.DEPRECATED,
+                TemplateStatus.RETIRED,
+            }:
+                raise ValueError("published template versions cannot be deleted")
             template_key = row.template_key
             session.execute(
                 delete(TemplateArtifactRow).where(TemplateArtifactRow.version_id == version_id)
@@ -249,6 +264,81 @@ class SqlAlchemyTemplateRepository:
             )
 
 
+def _version_from_row(session: Session, row: TemplateVersionRow) -> TemplateVersion:
+    field_rows = session.scalars(
+        select(TemplateFieldRow)
+        .where(TemplateFieldRow.version_id == row.version_id)
+        .order_by(TemplateFieldRow.position, TemplateFieldRow.field_id)
+    ).all()
+    page = _page_from_dict(row.page)
+    return TemplateVersion(
+        version_id=row.version_id,
+        template_key=row.template_key,
+        version=row.version,
+        page=page,
+        status=TemplateStatus(row.status),
+        fields=[
+            _field_from_dict(item.field_key, item.definition, page) for item in field_rows
+        ],
+        parent_version_id=row.parent_version_id,
+        static_elements=_static_elements_from_value(row.static_elements),
+        print_imposition=_print_imposition_from_value(row.print_imposition),
+    )
+
+
+def _validate_repository_transition(
+    persisted: TemplateVersion, replacement: TemplateVersion
+) -> None:
+    if persisted.version_id != replacement.version_id:
+        raise ValueError("template version identity cannot change")
+    allowed_statuses = {
+        TemplateStatus.DRAFT: {
+            TemplateStatus.DRAFT,
+            TemplateStatus.PREFLIGHT_FAILED,
+            TemplateStatus.READY_TO_PUBLISH,
+        },
+        TemplateStatus.PREFLIGHT_FAILED: {
+            TemplateStatus.DRAFT,
+            TemplateStatus.PREFLIGHT_FAILED,
+            TemplateStatus.READY_TO_PUBLISH,
+        },
+        TemplateStatus.READY_TO_PUBLISH: {
+            TemplateStatus.DRAFT,
+            TemplateStatus.PREFLIGHT_FAILED,
+            TemplateStatus.READY_TO_PUBLISH,
+            TemplateStatus.PUBLISHED,
+        },
+        TemplateStatus.PUBLISHED: {
+            TemplateStatus.PUBLISHED,
+            TemplateStatus.DEPRECATED,
+            TemplateStatus.RETIRED,
+        },
+        TemplateStatus.DEPRECATED: {
+            TemplateStatus.DEPRECATED,
+            TemplateStatus.RETIRED,
+        },
+        TemplateStatus.RETIRED: {TemplateStatus.RETIRED},
+    }
+    if replacement.status not in allowed_statuses[persisted.status]:
+        raise ValueError("invalid template lifecycle transition")
+    if persisted.status not in {
+        TemplateStatus.PUBLISHED,
+        TemplateStatus.DEPRECATED,
+        TemplateStatus.RETIRED,
+    }:
+        return
+    if (
+        persisted.template_key != replacement.template_key
+        or persisted.version != replacement.version
+        or persisted.page != replacement.page
+        or persisted.fields != replacement.fields
+        or persisted.parent_version_id != replacement.parent_version_id
+        or persisted.static_elements != replacement.static_elements
+        or persisted.print_imposition != replacement.print_imposition
+    ):
+        raise ValueError("published template versions cannot be replaced")
+
+
 def _page_to_dict(page: PageSpec) -> dict[str, object]:
     return {
         "size": page.size,
@@ -265,8 +355,8 @@ def _page_from_dict(value: dict[str, object]) -> PageSpec:
     return PageSpec(
         size=str(value["size"]),
         orientation=str(value["orientation"]),
-        width_mm=_as_int(value["width_mm"]),
-        height_mm=_as_int(value["height_mm"]),
+        width_mm=_as_number(value["width_mm"]),
+        height_mm=_as_number(value["height_mm"]),
         canonical_dpi=_as_int(value["canonical_dpi"]),
         canonical_width_px=_as_int(value["canonical_width_px"]),
         canonical_height_px=_as_int(value["canonical_height_px"]),
@@ -280,6 +370,12 @@ def _field_to_dict(field: FieldDefinition) -> dict[str, object]:
         "input_type": field.input_type,
         "recognition_engine": field.recognition_engine,
         "minimum_prefill_confidence": field.minimum_prefill_confidence,
+        "paper_entry_mode": field.paper_entry_mode.value if field.paper_entry_mode else None,
+        "recognition_mode": field.recognition_mode.value if field.recognition_mode else None,
+        "fill_policy": field.fill_policy.value if field.fill_policy else None,
+        "confidence_threshold": field.confidence_threshold,
+        "requires_manual_confirmation": field.requires_manual_confirmation,
+        "calculation_expression": field.calculation_expression,
         "rules": {
             "required": field.rules.required,
             "minimum_value": field.rules.minimum_value,
@@ -335,6 +431,24 @@ def _field_from_dict(field_key: str, value: dict[str, object], page: PageSpec) -
         page=page,
         recognition_engine=str(value.get("recognition_engine", "manual")),
         minimum_prefill_confidence=_as_float(value.get("minimum_prefill_confidence", 1.0)),
+        paper_entry_mode=(
+            PaperEntryMode(str(value["paper_entry_mode"]))
+            if value.get("paper_entry_mode") is not None
+            else None
+        ),
+        recognition_mode=(
+            RecognitionMode(str(value["recognition_mode"]))
+            if value.get("recognition_mode") is not None
+            else None
+        ),
+        fill_policy=(
+            FillPolicy(str(value["fill_policy"]))
+            if value.get("fill_policy") is not None
+            else None
+        ),
+        confidence_threshold=_as_optional_float(value.get("confidence_threshold")),
+        requires_manual_confirmation=bool(value.get("requires_manual_confirmation", False)),
+        calculation_expression=_as_optional_string(value.get("calculation_expression")),
         rules=FieldRules(
             required=bool(rules.get("required", False)),
             minimum_value=_as_optional_float(rules.get("minimum_value")),
@@ -355,10 +469,89 @@ def _field_from_dict(field_key: str, value: dict[str, object], page: PageSpec) -
     )
 
 
+def _static_element_to_dict(element: StaticElement) -> dict[str, object]:
+    return {
+        "element_id": element.element_id,
+        "kind": element.kind.value,
+        "text": element.text,
+        "region": {
+            "x": element.region.x,
+            "y": element.region.y,
+            "width": element.region.width,
+            "height": element.region.height,
+        },
+    }
+
+
+def _static_elements_from_value(value: object) -> list[StaticElement]:
+    if not isinstance(value, list):
+        raise ValueError("template static_elements must be an array")
+    elements: list[StaticElement] = []
+    for item in value:
+        if not isinstance(item, dict):
+            raise ValueError("template static element must be an object")
+        region = item.get("region")
+        if not isinstance(region, dict):
+            raise ValueError("template static element region must be an object")
+        elements.append(
+            StaticElement(
+                element_id=str(item["element_id"]),
+                kind=ElementKind(str(item["kind"])),
+                region=Rect(
+                    x=_as_float(region["x"]),
+                    y=_as_float(region["y"]),
+                    width=_as_float(region["width"]),
+                    height=_as_float(region["height"]),
+                ),
+                text=str(item.get("text", "")),
+            )
+        )
+    return elements
+
+
+def _print_imposition_to_dict(imposition: PrintImposition | None) -> dict[str, object] | None:
+    if imposition is None:
+        return None
+    return {
+        "carrier": _page_to_dict(imposition.carrier),
+        "columns": imposition.columns,
+        "rows": imposition.rows,
+        "horizontal_gap_mm": imposition.horizontal_gap_mm,
+        "vertical_gap_mm": imposition.vertical_gap_mm,
+        "margin_mm": imposition.margin_mm,
+        "include_cut_lines": imposition.include_cut_lines,
+    }
+
+
+def _print_imposition_from_value(value: object) -> PrintImposition | None:
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise ValueError("template print_imposition must be an object")
+    carrier = value.get("carrier")
+    if not isinstance(carrier, dict):
+        raise ValueError("template print_imposition carrier must be an object")
+    return PrintImposition(
+        carrier=_page_from_dict(carrier),
+        columns=_as_int(value.get("columns", 1)),
+        rows=_as_int(value.get("rows", 1)),
+        horizontal_gap_mm=_as_float(value.get("horizontal_gap_mm", 0)),
+        vertical_gap_mm=_as_float(value.get("vertical_gap_mm", 0)),
+        margin_mm=_as_float(value.get("margin_mm", 0)),
+        include_cut_lines=bool(value.get("include_cut_lines", True)),
+    )
+
+
 def _as_int(value: object) -> int:
     if isinstance(value, int):
         return value
     raise ValueError("template page dimension must be an integer")
+
+
+def _as_number(value: object) -> float:
+    if isinstance(value, (int, float)):
+        return float(value)
+    raise ValueError("template page dimension must be numeric")
 
 
 def _as_float(value: object) -> float:

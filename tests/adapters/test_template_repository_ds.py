@@ -2,12 +2,20 @@
 
 from pathlib import Path
 
+import pytest
+
 from app.adapters.database.models import Base
 from app.adapters.database.template_repository_ds import SqlAlchemyTemplateRepository
 from app.domain.templates_ds import (
+    ElementKind,
     FieldDefinition,
+    FillPolicy,
     PageSpec,
+    PaperEntryMode,
+    PrintImposition,
+    RecognitionMode,
     Rect,
+    StaticElement,
     TemplateArtifact,
     TemplateVersion,
 )
@@ -96,3 +104,91 @@ def test_repository_persists_metadata_and_removes_draft_only_family(tmp_path: Pa
     repository.delete_version(draft.version_id)
     assert repository.get_version(draft.version_id) is None
     assert repository.get_template_metadata("CUSTOM_FORM") is None
+
+
+def test_repository_round_trips_custom_layout_imposition_and_field_behavior(
+    tmp_path: Path,
+) -> None:
+    engine = create_sqlite_engine(tmp_path / "physical-layout.db")
+    Base.metadata.create_all(engine)
+    repository = SqlAlchemyTemplateRepository(engine)
+    page = PageSpec.custom(100.5, 130.2)
+    version = TemplateVersion.draft("TPL-PHYSICAL", "PAYROLL_PHYSICAL", 1, page)
+    version.add_static_element(
+        StaticElement(
+            "payroll_title",
+            ElementKind.TITLE,
+            Rect(0.1, 0.1, 0.5, 0.06),
+            text="车间工资表",
+        )
+    )
+    version.set_print_imposition(
+        PrintImposition(
+            carrier=PageSpec.a4_landscape(),
+            columns=2,
+            horizontal_gap_mm=5,
+            margin_mm=5,
+        )
+    )
+    version.add_field(
+        FieldDefinition(
+            "worker_name",
+            "姓名",
+            "text",
+            "text_box",
+            Rect(0.1, 0.25, 0.4, 0.08),
+            page,
+            paper_entry_mode=PaperEntryMode.HANDWRITTEN_TEXT,
+            recognition_mode=RecognitionMode.HANDWRITING_OCR,
+            fill_policy=FillPolicy.SUGGEST_ONLY,
+        )
+    )
+
+    repository.add_version(version)
+    loaded = repository.get_version(version.version_id)
+
+    assert loaded is not None
+    assert loaded.page == page
+    assert loaded.static_elements == version.static_elements
+    assert loaded.print_imposition == version.print_imposition
+    assert loaded.fields == version.fields
+
+
+def test_repository_cannot_replace_or_delete_published_layout(tmp_path: Path) -> None:
+    engine = create_sqlite_engine(tmp_path / "immutable-layout.db")
+    Base.metadata.create_all(engine)
+    repository = SqlAlchemyTemplateRepository(engine)
+    version = TemplateVersion.draft("TPL-PUBLISHED", "PAYROLL_PUBLISHED", 1, PageSpec.a4_portrait())
+    version.add_field(
+        FieldDefinition(
+            "hours",
+            "工时",
+            "decimal",
+            "digit_boxes",
+            Rect(0.1, 0.2, 0.2, 0.05),
+            version.page,
+        )
+    )
+    version.mark_ready_to_publish()
+    version.publish()
+    repository.add_version(version)
+
+    forged = TemplateVersion(
+        version_id=version.version_id,
+        template_key=version.template_key,
+        version=version.version,
+        page=version.page,
+        status=version.status,
+        fields=[],
+    )
+
+    with pytest.raises(ValueError, match="published"):
+        repository.replace_version(forged)
+    with pytest.raises(ValueError, match="published"):
+        repository.delete_version(version.version_id)
+
+    loaded = repository.get_version(version.version_id)
+    assert loaded is not None
+    loaded.retire()
+    repository.replace_version(loaded)
+    assert repository.get_version(version.version_id).status.value == "RETIRED"  # type: ignore[union-attr]

@@ -286,7 +286,7 @@ def _overlaps(left: Rect, right: Rect) -> bool:
 
 def _recognition_configuration_is_valid(field: FieldDefinition) -> bool:
     if field.recognition_mode is RecognitionMode.NONE:
-        return True
+        return field.recognition_engine == "manual"
     if field.recognition_mode is RecognitionMode.HANDWRITING_OCR:
         return field.paper_entry_mode is PaperEntryMode.HANDWRITTEN_TEXT
     if field.recognition_mode is RecognitionMode.DIGIT_OCR:

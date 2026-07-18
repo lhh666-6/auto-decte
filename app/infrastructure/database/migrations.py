@@ -9,7 +9,7 @@ from sqlalchemy import Engine, inspect, text
 from alembic import command
 from app.domain.models import stable_json_sha256
 
-HEAD_REVISION = "007"
+HEAD_REVISION = "008"
 
 _EMPTY_MAPPING_HASH = "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
 
@@ -159,6 +159,30 @@ def ensure_auto_created_schema_compatibility(engine: Engine) -> None:
                 )
     inspector = inspect(engine)
     tables = set(inspector.get_table_names())
+    if "template_versions" in tables:
+        version_columns = {
+            column["name"] for column in inspector.get_columns("template_versions")
+        }
+        with engine.begin() as connection:
+            if "static_elements" not in version_columns:
+                connection.execute(
+                    text(
+                        "ALTER TABLE template_versions ADD COLUMN static_elements "
+                        "JSON NOT NULL DEFAULT '[]'"
+                    )
+                )
+            if "print_imposition" not in version_columns:
+                connection.execute(
+                    text("ALTER TABLE template_versions ADD COLUMN print_imposition JSON")
+                )
+            connection.execute(
+                text(
+                    "UPDATE template_versions SET static_elements = '[]' "
+                    "WHERE static_elements IS NULL"
+                )
+            )
+        inspector = inspect(engine)
+        tables = set(inspector.get_table_names())
     if {"template_versions", "template_metadata"} <= tables:
         with engine.begin() as connection:
             connection.execute(

@@ -7,6 +7,7 @@ from sqlalchemy import create_engine, inspect, text
 
 from alembic import command
 from app.adapters.database.repositories import SqlAlchemyFormRepository
+from app.adapters.database.template_repository_ds import SqlAlchemyTemplateRepository
 from app.domain.models import stable_json_sha256
 from app.infrastructure.backup.integrity_ds import IntegrityChecker
 from app.infrastructure.backup.service_ds import BackupService
@@ -50,6 +51,73 @@ def test_alembic_upgrade_creates_template_version_tables(tmp_path: Path) -> None
         "template_artifacts",
         "template_metadata",
     } <= tables
+    version_columns = {
+        column["name"]
+        for column in inspect(create_engine(f"sqlite:///{database_path}")).get_columns(
+            "template_versions"
+        )
+    }
+    assert {"static_elements", "print_imposition"} <= version_columns
+
+
+def test_upgrade_007_preserves_legacy_template_and_adds_layout_storage(
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "template-layout-007.db"
+    _upgrade_to_revision(database_path, "007")
+    engine = create_engine(f"sqlite:///{database_path}")
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO template_versions "
+                "(version_id, template_key, version, status, page, parent_version_id) "
+                "VALUES ('TPL-LEGACY', 'PAYROLL_LEGACY', 1, 'PUBLISHED', "
+                ":page, NULL)"
+            ),
+            {
+                "page": (
+                    '{"size":"A4","orientation":"portrait","width_mm":210,'
+                    '"height_mm":297,"canonical_dpi":300,"canonical_width_px":2480,'
+                    '"canonical_height_px":3508}'
+                )
+            },
+        )
+        connection.execute(
+            text(
+                "INSERT INTO template_fields "
+                "(field_id, version_id, field_key, position, definition) VALUES "
+                "('TPL-LEGACY:worker_name', 'TPL-LEGACY', 'worker_name', 0, :definition)"
+            ),
+            {
+                "definition": (
+                    '{"display_name":"姓名","data_type":"text",'
+                    '"input_type":"text_box","recognition_engine":"manual",'
+                    '"minimum_prefill_confidence":1.0,"rules":{},'
+                    '"region":{"x":0.1,"y":0.2,"width":0.3,"height":0.05}}'
+                )
+            },
+        )
+    engine.dispose()
+
+    upgrade_database(database_path)
+
+    upgraded = create_engine(f"sqlite:///{database_path}")
+    columns = {
+        column["name"] for column in inspect(upgraded).get_columns("template_versions")
+    }
+    assert {"static_elements", "print_imposition"} <= columns
+    loaded = SqlAlchemyTemplateRepository(upgraded).get_version("TPL-LEGACY")
+    assert loaded is not None
+    assert loaded.static_elements == []
+    assert loaded.print_imposition is None
+    assert loaded.fields[0].paper_entry_mode.value == "HANDWRITTEN_TEXT"
+    assert loaded.fields[0].recognition_mode.value == "NONE"
+    with upgraded.connect() as connection:
+        revision = connection.execute(
+            text("SELECT version_num FROM alembic_version")
+        ).scalar_one()
+        assert revision == "008"
+    upgraded.dispose()
 
 
 def test_alembic_upgrade_creates_review_drafts_and_form_priority(tmp_path: Path) -> None:
@@ -263,7 +331,7 @@ def test_upgrade_006_export_batch_preserves_data_and_adds_snapshot_columns(
         revision = connection.execute(
             text("SELECT version_num FROM alembic_version")
         ).scalar_one()
-        assert revision == "007"
+        assert revision == "008"
     upgraded.dispose()
 
     _downgrade_to_revision(database_path, "006")

@@ -4,7 +4,7 @@
 
 ## 本轮结论
 
-工业表单前端重建实施计划的任务 1—16 已按顺序完成。协作同步基线为 `ff03a39 fix(review): preserve confirmed values across reload and export`，并已在其上完成新主线 Task 1—4；集成分支为 `modular-architecture`。
+工业表单前端重建实施计划的任务 1—16 已按顺序完成。协作同步基线为 `ff03a39 fix(review): preserve confirmed values across reload and export`，并已在其上完成新主线 Task 1—5；集成分支为 `modular-architecture`。
 
 **项目整体尚未完成。** 已完成的任务只构成前端基础能力，不能证明真实工业纸质工资表已经可投入使用。当前已明确授权并采用新的唯一开发主线：[工业纸质工资表闭环与前端交互重构最终计划](superpowers/plans/2026-07-18-industrial-paper-templates-implementation.md)。该计划包含本地无登录完整权限、前端信息架构、字段行为模型、3 类母版、10 个车间模板、任意毫米纸张、拼版、二维码、工号核验、姓名人工确认、Excel 导出和实物闭环。
 
@@ -54,7 +54,17 @@ Task 3 定向验证：领域与应用测试 `19 passed`；相关 Ruff 和 mypy �
 
 Task 4 定向验证：领域与应用测试 `23 passed`；相关 Ruff 和 mypy 通过。持久化兼容迁移属于 Task 5，API/前端契约属于 Task 6。完整回归仍按计划只在 Task 16 运行。
 
-当前下一项为 Task 5“持久化新版版面和字段行为，兼容旧模板”。
+### Task 5：新版版面与字段行为持久化（已完成）
+
+- 新增追加式 Alembic `008`，只为 `template_versions` 增加 `static_elements` 和 `print_imposition` JSON；旧迁移 `001—007` 未修改。
+- 自定义毫米纸张保留小数精度；静态元素、承载纸/行列/间距/边距/裁切线、三个字段行为枚举、阈值、姓名人工确认和计算式均可完整写入并重载。
+- 旧字段 JSON 没有新键时，仓储按旧 `input_type/recognition_engine/minimum_prefill_confidence` 推导新模型；旧模板默认静态元素为空、无拼版，不覆盖历史内容。
+- 仓储增加生命周期二次防线：发布、弃用和退役版不能直接替换版面、字段、静态元素、拼版或父版本，也不能直接删除；合法发布和状态退役仍可执行。
+- 非 Alembic 自动建库兼容路径也会幂等补齐新列，避免旧本地库因 `create_all` 不会追加列而启动失败。
+
+Task 5 定向验证：领域、应用、仓储和迁移测试 `45 passed`；相关 Ruff 和 mypy 通过。验证了空库直接升级到 `008`、`007` 旧库保留旧模板数据后升级，以及发布版仓储保护。完整回归仍按计划只在 Task 16 运行。
+
+当前下一项为 Task 6“扩展模板 API 与前端类型”。
 
 ## 已完成的前端能力
 

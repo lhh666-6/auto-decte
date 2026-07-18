@@ -54,6 +54,10 @@ class TemplateVersionRow(Base):
     status: Mapped[str] = mapped_column(String, nullable=False)
     page: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
     parent_version_id: Mapped[str | None] = mapped_column(String)
+    static_elements: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSON, nullable=False, default=list
+    )
+    print_imposition: Mapped[dict[str, Any] | None] = mapped_column(JSON)
 
 
 class TemplateMetadataRow(Base):
