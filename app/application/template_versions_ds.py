@@ -6,39 +6,28 @@ from dataclasses import dataclass
 from typing import Protocol
 from uuid import uuid4
 
-from app.domain.templates_ds import FieldDefinition, PageSpec, Rect, TemplateStatus, TemplateVersion
-
-_TEMPLATE_QR_SAFE_ZONE = Rect(0.78, 0.02, 0.16, 0.12)
-_SHEET_CODE_SAFE_ZONE = Rect(0.62, 0.02, 0.14, 0.12)
-_PRINT_EDGE = 0.025
-_CORNER_MARKER = 0.07
-_OTHER_PROTECTED_ZONES = (
-    (
-        "SHEET_SAFE_ZONE_OVERLAP",
-        "sheet-instance QR safe zone",
-        _SHEET_CODE_SAFE_ZONE,
-    ),
-    ("CORNER_MARKER_OVERLAP", "top-left ArUco marker", Rect(0, 0, _CORNER_MARKER, _CORNER_MARKER)),
-    (
-        "CORNER_MARKER_OVERLAP",
-        "top-right ArUco marker",
-        Rect(1 - _CORNER_MARKER, 0, _CORNER_MARKER, _CORNER_MARKER),
-    ),
-    (
-        "CORNER_MARKER_OVERLAP",
-        "bottom-left ArUco marker",
-        Rect(0, 1 - _CORNER_MARKER, _CORNER_MARKER, _CORNER_MARKER),
-    ),
-    (
-        "CORNER_MARKER_OVERLAP",
-        "bottom-right ArUco marker",
-        Rect(1 - _CORNER_MARKER, 1 - _CORNER_MARKER, _CORNER_MARKER, _CORNER_MARKER),
-    ),
-    ("PRINT_EDGE_OVERLAP", "top print edge", Rect(0, 0, 1, _PRINT_EDGE)),
-    ("PRINT_EDGE_OVERLAP", "bottom print edge", Rect(0, 1 - _PRINT_EDGE, 1, _PRINT_EDGE)),
-    ("PRINT_EDGE_OVERLAP", "left print edge", Rect(0, 0, _PRINT_EDGE, 1)),
-    ("PRINT_EDGE_OVERLAP", "right print edge", Rect(1 - _PRINT_EDGE, 0, _PRINT_EDGE, 1)),
+from app.domain.templates_ds import (
+    ElementKind,
+    FieldDefinition,
+    PageSpec,
+    PrintImposition,
+    Rect,
+    StaticElement,
+    TemplateStatus,
+    TemplateVersion,
 )
+
+_OUTER_MARGIN_MM = 5.0
+_QR_SAFE_ZONE_MM = 29.0
+_QR_GAP_MM = 5.0
+_CORNER_MARKER_MM = 12.0
+_FIELD_MINIMUMS_MM = {
+    "employee_id_boxes": (6.0, 8.0),
+    "digit_boxes": (7.0, 8.0),
+    "checkbox": (4.0, 4.0),
+    "handwriting_line": (0.0, 8.0),
+    "text_box": (0.0, 8.0),
+}
 
 
 class TemplateVersionRepository(Protocol):
@@ -193,19 +182,46 @@ class TemplateVersions:
         self._repository.replace_version(version)
         return version
 
+    def add_static_element(self, version_id: str, element: StaticElement) -> TemplateVersion:
+        version = self.get(version_id)
+        version.add_static_element(element)
+        self._repository.replace_version(version)
+        return version
+
+    def set_print_imposition(
+        self, version_id: str, imposition: PrintImposition | None
+    ) -> TemplateVersion:
+        version = self.get(version_id)
+        version.set_print_imposition(imposition)
+        self._repository.replace_version(version)
+        return version
+
     def preflight(self, version_id: str) -> PreflightReport:
         version = self.get(version_id)
         issues = tuple(
-            PreflightIssue(
-                code="QR_SAFE_ZONE_OVERLAP",
-                detail=f"Field {field.field_key} overlaps the template QR safe zone.",
-            )
+            issue
             for field in version.fields
-            if _overlaps(field.region, _TEMPLATE_QR_SAFE_ZONE)
+            for issue in _protected_zone_issues(
+                field.region,
+                version.page,
+                item_label=f"Field {field.field_key}",
+            )
         ) + tuple(
             issue
             for field in version.fields
-            for issue in _protected_zone_issues(field)
+            for issue in _physical_field_issues(field)
+        ) + tuple(
+            issue
+            for element in version.static_elements
+            for issue in _protected_zone_issues(
+                element.region,
+                version.page,
+                item_label=f"Static element {element.element_id}",
+            )
+        ) + tuple(
+            issue
+            for element in version.static_elements
+            for issue in _physical_static_element_issues(element, version.page)
         ) + tuple(
             PreflightIssue(
                 code="RECOGNITION_ENGINE_MISMATCH",
@@ -217,6 +233,13 @@ class TemplateVersions:
             for field in version.fields
             if not _recognition_configuration_is_valid(field)
         )
+        if version.print_imposition is not None and not version.print_imposition.fits(version.page):
+            issues += (
+                PreflightIssue(
+                    code="IMPOSITION_DOES_NOT_FIT",
+                    detail="The template page does not fit in each configured imposition slot.",
+                ),
+            )
         if issues:
             version.mark_preflight_failed()
         else:
@@ -238,6 +261,9 @@ class TemplateVersions:
         clone.parent_version_id = source.version_id
         for definition in source.fields:
             clone.add_field(definition)
+        for element in source.static_elements:
+            clone.add_static_element(element)
+        clone.set_print_imposition(source.print_imposition)
         self._repository.replace_version(clone)
         return clone
 
@@ -261,15 +287,100 @@ def _recognition_configuration_is_valid(field: FieldDefinition) -> bool:
     return False
 
 
-def _protected_zone_issues(field: FieldDefinition) -> tuple[PreflightIssue, ...]:
-    if _overlaps(field.region, _TEMPLATE_QR_SAFE_ZONE):
+def _protected_zone_issues(
+    region: Rect,
+    page: PageSpec,
+    *,
+    item_label: str,
+) -> tuple[PreflightIssue, ...]:
+    return tuple(
+        PreflightIssue(code=code, detail=f"{item_label} overlaps the {label}.")
+        for code, label, zone in _protected_zones(page)
+        if _overlaps(region, zone)
+    )
+
+
+def _protected_zones(page: PageSpec) -> tuple[tuple[str, str, Rect], ...]:
+    edge_x = _OUTER_MARGIN_MM / page.width_mm
+    edge_y = _OUTER_MARGIN_MM / page.height_mm
+    marker_width = _CORNER_MARKER_MM / page.width_mm
+    marker_height = _CORNER_MARKER_MM / page.height_mm
+    qr_width = _QR_SAFE_ZONE_MM / page.width_mm
+    qr_height = _QR_SAFE_ZONE_MM / page.height_mm
+    template_qr_x = 1 - edge_x - qr_width
+    sheet_qr_x = template_qr_x - _QR_GAP_MM / page.width_mm - qr_width
+    return (
+        (
+            "QR_SAFE_ZONE_OVERLAP",
+            "template QR safe zone",
+            Rect(template_qr_x, edge_y, qr_width, qr_height),
+        ),
+        (
+            "SHEET_SAFE_ZONE_OVERLAP",
+            "sheet-instance QR safe zone",
+            Rect(sheet_qr_x, edge_y, qr_width, qr_height),
+        ),
+        (
+            "CORNER_MARKER_OVERLAP",
+            "top-left ArUco marker",
+            Rect(0, 0, marker_width, marker_height),
+        ),
+        (
+            "CORNER_MARKER_OVERLAP",
+            "top-right ArUco marker",
+            Rect(1 - marker_width, 0, marker_width, marker_height),
+        ),
+        (
+            "CORNER_MARKER_OVERLAP",
+            "bottom-left ArUco marker",
+            Rect(0, 1 - marker_height, marker_width, marker_height),
+        ),
+        (
+            "CORNER_MARKER_OVERLAP",
+            "bottom-right ArUco marker",
+            Rect(1 - marker_width, 1 - marker_height, marker_width, marker_height),
+        ),
+        ("PRINT_EDGE_OVERLAP", "top print edge", Rect(0, 0, 1, edge_y)),
+        ("PRINT_EDGE_OVERLAP", "bottom print edge", Rect(0, 1 - edge_y, 1, edge_y)),
+        ("PRINT_EDGE_OVERLAP", "left print edge", Rect(0, 0, edge_x, 1)),
+        ("PRINT_EDGE_OVERLAP", "right print edge", Rect(1 - edge_x, 0, edge_x, 1)),
+    )
+
+
+def _physical_field_issues(field: FieldDefinition) -> tuple[PreflightIssue, ...]:
+    minimum = _FIELD_MINIMUMS_MM.get(field.input_type)
+    if minimum is None:
         return ()
-    for code, label, zone in _OTHER_PROTECTED_ZONES:
-        if _overlaps(field.region, zone):
-            return (
-                PreflightIssue(
-                    code=code,
-                    detail=f"Field {field.field_key} overlaps the {label}.",
-                ),
-            )
-    return ()
+    width_mm = field.region.width * field.page.width_mm
+    height_mm = field.region.height * field.page.height_mm
+    if width_mm + 1e-9 >= minimum[0] and height_mm + 1e-9 >= minimum[1]:
+        return ()
+    return (
+        PreflightIssue(
+            code="PHYSICAL_MINIMUM_SIZE",
+            detail=(
+                f"Field {field.field_key} is {width_mm:.1f} x {height_mm:.1f} mm; "
+                f"{field.input_type} requires at least {minimum[0]:.1f} x {minimum[1]:.1f} mm."
+            ),
+        ),
+    )
+
+
+def _physical_static_element_issues(
+    element: StaticElement, page: PageSpec
+) -> tuple[PreflightIssue, ...]:
+    if element.kind is not ElementKind.CHECKBOX:
+        return ()
+    width_mm = element.region.width * page.width_mm
+    height_mm = element.region.height * page.height_mm
+    if width_mm + 1e-9 >= 4 and height_mm + 1e-9 >= 4:
+        return ()
+    return (
+        PreflightIssue(
+            code="PHYSICAL_MINIMUM_SIZE",
+            detail=(
+                f"Static element {element.element_id} is {width_mm:.1f} x {height_mm:.1f} mm; "
+                "checkboxes require at least 4.0 x 4.0 mm."
+            ),
+        ),
+    )

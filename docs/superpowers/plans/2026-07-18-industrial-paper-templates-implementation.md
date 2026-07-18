@@ -524,11 +524,11 @@ A5 竖向 · V3
 
 ### Task 3：增加任意毫米纸张、静态元素和拼版领域模型
 
-- [ ] 实现 `PageSpec.custom(...)`、`StaticElement`、`ElementKind`、`PrintImposition`。
-- [ ] 增加物理最小尺寸和保护区预检。
-- [ ] 静态中文标题不得伪装成识别字段。
-- [ ] 已发布模板仍不可修改。
-- [ ] 提交：`feat(templates): model physical layouts and print imposition`
+- [x] 实现 `PageSpec.custom(...)`、`StaticElement`、`ElementKind`、`PrintImposition`。
+- [x] 增加物理最小尺寸和保护区预检。
+- [x] 静态中文标题不得伪装成识别字段。
+- [x] 已发布模板仍不可修改。
+- [x] 提交：`feat(templates): model physical layouts and print imposition`
 
 ### Task 4：建立字段填写、识别和审核填入规则
 

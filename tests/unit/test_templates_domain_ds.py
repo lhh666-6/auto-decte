@@ -3,15 +3,85 @@
 import pytest
 
 from app.domain.templates_ds import (
+    ElementKind,
     FieldDefinition,
     PageSpec,
+    PrintImposition,
     Rect,
+    StaticElement,
     TemplateStatus,
     TemplateVersion,
     build_sheet_payload,
     build_template_payload,
     parse_template_payload,
 )
+
+
+def test_custom_page_uses_tenth_millimetre_precision_and_canonical_pixels() -> None:
+    page = PageSpec.custom(123.4, 87.6, orientation="landscape")
+
+    assert page.size == "CUSTOM"
+    assert page.orientation == "landscape"
+    assert page.width_mm == 123.4
+    assert page.height_mm == 87.6
+    assert page.canonical_width_px == 1457
+    assert page.canonical_height_px == 1035
+
+    for width, height in ((79.9, 100), (100, 59.9), (420.1, 100), (100, 594.1)):
+        with pytest.raises(ValueError, match="custom page"):
+            PageSpec.custom(width, height)
+    with pytest.raises(ValueError, match="0.1 mm"):
+        PageSpec.custom(100.05, 120)
+
+
+def test_static_elements_and_print_imposition_are_separate_from_fields() -> None:
+    page = PageSpec.custom(100, 130)
+    title = StaticElement(
+        "payroll_title",
+        ElementKind.TITLE,
+        Rect(0.1, 0.1, 0.8, 0.08),
+        text="计时工资表",
+    )
+    imposition = PrintImposition(
+        carrier=PageSpec.a4_landscape(),
+        columns=2,
+        rows=1,
+        horizontal_gap_mm=5,
+        margin_mm=5,
+    )
+
+    assert title.text == "计时工资表"
+    assert imposition.slot_count == 2
+    assert imposition.fits(page) is True
+    with pytest.raises(ValueError, match="Static titles"):
+        FieldDefinition(
+            "payroll_title",
+            "计时工资表",
+            "text",
+            "static_text",
+            Rect(0.1, 0.1, 0.8, 0.08),
+            page,
+        )
+
+
+def test_published_version_cannot_mutate_static_layout_or_imposition() -> None:
+    page = PageSpec.a4_portrait()
+    version = TemplateVersion.draft("TPL-LAYOUT", "PAYROLL_LAYOUT", 1, page)
+    title = StaticElement(
+        "payroll_title",
+        ElementKind.TITLE,
+        Rect(0.1, 0.1, 0.5, 0.05),
+        text="工资表",
+    )
+    version.add_static_element(title)
+    version.set_print_imposition(PrintImposition(carrier=page))
+    version.mark_ready_to_publish()
+    version.publish()
+
+    with pytest.raises(ValueError, match="published"):
+        version.remove_static_element(title.element_id)
+    with pytest.raises(ValueError, match="published"):
+        version.set_print_imposition(None)
 
 
 def test_template_payload_is_deterministic_and_checksums_key_and_version() -> None:

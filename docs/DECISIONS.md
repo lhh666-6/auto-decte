@@ -66,6 +66,12 @@
 - 原因：模块导航和业务队列属于不同层级；重复页头、侧栏入口和返回按钮会制造多套导航语义，“可导出”则是导出模块的筛选结果而不是审核任务。
 - 证据：`frontend/apps/web/src/app/AppShell.tsx`、`frontend/apps/web/src/app/router.tsx`、`frontend/apps/web/src/workbench/ReviewWorkbenchPage.tsx`、Task 2 组件测试与浏览器路由验收。
 
+### D-011：单表版面保持归一化坐标，物理规则和拼版使用毫米
+
+- 决定：字段与静态元素继续以单表归一化坐标保存；纸张尺寸、最小填写尺寸、外边距、二维码安全区、拼版间距和承载纸容量按毫米计算。拼版是打印包配置，不改变单表模板键、版本和坐标。
+- 原因：归一化坐标保持现有识别链兼容，毫米约束才能保证跨纸张尺寸的可填写、可打印和可裁切；把拼版坐标写回单表会破坏二维码和历史版本绑定。
+- 证据：`app/domain/templates_ds.py`、`app/application/template_versions_ds.py`、Task 3 领域与发布前检查测试。
+
 ## 已否决方案及原因
 
 | 已否决方案 | 原因 |

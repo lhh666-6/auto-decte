@@ -1,7 +1,16 @@
 """Template draft, preflight and publication behavior."""
 
 from app.application.template_versions_ds import TemplateVersions
-from app.domain.templates_ds import FieldDefinition, PageSpec, Rect, TemplateStatus, TemplateVersion
+from app.domain.templates_ds import (
+    ElementKind,
+    FieldDefinition,
+    PageSpec,
+    PrintImposition,
+    Rect,
+    StaticElement,
+    TemplateStatus,
+    TemplateVersion,
+)
 
 
 class InMemoryTemplateRepository:
@@ -81,6 +90,19 @@ def test_preflight_then_publish_and_clone_preserves_immutable_parent() -> None:
             draft.page,
         ),
     )
+    service.add_static_element(
+        draft.version_id,
+        StaticElement(
+            "payroll_title",
+            ElementKind.TITLE,
+            Rect(0.1, 0.1, 0.4, 0.04),
+            text="计时工资表",
+        ),
+    )
+    service.set_print_imposition(
+        draft.version_id,
+        PrintImposition(carrier=PageSpec.a4_portrait()),
+    )
 
     assert service.preflight(draft.version_id).ok is True
     published = service.publish(draft.version_id)
@@ -91,6 +113,8 @@ def test_preflight_then_publish_and_clone_preserves_immutable_parent() -> None:
     assert clone.version == 2
     assert clone.parent_version_id == published.version_id
     assert [field.field_key for field in clone.fields] == ["worker_name"]
+    assert clone.static_elements == published.static_elements
+    assert clone.print_imposition == published.print_imposition
 
 
 def test_preflight_rejects_incompatible_recognition_engine_and_field_shape() -> None:
@@ -112,6 +136,60 @@ def test_preflight_rejects_incompatible_recognition_engine_and_field_shape() -> 
     report = service.preflight(draft.version_id)
 
     assert {issue.code for issue in report.issues} == {"RECOGNITION_ENGINE_MISMATCH"}
+
+
+def test_preflight_uses_physical_field_sizes_and_five_millimetre_margin() -> None:
+    service = TemplateVersions(InMemoryTemplateRepository())
+    draft = service.create_draft("PAYROLL_SMALL", PageSpec.custom(80, 60))
+    service.add_field(
+        draft.version_id,
+        FieldDefinition(
+            "worker_number",
+            "工号",
+            "integer",
+            "digit_boxes",
+            Rect(0.04, 0.3, 0.05, 0.1),
+            draft.page,
+            recognition_engine="digit_template",
+        ),
+    )
+
+    report = service.preflight(draft.version_id)
+
+    assert {issue.code for issue in report.issues} >= {
+        "PRINT_EDGE_OVERLAP",
+        "PHYSICAL_MINIMUM_SIZE",
+    }
+
+
+def test_preflight_protects_qr_zone_from_static_elements_and_checks_imposition_fit() -> None:
+    service = TemplateVersions(InMemoryTemplateRepository())
+    draft = service.create_draft("PAYROLL_SMALL", PageSpec.custom(150, 200))
+    service.add_static_element(
+        draft.version_id,
+        StaticElement(
+            "payroll_title",
+            ElementKind.TITLE,
+            Rect(0.75, 0.02, 0.2, 0.1),
+            text="工资表",
+        )
+    )
+    service.set_print_imposition(
+        draft.version_id,
+        PrintImposition(
+            carrier=PageSpec.a4_portrait(),
+            columns=2,
+            rows=1,
+            horizontal_gap_mm=5,
+            margin_mm=5,
+        )
+    )
+    report = service.preflight(draft.version_id)
+
+    assert {issue.code for issue in report.issues} >= {
+        "QR_SAFE_ZONE_OVERLAP",
+        "IMPOSITION_DOES_NOT_FIT",
+    }
 
 
 def test_list_templates_returns_full_versions_in_deterministic_order() -> None:

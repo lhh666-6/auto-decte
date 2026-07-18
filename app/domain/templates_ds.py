@@ -9,6 +9,10 @@ from enum import StrEnum
 
 _TEMPLATE_KEY = re.compile(r"^[A-Z][A-Z0-9_]*$")
 _BATCH_KEY = re.compile(r"^[A-Z0-9][A-Z0-9_-]*$")
+_ELEMENT_ID = re.compile(r"^[a-z][a-z0-9_]*$")
+_CUSTOM_PAGE_WIDTH_RANGE_MM = (80.0, 420.0)
+_CUSTOM_PAGE_HEIGHT_RANGE_MM = (60.0, 594.0)
+_STATIC_INPUT_TYPES = {"static_text", "title", "label"}
 
 
 class TemplateStatus(StrEnum):
@@ -22,17 +26,41 @@ class TemplateStatus(StrEnum):
     RETIRED = "RETIRED"
 
 
+class ElementKind(StrEnum):
+    """Printable layout content that never participates in recognition."""
+
+    TITLE = "TITLE"
+    LABEL = "LABEL"
+    LINE = "LINE"
+    BOX = "BOX"
+    TABLE_GRID = "TABLE_GRID"
+    CHECKBOX = "CHECKBOX"
+    SIGNATURE_LINE = "SIGNATURE_LINE"
+    ROLE_SECTION = "ROLE_SECTION"
+    CUT_LINE = "CUT_LINE"
+
+
 @dataclass(frozen=True, slots=True)
 class PageSpec:
     """Canonical post-correction paper canvas."""
 
     size: str
     orientation: str
-    width_mm: int
-    height_mm: int
+    width_mm: float
+    height_mm: float
     canonical_dpi: int
     canonical_width_px: int
     canonical_height_px: int
+
+    def __post_init__(self) -> None:
+        if self.orientation not in {"portrait", "landscape"}:
+            raise ValueError("orientation must be portrait or landscape")
+        if self.width_mm <= 0 or self.height_mm <= 0:
+            raise ValueError("page dimensions must be positive")
+        if self.canonical_dpi <= 0:
+            raise ValueError("canonical_dpi must be positive")
+        if self.canonical_width_px <= 0 or self.canonical_height_px <= 0:
+            raise ValueError("canonical pixel dimensions must be positive")
 
     @classmethod
     def a4_portrait(cls) -> PageSpec:
@@ -41,6 +69,44 @@ class PageSpec:
     @classmethod
     def a5_portrait(cls) -> PageSpec:
         return cls("A5", "portrait", 148, 210, 300, 1748, 2480)
+
+    @classmethod
+    def a4_landscape(cls) -> PageSpec:
+        return cls("A4", "landscape", 297, 210, 300, 3508, 2480)
+
+    @classmethod
+    def a5_landscape(cls) -> PageSpec:
+        return cls("A5", "landscape", 210, 148, 300, 2480, 1748)
+
+    @classmethod
+    def custom(
+        cls,
+        width_mm: float,
+        height_mm: float,
+        *,
+        orientation: str = "portrait",
+        canonical_dpi: int = 300,
+    ) -> PageSpec:
+        """Create a physical page using dimensions precise to one tenth of a millimetre."""
+        width = float(width_mm)
+        height = float(height_mm)
+        if not _CUSTOM_PAGE_WIDTH_RANGE_MM[0] <= width <= _CUSTOM_PAGE_WIDTH_RANGE_MM[1]:
+            raise ValueError("custom page width must be between 80 and 420 mm")
+        if not _CUSTOM_PAGE_HEIGHT_RANGE_MM[0] <= height <= _CUSTOM_PAGE_HEIGHT_RANGE_MM[1]:
+            raise ValueError("custom page height must be between 60 and 594 mm")
+        if not _has_tenth_millimetre_precision(width) or not _has_tenth_millimetre_precision(
+            height
+        ):
+            raise ValueError("custom page dimensions must use 0.1 mm precision")
+        return cls(
+            "CUSTOM",
+            orientation,
+            width,
+            height,
+            canonical_dpi,
+            round(width / 25.4 * canonical_dpi),
+            round(height / 25.4 * canonical_dpi),
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -60,6 +126,78 @@ class Rect:
             and self.height > 0
             and self.x + self.width <= 1
             and self.y + self.height <= 1
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class StaticElement:
+    """Non-recognized printable content such as a Chinese title or table line."""
+
+    element_id: str
+    kind: ElementKind
+    region: Rect
+    text: str = ""
+
+    def __post_init__(self) -> None:
+        if not _ELEMENT_ID.fullmatch(self.element_id):
+            raise ValueError("element_id must be lower snake case")
+        if not self.region.is_inside():
+            raise ValueError("static element region must be inside canonical canvas")
+        if self.kind in {ElementKind.TITLE, ElementKind.LABEL, ElementKind.ROLE_SECTION}:
+            if not self.text.strip():
+                raise ValueError(f"{self.kind.value.lower()} text is required")
+
+
+@dataclass(frozen=True, slots=True)
+class PrintImposition:
+    """Placement of independent form instances on one printable carrier sheet."""
+
+    carrier: PageSpec
+    columns: int = 1
+    rows: int = 1
+    horizontal_gap_mm: float = 0.0
+    vertical_gap_mm: float = 0.0
+    margin_mm: float = 0.0
+    include_cut_lines: bool = True
+
+    def __post_init__(self) -> None:
+        if not 1 <= self.columns <= 8 or not 1 <= self.rows <= 8:
+            raise ValueError("imposition rows and columns must be between 1 and 8")
+        for name, value in (
+            ("horizontal_gap_mm", self.horizontal_gap_mm),
+            ("vertical_gap_mm", self.vertical_gap_mm),
+            ("margin_mm", self.margin_mm),
+        ):
+            if value < 0:
+                raise ValueError(f"{name} must not be negative")
+            if not _has_tenth_millimetre_precision(float(value)):
+                raise ValueError(f"{name} must use 0.1 mm precision")
+        if self.cell_width_mm <= 0 or self.cell_height_mm <= 0:
+            raise ValueError("imposition gaps and margins leave no printable slots")
+
+    @property
+    def slot_count(self) -> int:
+        return self.columns * self.rows
+
+    @property
+    def cell_width_mm(self) -> float:
+        return (
+            self.carrier.width_mm
+            - 2 * self.margin_mm
+            - (self.columns - 1) * self.horizontal_gap_mm
+        ) / self.columns
+
+    @property
+    def cell_height_mm(self) -> float:
+        return (
+            self.carrier.height_mm
+            - 2 * self.margin_mm
+            - (self.rows - 1) * self.vertical_gap_mm
+        ) / self.rows
+
+    def fits(self, page: PageSpec) -> bool:
+        return page.width_mm <= self.cell_width_mm + 1e-9 and page.height_mm <= (
+            self.cell_height_mm + 1e-9
         )
 
 
@@ -126,6 +264,8 @@ class FieldDefinition:
             raise ValueError("field_key must be lower snake case")
         if not self.display_name.strip():
             raise ValueError("display_name is required")
+        if self.input_type in _STATIC_INPUT_TYPES:
+            raise ValueError("Static titles and labels must use StaticElement")
         if not self.region.is_inside():
             raise ValueError("field region must be inside canonical canvas")
         if not self.recognition_engine.strip():
@@ -155,6 +295,8 @@ class TemplateVersion:
     status: TemplateStatus = TemplateStatus.DRAFT
     fields: list[FieldDefinition] = field(default_factory=list)
     parent_version_id: str | None = None
+    static_elements: list[StaticElement] = field(default_factory=list)
+    print_imposition: PrintImposition | None = None
 
     @classmethod
     def draft(
@@ -204,6 +346,38 @@ class TemplateVersion:
             raise KeyError(f"Unknown field: {field_key}")
 
         del self.fields[found_index]
+        self.status = TemplateStatus.DRAFT
+
+    def add_static_element(self, element: StaticElement) -> None:
+        self._require_editable()
+        if element.element_id in {item.element_id for item in self.static_elements}:
+            raise ValueError("element_id must be unique within a template version")
+        self.static_elements.append(element)
+        self.status = TemplateStatus.DRAFT
+
+    def replace_static_element(self, element_id: str, replacement: StaticElement) -> None:
+        self._require_editable()
+        if replacement.element_id != element_id:
+            raise ValueError("replacement element_id must not change")
+        for index, element in enumerate(self.static_elements):
+            if element.element_id == element_id:
+                self.static_elements[index] = replacement
+                self.status = TemplateStatus.DRAFT
+                return
+        raise KeyError(f"Unknown static element: {element_id}")
+
+    def remove_static_element(self, element_id: str) -> None:
+        self._require_editable()
+        for index, element in enumerate(self.static_elements):
+            if element.element_id == element_id:
+                del self.static_elements[index]
+                self.status = TemplateStatus.DRAFT
+                return
+        raise KeyError(f"Unknown static element: {element_id}")
+
+    def set_print_imposition(self, imposition: PrintImposition | None) -> None:
+        self._require_editable()
+        self.print_imposition = imposition
         self.status = TemplateStatus.DRAFT
 
     def mark_preflight_failed(self) -> None:
@@ -295,6 +469,10 @@ def build_sheet_payload(print_batch: str, sequence: int) -> str:
 def _validate_template_key(template_key: str) -> None:
     if not _TEMPLATE_KEY.fullmatch(template_key):
         raise ValueError("template_key must use uppercase ASCII letters, digits and underscores")
+
+
+def _has_tenth_millimetre_precision(value: float) -> bool:
+    return abs(value * 10 - round(value * 10)) < 1e-9
 
 
 def _checksum(value: str) -> str:

@@ -4,7 +4,7 @@
 
 ## 本轮结论
 
-工业表单前端重建实施计划的任务 1—16 已按顺序完成。协作同步基线为 `ff03a39 fix(review): preserve confirmed values across reload and export`，并已在其上完成新主线 Task 1—2；集成分支为 `modular-architecture`。
+工业表单前端重建实施计划的任务 1—16 已按顺序完成。协作同步基线为 `ff03a39 fix(review): preserve confirmed values across reload and export`，并已在其上完成新主线 Task 1—3；集成分支为 `modular-architecture`。
 
 **项目整体尚未完成。** 已完成的任务只构成前端基础能力，不能证明真实工业纸质工资表已经可投入使用。当前已明确授权并采用新的唯一开发主线：[工业纸质工资表闭环与前端交互重构最终计划](superpowers/plans/2026-07-18-industrial-paper-templates-implementation.md)。该计划包含本地无登录完整权限、前端信息架构、字段行为模型、3 类母版、10 个车间模板、任意毫米纸张、拼版、二维码、工号核验、姓名人工确认、Excel 导出和实物闭环。
 
@@ -33,7 +33,17 @@ Task 1 定向验证：Python `13 passed`；前端 `3` 个测试文件、`8 passe
 
 Task 2 定向验证：前端 `7` 个测试文件、`38 passed`；TypeScript 类型检查通过。真实浏览器确认四个一级入口、三个内部队列标签、一级页面无返回按钮及队列刷新定位。完整回归仍按计划只在 Task 16 运行。
 
-当前下一项为 Task 3“增加任意毫米纸张、静态元素和拼版领域模型”。
+### Task 3：物理纸张、静态元素和拼版领域模型（已完成）
+
+- `PageSpec.custom(...)` 支持宽 `80—420 mm`、高 `60—594 mm` 和 `0.1 mm` 精度，并按 DPI 生成规范像素尺寸；补充 A4/A5 横向规格。
+- `StaticElement` 与识别字段明确分离，使用 `ElementKind` 表达标题、标签、表格线、勾选框、签字线、角色分区和裁切线；静态标题/标签类型不能伪装为 `FieldDefinition`。
+- `PrintImposition` 表达承载纸、行列、横纵间距、边距和裁切线，并计算槽位尺寸与单表是否可容纳；拼版不改变单表模板和归一化坐标。
+- 发布前检查改为物理毫米规则：5 mm 外边距、29 mm 二维码安全区、12 mm 四角标记区，以及数字格、工号格、勾选框和手写行的最小成品尺寸。
+- 草稿可维护静态元素和拼版；克隆发布版时复制两者；发布、弃用或退役版本仍拒绝任何版面或拼版修改。
+
+Task 3 定向验证：领域与应用测试 `19 passed`；相关 Ruff 和 mypy 通过。数据库持久化、API 与前端类型分别属于 Task 5、Task 6，本 Task 没有越界提前实现。完整回归仍按计划只在 Task 16 运行。
+
+当前下一项为 Task 4“建立字段填写、识别和审核填入规则”。
 
 ## 已完成的前端能力
 
