@@ -138,6 +138,7 @@ async def import_image(
                                     image,
                                     width=template.page.canonical_width_px,
                                     height=template.page.canonical_height_px,
+                                    canonical_dpi=template.page.canonical_dpi,
                                 )
                             )
                             services.recognition.record_template_field_crops(

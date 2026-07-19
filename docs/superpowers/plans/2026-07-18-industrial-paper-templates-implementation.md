@@ -694,6 +694,16 @@ npm --prefix frontend run build:web
 
 必须把本次真实测试数量和实物结果写入 `docs/CURRENT_STATUS.md`、`docs/NEXT_TASK.md` 和 `docs/acceptance/PAPER_TEMPLATE_ACCEPTANCE.md`。
 
+**2026-07-19 执行结果：**
+
+- [x] 计时工、蒸煮 A4 两拼、开片 A4 横向完成数字模拟纸面闭环。
+- [x] 打印尺寸、阴影/透视二维码、字段中心、裁片、两拼独立身份和 Excel 均通过自动量化验收。
+- [x] Python `309 passed`，前端 `31` 个文件/`146 passed`，Ruff、mypy、TypeScript 和 Vite 生产构建通过。
+- [x] 结果已写入三份指定文档。
+- [ ] 使用真实打印机、手机和卡尺完成三类母版的实体 100% 打印与拍照闭环。
+
+本次没有实体打印机和手机设备，因此上述是可重复的数字模拟闭环，不替代投产前的实体 100% 打印与 40—60 张现场样表验证。详见 [Task 16 验收记录](../../acceptance/PAPER_TEMPLATE_ACCEPTANCE.md)。
+
 ---
 
 ## 11. 完成判定

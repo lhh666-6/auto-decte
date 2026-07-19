@@ -160,10 +160,16 @@ class RecognizeForms:
         *,
         width: int,
         height: int,
+        canonical_dpi: int = 300,
     ) -> tuple[EvidenceFile, NDArray[Any]]:
         """Persist a derived canonical canvas without overwriting the original evidence."""
         self._require_form(form_id)
-        corrected = self._pipeline.correct_template_perspective(image, width=width, height=height)
+        corrected = self._pipeline.correct_template_perspective(
+            image,
+            width=width,
+            height=height,
+            canonical_dpi=canonical_dpi,
+        )
         encoded, buffer = cv2.imencode(".png", corrected)
         if not encoded:
             raise ValueError("Corrected template canvas could not be encoded")

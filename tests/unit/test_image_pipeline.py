@@ -51,7 +51,8 @@ def test_aruco_markers_restore_a_distorted_template_to_its_canonical_canvas() ->
     width, height = 600, 800
     canvas = np.full((height, width, 3), 255, dtype=np.uint8)
     canvas[300:360, 200:280] = (255, 0, 0)
-    marker_size, margin = 96, 24
+    marker_size = round(12.0 / 25.4 * 300)
+    margin = round(5.0 / 25.4 * 300)
     dictionary = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50)
     for marker_id, left, top in (
         (10, margin, margin),

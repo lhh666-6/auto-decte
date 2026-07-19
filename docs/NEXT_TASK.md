@@ -2,13 +2,13 @@
 
 最后更新：2026-07-19
 
-状态：旧前端重建任务 1—16 已完成；新主线 Task 1—15 已完成；项目整体未完成。工业纸质工资表闭环与前端交互重构最终计划是当前唯一开发主线。
+状态：旧前端重建任务 1—16 已完成；新主线 Task 1—15 已完成，Task 16 的完整自动回归和数字模拟纸面闭环已完成，但计划规定的三类母版实体闭环尚未有真实打印机/手机证据。
 
 目标分支：`modular-architecture`
 
-## 当前唯一执行任务
+## 当前执行状态
 
-严格执行[工业纸质工资表闭环与前端交互重构最终计划](superpowers/plans/2026-07-18-industrial-paper-templates-implementation.md)的 Task 1—16。Task 1—15 已完成并通过各自定向验证；当前执行 Task 16“自动化回归与实物闭环验收”，不从旧计划重新开始。
+[工业纸质工资表闭环与前端交互重构最终计划](superpowers/plans/2026-07-18-industrial-paper-templates-implementation.md)的所有代码开发、Task 16 完整自动回归和数字模拟闭环已执行。当前唯一未完验收项是计时工、蒸煮两拼和开片横向三个代表模板的实体 100% 打印、手机拍摄、尺寸测量与同一闭环复验。
 
 Task 1 已交付：
 
@@ -130,7 +130,15 @@ Task 15 已交付：
 - 模板 ID、任务 ID、状态码和步骤码仅在主动展开的追溯详情中显示；
 - Task 15 定向前端 14 个测试文件、74 项全部通过；TypeScript 类型检查和 Vite 生产构建通过。
 
-下一任务：Task 16 自动化回归与实物闭环验收。
+Task 16 已交付的自动化与模拟部分：
+
+- 新增三个代表模板的端到端验收：已发布 V2 → 300 DPI PNG/PDF → 模拟填写、轻微透视/旋转/阴影 → 照片导入 → 精确二维码分类 → 透视校正 → 字段裁片 → 人工复核 → Excel；
+- 计时工 A5、蒸煮 A4 两拼和开片 A4 横向 3/3 通过；蒸煮两拼左右小表独立识别序号 41/42；
+- 修复打印方向标记与透视校正中心不一致导致的字段偏移，并增加高分辨率阴影照片二维码多尺度回退；
+- 完整验证为 Python `309 passed`、Ruff 通过、mypy `129 source files` 通过、前端 `31` 个文件/`146 passed`、TypeScript 和 Vite `78 modules` 生产构建通过；
+- 详细数据见 [PAPER_TEMPLATE_ACCEPTANCE.md](acceptance/PAPER_TEMPLATE_ACCEPTANCE.md)。本轮未使用实体打印机、手机和卡尺，现场复验仍是投产前置条件。
+
+当前剩余验收：用真实设备完成三个代表模板的实体闭环，并把照片、卡尺数据、打印设置和结果追加到 [PAPER_TEMPLATE_ACCEPTANCE.md](acceptance/PAPER_TEMPLATE_ACCEPTANCE.md)。在获得这些外部证据前，不得将 Task 16 或整个计划标记为完全完成。
 
 本阶段明确交付：
 

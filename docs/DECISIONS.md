@@ -144,6 +144,12 @@
 - 原因：后端代码和 Lease 实现术语无法直接指导现场人员操作，但完全删除又会损害故障排查和审计。主界面与追溯层分离可以同时保证可用性和可追溯性。
 - 证据：`frontend/apps/web/src/ui/business-language.ts`、`frontend/apps/web/src/ui/TraceDetails.tsx`、审核工作台、识别进度、模板中心和导出中心组件，以及 Task 15 的 74 项定向前端测试。
 
+### D-024：打印与透视校正共享毫米几何，高分辨率二维码只做像素回退
+
+- 决定：方向标记恢复位置由 5 mm 打印边距、12 mm 标记和模板 `canonical_dpi` 确定，不再使用与打印器无关的经验像素值。二维码读取在原图失败时可使用灰度均衡、二值化和降采样，但仍只接受校验通过的码值，不从表格版面猜测模板。
+- 原因：打印标记与校正目标不一致会使视觉上可用的照片产生系统性字段偏移；高分辨率照片又可能超出 OpenCV 在单一尺度下的稳定识别区间。物理契约与多尺度像素回退可以解决两者，且不放宽精确版本安全边界。
+- 证据：`app/adapters/recognition/opencv.py`、`app/application/recognize_forms.py`、`tests/unit/test_image_pipeline.py`、`tests/integration/test_paper_template_acceptance_ds.py` 及 [Task 16 验收记录](acceptance/PAPER_TEMPLATE_ACCEPTANCE.md)。
+
 ## 已否决方案及原因
 
 | 已否决方案 | 原因 |

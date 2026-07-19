@@ -93,13 +93,24 @@ class OpenCvImagePipeline:
         )
         payloads: dict[str, None] = {}
         for region in regions:
-            detector = cv2.QRCodeDetector()
-            detected, values, _, _ = detector.detectAndDecodeMulti(region)
-            if detected:
-                payloads.update((value, None) for value in values if value)
-            value, _, _ = detector.detectAndDecode(region)
-            if value:
-                payloads[value] = None
+            gray = self._gray(region)
+            enhanced = cv2.equalizeHist(gray)
+            _, thresholded = cv2.threshold(enhanced, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+            downscaled = cv2.resize(
+                region,
+                None,
+                fx=0.5,
+                fy=0.5,
+                interpolation=cv2.INTER_CUBIC,
+            )
+            for qr_candidate in (region, enhanced, thresholded, downscaled):
+                detector = cv2.QRCodeDetector()
+                detected, values, _, _ = detector.detectAndDecodeMulti(qr_candidate)
+                if detected:
+                    payloads.update((value, None) for value in values if value)
+                value, _, _ = detector.detectAndDecode(qr_candidate)
+                if value:
+                    payloads[value] = None
         return tuple(payloads)
 
     def correct_perspective(
@@ -121,7 +132,14 @@ class OpenCvImagePipeline:
         transform = cv2.getPerspectiveTransform(source, target)
         return cast(Image, cv2.warpPerspective(image, transform, (width, height)))
 
-    def correct_template_perspective(self, image: Image, *, width: int, height: int) -> Image:
+    def correct_template_perspective(
+        self,
+        image: Image,
+        *,
+        width: int,
+        height: int,
+        canonical_dpi: int = 300,
+    ) -> Image:
         """Map a photographed template back to its canonical canvas via ArUco IDs 10--13."""
         self._require_image(image)
         dictionary = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50)
@@ -138,7 +156,7 @@ class OpenCvImagePipeline:
         if set(observed) != {10, 11, 12, 13}:
             raise ValueError("all directional corner markers are required")
         source = np.asarray([observed[marker_id] for marker_id in (10, 11, 12, 13)])
-        target = self._canonical_marker_centres(width, height)
+        target = self._canonical_marker_centres(width, height, canonical_dpi)
         transform = cv2.getPerspectiveTransform(source.astype(np.float32), target)
         return cast(Image, cv2.warpPerspective(image, transform, (width, height)))
 
@@ -167,9 +185,11 @@ class OpenCvImagePipeline:
         return image if image.ndim == 2 else cast(Image, cv2.cvtColor(image, cv2.COLOR_BGR2GRAY))
 
     @staticmethod
-    def _canonical_marker_centres(width: int, height: int) -> NDArray[np.float32]:
-        marker_size = max(96, min(width, height) // 28)
-        margin = max(24, marker_size // 5)
+    def _canonical_marker_centres(
+        width: int, height: int, canonical_dpi: int = 300
+    ) -> NDArray[np.float32]:
+        marker_size = round(12.0 / 25.4 * canonical_dpi)
+        margin = round(5.0 / 25.4 * canonical_dpi)
         half = marker_size / 2
         return np.asarray(
             [
