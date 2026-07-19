@@ -66,6 +66,13 @@ export interface TemplateField {
   confidence_threshold: number | null;
   requires_manual_confirmation: boolean;
   calculation_expression: string | null;
+  digit_count: number | null;
+  choice_group: string | null;
+  choice_options: string[];
+  max_selections: number | null;
+  derived_from_field_key: string | null;
+  conditional_required_on: string | null;
+  signature_role: string | null;
   rules: TemplateFieldRules;
   export_target: TemplateExportTarget;
   region: TemplateRect;

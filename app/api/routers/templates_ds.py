@@ -91,6 +91,13 @@ class FieldRequest(BaseModel):
     confidence_threshold: float | None = None
     requires_manual_confirmation: bool = False
     calculation_expression: str | None = None
+    digit_count: int | None = None
+    choice_group: str | None = None
+    choice_options: list[str] = PydanticField(default_factory=list)
+    max_selections: int | None = None
+    derived_from_field_key: str | None = None
+    conditional_required_on: str | None = None
+    signature_role: str | None = None
     rules: FieldRulesRequest = PydanticField(default_factory=FieldRulesRequest)
     export_target: ExportTargetRequest = PydanticField(default_factory=ExportTargetRequest)
 
@@ -664,6 +671,13 @@ def _field_definition(body: FieldRequest, page: PageSpec) -> FieldDefinition:
         confidence_threshold=body.confidence_threshold,
         requires_manual_confirmation=body.requires_manual_confirmation,
         calculation_expression=body.calculation_expression,
+        digit_count=body.digit_count,
+        choice_group=body.choice_group,
+        choice_options=tuple(body.choice_options),
+        max_selections=body.max_selections,
+        derived_from_field_key=body.derived_from_field_key,
+        conditional_required_on=body.conditional_required_on,
+        signature_role=body.signature_role,
     )
 
 
@@ -771,6 +785,13 @@ def _version_payload(
                 "confidence_threshold": field.confidence_threshold,
                 "requires_manual_confirmation": field.requires_manual_confirmation,
                 "calculation_expression": field.calculation_expression,
+                "digit_count": field.digit_count,
+                "choice_group": field.choice_group,
+                "choice_options": list(field.choice_options),
+                "max_selections": field.max_selections,
+                "derived_from_field_key": field.derived_from_field_key,
+                "conditional_required_on": field.conditional_required_on,
+                "signature_role": field.signature_role,
                 "rules": {
                     "required": field.rules.required,
                     "minimum_value": field.rules.minimum_value,

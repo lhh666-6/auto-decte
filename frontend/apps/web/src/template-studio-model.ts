@@ -1,4 +1,5 @@
 import type {
+  PaperEntryMode,
   RecognitionMode,
   TemplateField,
   TemplatePage,
@@ -144,6 +145,13 @@ export function createFieldDraft(existingKeys: readonly string[]): TemplateField
     confidence_threshold: null,
     requires_manual_confirmation: true,
     calculation_expression: null,
+    digit_count: null,
+    choice_group: null,
+    choice_options: [],
+    max_selections: null,
+    derived_from_field_key: null,
+    conditional_required_on: null,
+    signature_role: null,
     rules: {
       required: false,
       minimum_value: null,
@@ -204,14 +212,13 @@ export function withRecognitionMode(field: TemplateField, recognitionMode: Recog
   }
   if (recognitionMode === "CALCULATED") {
     return {
-      ...field,
-      paper_entry_mode: "NONE",
-      input_type: "none",
+      ...withPaperEntryMode(field, "NONE"),
       recognition_mode: recognitionMode,
       recognition_engine: legacyEngine,
       fill_policy: "CALCULATED",
       confidence_threshold: null,
       requires_manual_confirmation: false,
+      derived_from_field_key: null,
     };
   }
   const compatibility = ({
@@ -221,8 +228,9 @@ export function withRecognitionMode(field: TemplateField, recognitionMode: Recog
     OMR: { paper_entry_mode: "CHECKBOX", input_type: "checkbox" },
     QR: { paper_entry_mode: "PREPRINTED", input_type: "preprinted" },
   } as const)[recognitionMode];
+  const controlled = withPaperEntryMode(field, compatibility.paper_entry_mode);
   return {
-    ...field,
+    ...controlled,
     ...compatibility,
     data_type: recognitionMode === "OMR"
       ? "boolean"
@@ -234,6 +242,35 @@ export function withRecognitionMode(field: TemplateField, recognitionMode: Recog
     fill_policy: "SUGGEST_ONLY",
     confidence_threshold: null,
     calculation_expression: null,
+  };
+}
+
+export function withPaperEntryMode(
+  field: TemplateField,
+  mode: PaperEntryMode,
+): TemplateField {
+  const inputType = {
+    HANDWRITTEN_TEXT: "text_box",
+    DIGIT_BOXES: "digit_boxes",
+    CHECKBOX: "checkbox",
+    SIGNATURE: "signature",
+    PREPRINTED: "preprinted",
+    NONE: "none",
+  }[mode];
+  const existingChoices = field.choice_options.length > 0
+    ? field.choice_options
+    : ["是", "否"];
+  return {
+    ...field,
+    paper_entry_mode: mode,
+    input_type: inputType,
+    digit_count: mode === "DIGIT_BOXES" ? (field.digit_count ?? 6) : null,
+    choice_group: mode === "CHECKBOX" ? (field.choice_group ?? field.field_key) : null,
+    choice_options: mode === "CHECKBOX" ? existingChoices : [],
+    max_selections: mode === "CHECKBOX" ? (field.max_selections ?? 1) : null,
+    derived_from_field_key: mode === "NONE" ? field.derived_from_field_key : null,
+    conditional_required_on: mode === "HANDWRITTEN_TEXT" ? field.conditional_required_on : null,
+    signature_role: mode === "SIGNATURE" ? (field.signature_role ?? "worker") : null,
   };
 }
 

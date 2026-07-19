@@ -13,6 +13,7 @@ import {
   resizeRect,
   snapRectToMillimeters,
   withDataType,
+  withPaperEntryMode,
   withRecognitionMode,
 } from "./template-studio-model";
 
@@ -111,6 +112,15 @@ describe("template studio canvas model", () => {
       paper_entry_mode: "CHECKBOX",
       input_type: "checkbox",
       recognition_mode: "OMR",
+      choice_group: "field_1",
+      choice_options: ["是", "否"],
+      max_selections: 1,
+    });
+    expect(withPaperEntryMode(withRecognitionMode(draft, "OMR"), "DIGIT_BOXES")).toMatchObject({
+      digit_count: 6,
+      choice_group: null,
+      choice_options: [],
+      max_selections: null,
     });
     expect(withDataType(numeric, "boolean")).toMatchObject({
       data_type: "boolean",

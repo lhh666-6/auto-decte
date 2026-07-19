@@ -155,6 +155,13 @@ describe("TemplateApi", () => {
       confidence_threshold: null,
       requires_manual_confirmation: true,
       calculation_expression: null,
+      digit_count: null,
+      choice_group: null,
+      choice_options: [],
+      max_selections: null,
+      derived_from_field_key: null,
+      conditional_required_on: null,
+      signature_role: null,
       rules: {
         required: false,
         minimum_value: null,

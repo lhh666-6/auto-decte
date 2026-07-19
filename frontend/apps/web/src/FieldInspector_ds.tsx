@@ -7,7 +7,7 @@ import type {
 } from "@form-detection/api-client";
 import { useEffect, useState } from "react";
 
-import { withDataType, withRecognitionMode } from "./template-studio-model";
+import { withDataType, withPaperEntryMode, withRecognitionMode } from "./template-studio-model";
 
 type Props = {
   field: TemplateField | null;
@@ -79,12 +79,20 @@ export function FieldInspector({ field, page, editable, onSave, onDelete }: Prop
 
         <fieldset>
           <legend>填写与识别</legend>
-          <label>纸面填写方式<select value={draft.paper_entry_mode} disabled={disabled} onChange={(event) => setDraft(changePaperMode(draft, event.target.value as PaperEntryMode))}><option value="HANDWRITTEN_TEXT">手写文本</option><option value="DIGIT_BOXES">数字格</option><option value="CHECKBOX">勾选框</option><option value="SIGNATURE">签名</option><option value="PREPRINTED">预印内容</option><option value="NONE">不在纸面填写</option></select></label>
+          <label>纸面填写方式<select value={draft.paper_entry_mode} disabled={disabled} onChange={(event) => setDraft(withPaperEntryMode(draft, event.target.value as PaperEntryMode))}><option value="HANDWRITTEN_TEXT">手写文本</option><option value="DIGIT_BOXES">数字格</option><option value="CHECKBOX">勾选框</option><option value="SIGNATURE">签名</option><option value="PREPRINTED">预印内容</option><option value="NONE">不在纸面填写</option></select></label>
           <label>识别方式<select value={draft.recognition_mode} disabled={disabled} onChange={(event) => setDraft(withRecognitionMode(draft, event.target.value as RecognitionMode))}><option value="NONE">不自动识别</option><option value="HANDWRITING_OCR">手写识别</option><option value="DIGIT_OCR">数字格识别</option><option value="PRINTED_OCR">印刷体识别</option><option value="OMR">勾选识别</option><option value="QR">二维码</option><option value="CALCULATED">计算字段</option></select></label>
           <label>填充策略<select value={draft.fill_policy} disabled={disabled || ["NONE", "CALCULATED"].includes(draft.recognition_mode)} onChange={(event) => setDraft(changeFillPolicy(draft, event.target.value as FillPolicy))}><option value="MANUAL_ONLY">仅人工填写</option><option value="SUGGEST_ONLY">只给建议</option><option value="PREFILL_WHEN_CONFIDENT">达到阈值时预填</option><option value="CALCULATED">自动计算</option></select></label>
           <label>置信阈值<input type="number" min="0" max="1" step="0.01" value={draft.confidence_threshold ?? ""} disabled={disabled || draft.fill_policy !== "PREFILL_WHEN_CONFIDENT"} onChange={(event) => setDraft({ ...draft, confidence_threshold: optionalNumber(event.target.value), minimum_prefill_confidence: optionalNumber(event.target.value) ?? 1 })} /></label>
           <label className="checkbox-label"><input type="checkbox" checked={draft.requires_manual_confirmation} disabled={disabled} onChange={(event) => setDraft({ ...draft, requires_manual_confirmation: event.target.checked })} />必须人工确认</label>
           {draft.recognition_mode === "CALCULATED" && <label>计算表达式<input value={draft.calculation_expression ?? ""} disabled={disabled} onChange={(event) => setDraft({ ...draft, calculation_expression: event.target.value || null })} /></label>}
+          {draft.paper_entry_mode === "DIGIT_BOXES" && <label>数字格位数<input type="number" min="1" max="24" step="1" value={draft.digit_count ?? 6} disabled={disabled} onChange={(event) => setDraft({ ...draft, digit_count: Number(event.target.value) })} /></label>}
+          {draft.paper_entry_mode === "CHECKBOX" && <>
+            <label>固定选项（逗号分隔）<input value={draft.choice_options.join(",")} disabled={disabled} onChange={(event) => setDraft({ ...draft, choice_group: draft.field_key, choice_options: splitOptions(event.target.value) })} /></label>
+            <label>最多选择项数<input type="number" min="1" max={Math.max(1, draft.choice_options.length)} step="1" value={draft.max_selections ?? 1} disabled={disabled} onChange={(event) => setDraft({ ...draft, max_selections: Number(event.target.value) })} /></label>
+          </>}
+          {draft.paper_entry_mode === "NONE" && draft.recognition_mode !== "CALCULATED" && <label>系统带入来源字段<input value={draft.derived_from_field_key ?? ""} disabled={disabled} placeholder="例如：worker_number" onChange={(event) => setDraft({ ...draft, derived_from_field_key: event.target.value.trim() || null })} /></label>}
+          {draft.paper_entry_mode === "HANDWRITTEN_TEXT" && <label>条件必填规则<input value={draft.conditional_required_on ?? ""} disabled={disabled} placeholder="例如：quality_result!=合格" onChange={(event) => setDraft({ ...draft, conditional_required_on: event.target.value.trim() || null })} /></label>}
+          {draft.paper_entry_mode === "SIGNATURE" && <label>签字角色<select value={draft.signature_role ?? "worker"} disabled={disabled} onChange={(event) => setDraft({ ...draft, signature_role: event.target.value })}><option value="worker">员工</option><option value="team_lead">班组长</option><option value="quality">质检</option><option value="handover">交接人员</option><option value="supervisor">主管</option></select></label>}
         </fieldset>
 
         <fieldset>
@@ -126,16 +134,8 @@ function optionalNumber(value: string): number | null {
   return value.trim() === "" ? null : Number(value);
 }
 
-function changePaperMode(field: TemplateField, mode: PaperEntryMode): TemplateField {
-  const inputType = {
-    HANDWRITTEN_TEXT: "text_box",
-    DIGIT_BOXES: "digit_boxes",
-    CHECKBOX: "checkbox",
-    SIGNATURE: "signature",
-    PREPRINTED: "preprinted",
-    NONE: "none",
-  }[mode];
-  return { ...field, paper_entry_mode: mode, input_type: inputType };
+function splitOptions(value: string): string[] {
+  return value.split(/[,，]/).map((item) => item.trim()).filter(Boolean);
 }
 
 function changeFillPolicy(field: TemplateField, policy: FillPolicy): TemplateField {

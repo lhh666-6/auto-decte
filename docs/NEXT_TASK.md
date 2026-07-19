@@ -2,26 +2,26 @@
 
 最后更新：2026-07-19
 
-状态：六个核心版面、10 个岗位配置及其幂等安装已完成；当前只贯通受控字段 API 和设计器。
+状态：六个核心版面、岗位配置和受控字段编辑闭环已完成；当前只贯通受控明细表网格配置。
 
 目标分支：`modular-architecture`
 
-## 当前唯一任务：受控字段 API 与设计器贯通
+## 当前唯一任务：受控明细表网格 API 与设计器贯通
 
 规格来源：[工业纸质工资表系统：低 Token 实施与统一 UI 规范](superpowers/specs/2026-07-19-industrial-payroll-low-token-ui-v2.md) 第 3、4 章。
 
-执行计划：新建 `2026-07-20-controlled-fields-api-ui.md`，按后端契约、TypeScript 类型、固定组件编辑器三个小步骤执行。
+执行计划：新建 `2026-07-20-controlled-grid-api-ui.md`，只处理 `TABLE_GRID` 的行、列和比例列宽。
 
-目标：模板读取/编辑接口和前端设计器完整携带数字位数、选项组、最大选择数、系统带入来源、条件必填和签字角色；不允许保存后静默丢失这些约束。
+目标：模板读取/编辑接口和前端静态组件模型完整携带明细表行数、列数和比例列宽；设计器只提供受控表格设置，不开放任意 HTML 或脚本。
 
 只读取和修改：
 
 - `app/api/routers/templates_ds.py`
-- `frontend/src/api/templates_ds.ts`
-- 模板设计器中字段设置相关组件
-- 对应 API 和前端组件测试
+- `frontend/packages/api-client/src/templates_ds.ts`
+- 模板设计器中静态组件/模块设置相关代码
+- 对应 API、模型和组件测试
 
-只运行模板 API、前端类型/字段设置组件测试、Ruff 与相关 mypy；不重复运行种子安装、纸面闭环、审核、导出或完整套件。
+只运行模板 API、静态组件模型/组件测试、TypeScript、Ruff 与相关 mypy；不重复运行字段设置、种子安装、纸面闭环、审核、导出或完整套件。
 
 ## 当前执行状态
 

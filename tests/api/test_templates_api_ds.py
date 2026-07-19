@@ -34,6 +34,13 @@ def _field(display_name: str = "Worker name") -> dict[str, object]:
         "confidence_threshold": None,
         "requires_manual_confirmation": True,
         "calculation_expression": None,
+        "digit_count": None,
+        "choice_group": None,
+        "choice_options": [],
+        "max_selections": None,
+        "derived_from_field_key": None,
+        "conditional_required_on": None,
+        "signature_role": None,
         "rules": {
             "required": False,
             "minimum_value": None,
@@ -328,6 +335,7 @@ def test_api_creates_custom_millimetre_page_and_returns_typed_field_behavior(
         "fill_policy": "PREFILL_WHEN_CONFIDENT",
         "confidence_threshold": 0.97,
         "requires_manual_confirmation": False,
+        "digit_count": 6,
         "export_target": {
             "workbook": "records.xlsx",
             "worksheet": "records",

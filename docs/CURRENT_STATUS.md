@@ -28,6 +28,8 @@ IFD2 识别与岗位身份持久化已完成：Form 和数据库可空保存岗�
 
 [六个核心版面与岗位配置种子](superpowers/plans/2026-07-20-six-core-layout-seeds.md)已完成：新增计时、叉车/设备、装架/干燥、炉类、热压和开片六套不同明细列的发布版 V1，并将现有 10 个岗位映射为发布版岗位配置。A5 四类支持 A4 两拼，A4 两类保持横向单表；岗位、单位和固定选项由岗位配置预印，姓名只由工号匹配。安装器保留原 24 个历史版本，新增 6 个核心版本和 10 个岗位配置，重复启动幂等。原始 V2 文档中被截断的 4.4—4.7 节已从用户提供的原文件恢复。结构/安装/renderer 定向验证已通过，六张实际 PNG 已逐张目视检查。下一任务是把受控字段元数据完整贯通模板 API 和前端设计器。
 
+[受控字段 API 与设计器贯通](superpowers/plans/2026-07-20-controlled-fields-api-ui.md)已完成：模板 API、TypeScript 契约、新字段草稿和字段属性面板完整保存数字位数、固定选项/最大选择数、系统带入来源、条件必填和签字角色；切换纸面组件或识别方式会清除不适用的旧约束。API 定向验证 `13 passed`，前端字段/模型验证 `13 passed`，TypeScript、Ruff 和 mypy 通过。下一任务是贯通受控明细表网格的 API 和设计器配置。
+
 ## 本轮结论
 
 工业表单前端重建实施计划的任务 1—16 已按顺序完成。协作同步基线为 `ff03a39 fix(review): preserve confirmed values across reload and export`，并已在其上完成新主线 Task 1—10；集成分支为 `modular-architecture`。

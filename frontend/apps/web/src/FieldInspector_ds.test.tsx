@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -29,5 +29,25 @@ describe("FieldInspector", () => {
     await user.selectOptions(screen.getByLabelText("识别方式"), "NONE");
     await user.click(screen.getByRole("button", { name: "保存字段" }));
     await waitFor(() => expect(save).toHaveBeenCalledWith(expect.objectContaining({ recognition_mode: "NONE", fill_policy: "MANUAL_ONLY", confidence_threshold: null })));
+  });
+
+  it("configures digit count and fixed choices with business labels", async () => {
+    const user = userEvent.setup();
+    const save = vi.fn().mockResolvedValue(undefined);
+    render(<FieldInspector field={createFieldDraft([])} page={PAGE} editable onSave={save} onDelete={vi.fn()} />);
+
+    await user.selectOptions(screen.getByLabelText("纸面填写方式"), "DIGIT_BOXES");
+    await user.clear(screen.getByLabelText("数字格位数"));
+    await user.type(screen.getByLabelText("数字格位数"), "8");
+    await user.selectOptions(screen.getByLabelText("纸面填写方式"), "CHECKBOX");
+    fireEvent.change(screen.getByLabelText("固定选项（逗号分隔）"), { target: { value: "白班，夜班" } });
+    await user.click(screen.getByRole("button", { name: "保存字段" }));
+
+    await waitFor(() => expect(save).toHaveBeenCalledWith(expect.objectContaining({
+      digit_count: null,
+      choice_group: "field_1",
+      choice_options: ["白班", "夜班"],
+      max_selections: 1,
+    })));
   });
 });
