@@ -9,6 +9,7 @@ from app.adapters.database.template_repository_ds import SqlAlchemyTemplateRepos
 from app.adapters.templates.print_renderer_ds import TemplatePrintRenderer
 from app.domain.templates_ds import PageSpec, TemplateStatus, TemplateVersion
 from app.infrastructure.database.sqlite_ds import create_sqlite_engine
+from app.modules.templates.payroll_profiles_ds import reviewed_payroll_seed_templates
 from app.modules.templates.seed_templates_ds import (
     SeedTemplateConflict,
     all_payroll_seed_templates,
@@ -62,9 +63,15 @@ def test_seed_templates_are_published_complete_business_definitions() -> None:
 def test_all_seed_templates_keep_legacy_compatibility_and_add_reviewed_profiles() -> None:
     templates = all_payroll_seed_templates()
 
-    assert len(templates) == 14
+    assert len(templates) == 24
     assert {template.template_key for template in templates} == EXPECTED_KEYS
     assert all(template.status is TemplateStatus.PUBLISHED for template in templates)
+    assert {
+        template.version for template in templates if template.template_key in REVIEWED_KEYS
+    } == {1, 2}
+    assert {template.version for template in templates if template.template_key in LEGACY_KEYS} == {
+        1
+    }
 
 
 def test_seed_install_is_idempotent_and_generates_print_artifacts(tmp_path: Path) -> None:
@@ -75,13 +82,15 @@ def test_seed_install_is_idempotent_and_generates_print_artifacts(tmp_path: Path
     first_artifact_ids = {
         artifact.artifact_id
         for key in EXPECTED_KEYS
-        for artifact in repository.list_artifacts(repository.list_versions(key)[0].version_id)
+        for version in repository.list_versions(key)
+        for artifact in repository.list_artifacts(version.version_id)
     }
     second = install_legacy_payroll_seed_templates(repository, renderer)
     second_artifact_ids = {
         artifact.artifact_id
         for key in EXPECTED_KEYS
-        for artifact in repository.list_artifacts(repository.list_versions(key)[0].version_id)
+        for version in repository.list_versions(key)
+        for artifact in repository.list_artifacts(version.version_id)
     }
 
     assert set(first.installed) == EXPECTED_KEYS
@@ -89,17 +98,40 @@ def test_seed_install_is_idempotent_and_generates_print_artifacts(tmp_path: Path
     assert second.installed == ()
     assert set(second.existing) == EXPECTED_KEYS
     assert repository.list_template_keys() == sorted(EXPECTED_KEYS)
-    assert all(len(repository.list_versions(key)) == 1 for key in EXPECTED_KEYS)
-    assert len(first_artifact_ids) == 36
+    assert all(len(repository.list_versions(key)) == 1 for key in LEGACY_KEYS)
+    assert all(len(repository.list_versions(key)) == 2 for key in REVIEWED_KEYS)
+    assert len(first_artifact_ids) == 64
     assert second_artifact_ids == first_artifact_ids
     for key in EXPECTED_KEYS:
-        version = repository.list_versions(key)[0]
-        expected_kinds = {"PRINT_PDF", "PRINT_PNG"}
-        if version.print_imposition is not None:
-            expected_kinds.add("PRINT_IMPOSED_PDF")
-        assert {
-            item.kind for item in repository.list_artifacts(version.version_id)
-        } == expected_kinds
+        for version in repository.list_versions(key):
+            expected_kinds = {"PRINT_PDF", "PRINT_PNG"}
+            if version.print_imposition is not None:
+                expected_kinds.add("PRINT_IMPOSED_PDF")
+            assert {
+                item.kind for item in repository.list_artifacts(version.version_id)
+            } == expected_kinds
+
+
+def test_seed_install_adds_reviewed_v2_without_rewriting_existing_v1(tmp_path: Path) -> None:
+    repository = _repository(tmp_path)
+    renderer = TemplatePrintRenderer(tmp_path / "evidence")
+    historical = legacy_payroll_seed_templates() + reviewed_payroll_seed_templates()
+    historical_ids = {
+        (template.template_key, template.version): template.version_id for template in historical
+    }
+    for template in historical:
+        repository.add_version(template)
+
+    result = install_legacy_payroll_seed_templates(repository, renderer)
+
+    assert set(result.installed) == REVIEWED_KEYS
+    assert set(result.existing) == EXPECTED_KEYS
+    for (template_key, version), version_id in historical_ids.items():
+        restored = repository.get_version_by_key_version(template_key, version)
+        assert restored is not None
+        assert restored.version_id == version_id
+    for template_key in REVIEWED_KEYS:
+        assert [version.version for version in repository.list_versions(template_key)] == [1, 2]
 
 
 def test_seed_install_rejects_same_key_and_version_with_different_content(tmp_path: Path) -> None:
@@ -155,9 +187,7 @@ def test_application_composition_can_install_seeds_into_a_new_database(tmp_path:
 
     assert set(first.template_repository.list_template_keys()) == EXPECTED_KEYS
     assert set(second.template_repository.list_template_keys()) == EXPECTED_KEYS
-    assert sum(
-        len(second.template_repository.list_versions(key)) for key in EXPECTED_KEYS
-    ) == 14
+    assert sum(len(second.template_repository.list_versions(key)) for key in EXPECTED_KEYS) == 24
 
 
 def test_application_startup_preserves_conflicting_legacy_template(tmp_path: Path) -> None:

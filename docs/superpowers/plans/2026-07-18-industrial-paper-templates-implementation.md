@@ -643,11 +643,11 @@ A5 竖向 · V3
 
 **复用现有基线：** 现有 XLSX 导出器、批次不可变和历史导出测试继续使用；只新增 10 个真实模板的字段映射和三类母版增量测试。
 
-- [ ] 三类母版导出测试覆盖人员、业务明细、考评、异常和签字信息。
-- [ ] 固定明细按主记录 + 明细行展开。
-- [ ] Excel 类型正确。
-- [ ] 历史模板不回归。
-- [ ] 提交：`feat(export): map payroll templates to stable workbook columns`
+- [x] 三类母版导出测试覆盖人员、业务明细、考评、异常和签字信息。
+- [x] 固定明细按主记录 + 明细行展开。
+- [x] Excel 类型正确。
+- [x] 历史模板不回归。
+- [x] 提交：`feat(export): map payroll templates to stable workbook columns`
 
 ### Task 15：统一工作人员中文文案
 

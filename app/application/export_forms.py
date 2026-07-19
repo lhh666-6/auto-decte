@@ -73,8 +73,7 @@ class ExportForms:
                     continue
                 if _file_sha256(pending) != batch.file_sha256:
                     raise ExportIntegrityError(
-                        "Pending export hash does not match batch "
-                        f"{batch.export_batch_id}"
+                        f"Pending export hash does not match batch {batch.export_batch_id}"
                     )
                 pending.replace(destination)
             except FileNotFoundError as error:
@@ -90,9 +89,7 @@ class ExportForms:
         ) from last_missing
 
     @staticmethod
-    def _accept_published_workbook(
-        destination: Path, pending: Path, batch: ExportBatch
-    ) -> bool:
+    def _accept_published_workbook(destination: Path, pending: Path, batch: ExportBatch) -> bool:
         if not destination.exists():
             return False
         if _file_sha256(destination) != batch.file_sha256:
@@ -122,6 +119,7 @@ class ExportForms:
         included: list[ExportPreviewItem] = []
         excluded: list[ExportPreviewItem] = []
         mappings: dict[tuple[str, str, str], ExportMapping] = {}
+        mapping_order: dict[tuple[str, str, str], tuple[str, int, int]] = {}
         results_by_id = {result.form.form_id: result for result in self._queries.search(filters)}
         candidates = [
             form
@@ -187,18 +185,23 @@ class ExportForms:
                 )
                 continue
             included.append(item)
-            for mapping in template_mappings:
+            for field_index, mapping in enumerate(template_mappings):
                 key = (mapping.template_id, mapping.template_version, mapping.field_key)
                 mappings[key] = mapping
+                mapping_order[key] = (
+                    mapping.template_id,
+                    template.version,
+                    field_index,
+                )
         return ExportPreview(
             included=tuple(included),
             excluded=tuple(excluded),
-            mapping_snapshot=tuple(mappings[key] for key in sorted(mappings)),
+            mapping_snapshot=tuple(
+                mappings[key] for key in sorted(mappings, key=mapping_order.__getitem__)
+            ),
         )
 
-    def _resolve_template(
-        self, template_id: str, template_version: str
-    ) -> TemplateVersion | None:
+    def _resolve_template(self, template_id: str, template_version: str) -> TemplateVersion | None:
         if self._template_repository is None:
             return None
         try:
@@ -371,10 +374,7 @@ class ExportForms:
         template_snapshot: dict[str, object] = {}
         if self._template_repository is not None:
             preview = self.preview(filters, actor_id)
-            included_records = {
-                (item.form_id, item.record_version)
-                for item in preview.included
-            }
+            included_records = {(item.form_id, item.record_version) for item in preview.included}
             results = [
                 result
                 for result in results
@@ -390,9 +390,7 @@ class ExportForms:
             if result.form.export_status is ExportStatus.REEXPORT_REQUIRED
         ]
         if reexport_results and supersedes_batch_id is None:
-            raise ValueError(
-                "supersedes_batch_id is required for REEXPORT_REQUIRED records"
-            )
+            raise ValueError("supersedes_batch_id is required for REEXPORT_REQUIRED records")
         superseded_batch = (
             self._repository.get_export_batch(supersedes_batch_id)
             if supersedes_batch_id is not None
@@ -402,9 +400,7 @@ class ExportForms:
             raise KeyError(f"Unknown export batch: {supersedes_batch_id}")
         if superseded_batch is not None:
             if not reexport_results:
-                raise ValueError(
-                    "supersedes_batch_id is only valid for REEXPORT_REQUIRED records"
-                )
+                raise ValueError("supersedes_batch_id is only valid for REEXPORT_REQUIRED records")
             previous_versions: dict[str, list[int]] = {}
             for form_id, version in superseded_batch.included_records:
                 previous_versions.setdefault(form_id, []).append(version)
@@ -412,8 +408,7 @@ class ExportForms:
                 versions = previous_versions.get(result.form.form_id, [])
                 if not any(version < result.current_record.version for version in versions):
                     raise ValueError(
-                        "Superseded batch must contain an older version of "
-                        f"{result.form.form_id}"
+                        f"Superseded batch must contain an older version of {result.form.form_id}"
                     )
         batch_id = f"EXPORT-{uuid4().hex}"
         timestamp = datetime.now(UTC)
@@ -439,16 +434,13 @@ class ExportForms:
             digest = hashlib.sha256(partial.read_bytes()).hexdigest()
             destination.parent.mkdir(parents=True, exist_ok=True)
             partial.replace(pending)
-            serialized_mappings = tuple(
-                asdict(mapping) for mapping in (mapping_snapshot or ())
-            )
+            serialized_mappings = tuple(asdict(mapping) for mapping in (mapping_snapshot or ()))
             batch = ExportBatch(
                 export_batch_id=batch_id,
                 export_type=export_type,
                 filters=serialized_filters,
                 included_records=tuple(
-                    (result.form.form_id, result.current_record.version)
-                    for result in results
+                    (result.form.form_id, result.current_record.version) for result in results
                 ),
                 file_path=str(destination),
                 file_sha256=digest,

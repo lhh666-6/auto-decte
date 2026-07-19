@@ -132,6 +132,12 @@
 - 原因：把历史记录编号为第四步会混淆当前操作和既有产物，筛选变化后保留旧预览又可能生成与界面条件不一致的 Excel。三步快照约束可以维持现有后端不可变批次语义，同时让失败恢复和下载入口更接近工作人员当前动作。
 - 证据：`frontend/apps/web/src/ExportCenter_ds.tsx`、`frontend/apps/web/src/export-center.test.tsx` 及 Task 13 导出 API/组件测试、TypeScript 和生产构建。
 
+### D-022：稳定 Excel 映射通过新模板版本发布，不改写已发布 V1
+
+- 决定：十个真实工资表保留原 V1，并分别发布 V2 导出映射；V2 统一将人员、考评、事实说明和签字写入“工资主记录”，将岗位字段写入“业务明细”，两表以批次、表单和记录版本关联。映射快照按不可变模板字段顺序生成，中文业务列和 Excel 原生类型随批次固化。
+- 原因：直接改写 V1 的导出目标会改变历史表单的导出事实并触发种子内容冲突；按 V2 追加可以让已有数据库安全升级，同时让固定生产明细形成可追溯的主记录/明细行结构，并保持四个历史通用模板原样可导出。
+- 证据：`app/modules/templates/payroll_profiles_ds.py`、`app/modules/templates/seed_templates_ds.py`、`app/application/export_forms.py`、`tests/integration/test_payroll_xlsx_export_ds.py` 及 Task 14 的 41 项定向测试和静态检查。
+
 ## 已否决方案及原因
 
 | 已否决方案 | 原因 |

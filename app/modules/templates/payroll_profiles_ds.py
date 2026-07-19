@@ -22,6 +22,8 @@ from app.domain.templates_ds import (
 )
 
 _WORKBOOK = "企业工资记录.xlsx"
+_MAIN_WORKSHEET = "工资主记录"
+_DETAIL_WORKSHEET = "业务明细"
 _PLACEHOLDER_LABEL = re.compile(r"(?:明细)?第\s*\d+\s*行")
 
 
@@ -75,6 +77,14 @@ def reviewed_payroll_seed_templates() -> tuple[TemplateVersion, ...]:
     return tuple(_build_template(profile) for profile in reviewed_payroll_profiles())
 
 
+def reviewed_payroll_export_seed_templates() -> tuple[TemplateVersion, ...]:
+    """Build immutable V2 definitions with stable main/detail Excel mappings."""
+    return tuple(
+        _build_template(profile, version_number=2, stable_export_layout=True)
+        for profile in reviewed_payroll_profiles()
+    )
+
+
 def reviewed_payroll_metadata() -> dict[str, tuple[str, str]]:
     return {
         profile.template_key: (profile.display_name, profile.description)
@@ -117,24 +127,61 @@ def _profile(
     )
 
 
-def _build_template(profile: PayrollTemplateProfile) -> TemplateVersion:
+def _build_template(
+    profile: PayrollTemplateProfile,
+    *,
+    version_number: int = 1,
+    stable_export_layout: bool = False,
+) -> TemplateVersion:
     version = TemplateVersion.draft(
-        f"TPL-SEED-{profile.template_key}-V1",
+        f"TPL-SEED-{profile.template_key}-V{version_number}",
         profile.template_key,
-        1,
+        version_number,
         profile.page,
     )
     for element in _static_elements(profile):
         version.add_static_element(element)
     for specification, region in zip(_COMMON_FIELDS, _COMMON_REGIONS, strict=True):
-        version.add_field(_field(specification, region, profile))
+        version.add_field(
+            _field(
+                specification,
+                region,
+                profile,
+                stable_export_layout=stable_export_layout,
+                detail=False,
+            )
+        )
     business_regions = _business_regions(len(profile.business_fields))
     for specification, region in zip(profile.business_fields, business_regions, strict=True):
-        version.add_field(_field(specification, region, profile))
+        version.add_field(
+            _field(
+                specification,
+                region,
+                profile,
+                stable_export_layout=stable_export_layout,
+                detail=True,
+            )
+        )
     for specification, region in zip(_ASSESSMENT_FIELDS, _ASSESSMENT_REGIONS, strict=True):
-        version.add_field(_field(specification, region, profile))
+        version.add_field(
+            _field(
+                specification,
+                region,
+                profile,
+                stable_export_layout=stable_export_layout,
+                detail=False,
+            )
+        )
     for specification, region in zip(_SIGNATURE_FIELDS, _SIGNATURE_REGIONS, strict=True):
-        version.add_field(_field(specification, region, profile))
+        version.add_field(
+            _field(
+                specification,
+                region,
+                profile,
+                stable_export_layout=stable_export_layout,
+                detail=False,
+            )
+        )
     version.set_print_imposition(profile.print_imposition)
     version.mark_ready_to_publish()
     version.publish()
@@ -191,7 +238,12 @@ def _static_elements(profile: PayrollTemplateProfile) -> tuple[StaticElement, ..
 
 
 def _field(
-    specification: ProfileField, region: Rect, profile: PayrollTemplateProfile
+    specification: ProfileField,
+    region: Rect,
+    profile: PayrollTemplateProfile,
+    *,
+    stable_export_layout: bool,
+    detail: bool,
 ) -> FieldDefinition:
     paper_mode = PaperEntryMode.HANDWRITTEN_TEXT
     recognition_mode = RecognitionMode.NONE
@@ -240,8 +292,10 @@ def _field(
         ),
         export_target=ExportTarget(
             _WORKBOOK,
-            profile.worksheet,
-            specification.field_key,
+            _DETAIL_WORKSHEET
+            if stable_export_layout and detail
+            else (_MAIN_WORKSHEET if stable_export_layout else profile.worksheet),
+            specification.display_name if stable_export_layout else specification.field_key,
         ),
         requires_manual_confirmation=specification.field_key == "worker_name",
     )

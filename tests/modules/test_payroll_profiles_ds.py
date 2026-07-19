@@ -13,6 +13,7 @@ from app.domain.templates_ds import ElementKind, PaperEntryMode, TemplateStatus
 from app.infrastructure.database.sqlite_ds import create_sqlite_engine
 from app.modules.templates.payroll_profiles_ds import (
     PayrollMaster,
+    reviewed_payroll_export_seed_templates,
     reviewed_payroll_profiles,
     reviewed_payroll_seed_templates,
 )
@@ -88,6 +89,42 @@ def test_reviewed_templates_realize_the_structure_checklists_without_placeholder
         assert next(
             field for field in template.fields if field.field_key == "worker_name"
         ).requires_manual_confirmation
+
+
+def test_reviewed_export_v2_keeps_v1_immutable_and_uses_stable_main_detail_columns() -> None:
+    v1_templates = reviewed_payroll_seed_templates()
+    v2_templates = reviewed_payroll_export_seed_templates()
+    profiles = {profile.template_key: profile for profile in reviewed_payroll_profiles()}
+
+    assert len(v2_templates) == 10
+    assert {template.template_key for template in v2_templates} == set(EXPECTED_TITLES)
+    for v1, v2 in zip(v1_templates, v2_templates, strict=True):
+        profile = profiles[v2.template_key]
+        common_keys = {field.field_key for field in v2.fields[:6]}
+        business_keys = {field.field_key for field in profile.business_fields}
+
+        assert v1.version == 1
+        assert v2.version == 2
+        assert v1.version_id != v2.version_id
+        assert {field.export_target.worksheet for field in v1.fields if field.export_target} == {
+            profile.worksheet
+        }
+        for field in v2.fields:
+            assert field.export_target is not None
+            assert field.export_target.business_column == field.display_name
+            if field.field_key in business_keys:
+                assert field.export_target.worksheet == "业务明细"
+            else:
+                assert field.field_key in common_keys | {
+                    "assessment_passed",
+                    "assessment_improvement",
+                    "assessment_failed",
+                    "facts_description",
+                    "worker_signature",
+                    "quality_signature",
+                    "supervisor_signature",
+                }
+                assert field.export_target.worksheet == "工资主记录"
 
 
 def test_reviewed_a5_forms_are_two_up_and_a4_forms_remain_single_sheet() -> None:

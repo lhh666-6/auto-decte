@@ -19,6 +19,7 @@ from app.domain.templates_ds import (
     TemplateVersion,
 )
 from app.modules.templates.payroll_profiles_ds import (
+    reviewed_payroll_export_seed_templates,
     reviewed_payroll_metadata,
     reviewed_payroll_seed_templates,
 )
@@ -46,8 +47,7 @@ _HEADER_REGIONS = (
     Rect(0.37, 0.22, 0.52, 0.045),
 )
 _SPECIAL_REGIONS = tuple(
-    Rect(0.08 + (index % 4) * 0.205, 0.29 + (index // 4) * 0.06, 0.18, 0.04)
-    for index in range(12)
+    Rect(0.08 + (index % 4) * 0.205, 0.29 + (index // 4) * 0.06, 0.18, 0.04) for index in range(12)
 )
 _LINE_REGIONS = tuple(Rect(0.08, 0.48 + index * 0.043, 0.84, 0.034) for index in range(10))
 
@@ -139,8 +139,12 @@ def legacy_payroll_seed_templates() -> tuple[TemplateVersion, ...]:
 
 
 def all_payroll_seed_templates() -> tuple[TemplateVersion, ...]:
-    """Return legacy compatibility templates followed by ten reviewed product profiles."""
-    return legacy_payroll_seed_templates() + reviewed_payroll_seed_templates()
+    """Return legacy V1 plus reviewed V1 history and stable-export V2 profiles."""
+    return (
+        legacy_payroll_seed_templates()
+        + reviewed_payroll_seed_templates()
+        + reviewed_payroll_export_seed_templates()
+    )
 
 
 def install_legacy_payroll_seed_templates(
@@ -151,10 +155,10 @@ def install_legacy_payroll_seed_templates(
     installed: list[str] = []
     existing: list[str] = []
     expected_templates = all_payroll_seed_templates()
-    current_versions: dict[str, TemplateVersion | None] = {}
+    current_versions: dict[tuple[str, int], TemplateVersion | None] = {}
     for expected in expected_templates:
         current = repository.get_version_by_key_version(expected.template_key, expected.version)
-        current_versions[expected.template_key] = current
+        current_versions[(expected.template_key, expected.version)] = current
         if current is not None and _content_fingerprint(current) != _content_fingerprint(expected):
             raise SeedTemplateConflict(
                 f"Seed {expected.template_key} version {expected.version} conflicts with "
@@ -162,17 +166,17 @@ def install_legacy_payroll_seed_templates(
             )
 
     for expected in expected_templates:
-        current = current_versions[expected.template_key]
+        current = current_versions[(expected.template_key, expected.version)]
         if current is None:
             repository.add_version(expected)
             display_name, description = _SEED_METADATA[expected.template_key]
-            repository.update_template_metadata(
-                expected.template_key, display_name, description
-            )
+            repository.update_template_metadata(expected.template_key, display_name, description)
             current = expected
-            installed.append(expected.template_key)
+            if expected.template_key not in installed:
+                installed.append(expected.template_key)
         else:
-            existing.append(expected.template_key)
+            if expected.template_key not in existing:
+                existing.append(expected.template_key)
         _install_missing_artifacts(repository, renderer, current)
     return SeedInstallResult(tuple(installed), tuple(existing))
 
@@ -264,9 +268,7 @@ def _install_missing_artifacts(
         repository.add_artifact(artifact)
 
 
-def _artifacts_are_complete(
-    artifacts: list[TemplateArtifact], expected_names: set[str]
-) -> bool:
+def _artifacts_are_complete(artifacts: list[TemplateArtifact], expected_names: set[str]) -> bool:
     if {artifact.download_name for artifact in artifacts} != expected_names:
         return False
     for artifact in artifacts:
