@@ -1,10 +1,15 @@
+from dataclasses import replace
 from datetime import date
+from hashlib import sha256
 from pathlib import Path
+from shutil import copyfile
+from zipfile import ZipFile
 
 import pytest
-from openpyxl import load_workbook
+from openpyxl import Workbook, load_workbook
 from sqlalchemy import create_engine
 
+import app.adapters.export.xlsx as xlsx_adapter
 from app.adapters.database.models import Base
 from app.adapters.database.report_definition_repository_ds import (
     SqlAlchemyReportDefinitionRepository,
@@ -38,6 +43,9 @@ from app.modules.reporting.models_ds import (
     BUILTIN_REPORT_DEFINITIONS,
     AggregateOperation,
     ExportMapping,
+    FixedCellMapping,
+    FixedTableColumn,
+    FixedTableMapping,
     ReportAggregate,
     ReportColumn,
     ReportDefinition,
@@ -662,6 +670,211 @@ def test_two_builtin_summary_definitions_generate_distinct_business_outputs(
     )
     assert employee_rows[1][1:] == ("E001", "张三", 25)
     assert work_order_rows[1][1:] == ("1001", 10)
+
+
+def test_fixed_report_copies_trusted_template_and_preserves_layout(tmp_path: Path) -> None:
+    assert hasattr(xlsx_adapter, "FixedTemplateAsset")
+    asset_path = (
+        Path(xlsx_adapter.__file__).parents[2]
+        / "modules"
+        / "reporting"
+        / "assets"
+        / "legacy_timekeeping_daily.xlsx"
+    )
+    asset_hash = sha256(asset_path.read_bytes()).hexdigest()
+    definition = ReportDefinition(
+        "TIMEKEEPING_DAILY_FIXED:1",
+        "TIMEKEEPING_DAILY_FIXED",
+        1,
+        "计时工日工资表（原格式）",
+        ReportKind.FIXED,
+        ReportDefinitionStatus.PUBLISHED,
+        worksheet="计时",
+        fixed_template_key="LEGACY_TIMEKEEPING_DAILY",
+        fixed_template_sha256=asset_hash,
+        fixed_cells=(FixedCellMapping("H2", "work_date"),),
+        fixed_table=FixedTableMapping(
+            5,
+            8,
+            (
+                FixedTableColumn("A", "employee_name"),
+                FixedTableColumn("D", "hours"),
+                FixedTableColumn("E", "assessment"),
+            ),
+        ),
+    )
+    destination = tmp_path / "fixed.xlsx"
+
+    XlsxExporter().write(
+        destination,
+        "BATCH-FIXED",
+        definition.report_key,
+        [
+            _search_result(
+                {
+                    "work_date": "2026-07-20",
+                    "worker_name": "张三",
+                    "effective_hours_1": 4,
+                    "effective_hours_2": 3.5,
+                    "assessment": "=A",
+                }
+            )
+        ],
+        {},
+        report_definition=definition,
+    )
+
+    assert sha256(asset_path.read_bytes()).hexdigest() == asset_hash
+    source_worksheet = load_workbook(asset_path, read_only=False)["计时"]
+    workbook = load_workbook(destination, read_only=False)
+    worksheet = workbook["计时"]
+    assert worksheet["A1"].value == "计时工日工资考核表"
+    assert "A1:J1" in {str(item) for item in worksheet.merged_cells.ranges}
+    assert worksheet["H2"].value == "2026-07-20"
+    assert worksheet["A5"].value == "张三"
+    assert worksheet["D5"].value == 7.5
+    assert worksheet["E5"].value == "'=A"
+    assert worksheet.page_setup.orientation == source_worksheet.page_setup.orientation
+    assert worksheet.page_setup.paperSize == source_worksheet.page_setup.paperSize
+    assert worksheet.column_dimensions["A"].width == source_worksheet.column_dimensions["A"].width
+    assert worksheet.row_dimensions[1].height == source_worksheet.row_dimensions[1].height
+
+
+def test_fixed_report_rejects_formula_template_hash_mismatch_and_row_overflow(
+    tmp_path: Path,
+) -> None:
+    assert hasattr(xlsx_adapter, "FixedTemplateAsset")
+    template = tmp_path / "unsafe.xlsx"
+    workbook = Workbook()
+    worksheet = workbook.active
+    assert worksheet is not None
+    worksheet.title = "计时"
+    worksheet["A1"] = "=1+1"
+    workbook.save(template)
+    digest = sha256(template.read_bytes()).hexdigest()
+    definition = ReportDefinition(
+        "UNSAFE_FIXED:1",
+        "UNSAFE_FIXED",
+        1,
+        "不安全固定表",
+        ReportKind.FIXED,
+        ReportDefinitionStatus.PUBLISHED,
+        worksheet="计时",
+        fixed_template_key="UNSAFE_TEMPLATE",
+        fixed_template_sha256=digest,
+        fixed_cells=(FixedCellMapping("B1", "work_date"),),
+        fixed_table=FixedTableMapping(
+            2,
+            1,
+            (FixedTableColumn("A", "employee_name"),),
+        ),
+    )
+    exporter = XlsxExporter(
+        fixed_template_assets={
+            "UNSAFE_TEMPLATE": xlsx_adapter.FixedTemplateAsset("UNSAFE_TEMPLATE", template, digest)
+        }
+    )
+
+    with pytest.raises(ValueError, match="formulas"):
+        exporter.write(
+            tmp_path / "formula.xlsx",
+            "BATCH",
+            definition.report_key,
+            [_search_result({"worker_name": "张三"})],
+            {},
+            report_definition=definition,
+        )
+    with pytest.raises(ValueError, match="hash"):
+        XlsxExporter(
+            fixed_template_assets={
+                "UNSAFE_TEMPLATE": xlsx_adapter.FixedTemplateAsset(
+                    "UNSAFE_TEMPLATE", template, "0" * 64
+                )
+            }
+        ).write(
+            tmp_path / "hash.xlsx",
+            "BATCH",
+            definition.report_key,
+            [_search_result({"worker_name": "张三"})],
+            {},
+            report_definition=definition,
+        )
+    safe_template = tmp_path / "safe.xlsx"
+    workbook["计时"]["A1"] = "标题"
+    workbook.save(safe_template)
+    safe_digest = sha256(safe_template.read_bytes()).hexdigest()
+    safe_definition = replace(definition, fixed_template_sha256=safe_digest)
+    safe_exporter = XlsxExporter(
+        fixed_template_assets={
+            "UNSAFE_TEMPLATE": xlsx_adapter.FixedTemplateAsset(
+                "UNSAFE_TEMPLATE", safe_template, safe_digest
+            )
+        }
+    )
+    with pytest.raises(ValueError, match="at most 1 rows"):
+        safe_exporter.write(
+            tmp_path / "overflow.xlsx",
+            "BATCH",
+            safe_definition.report_key,
+            [
+                _search_result({"worker_name": "张三"}),
+                _search_result({"worker_name": "李四"}),
+            ],
+            {},
+            report_definition=safe_definition,
+        )
+
+
+@pytest.mark.parametrize(
+    ("member", "message"),
+    [
+        ("xl/vbaProject.bin", "macros"),
+        ("xl/externalLinks/externalLink1.xml", "external links"),
+    ],
+)
+def test_fixed_report_rejects_macro_and_external_link_packages(
+    tmp_path: Path,
+    member: str,
+    message: str,
+) -> None:
+    base = tmp_path / "base.xlsx"
+    workbook = Workbook()
+    worksheet = workbook.active
+    assert worksheet is not None
+    worksheet.title = "计时"
+    workbook.save(base)
+    unsafe = tmp_path / f"unsafe-{message.replace(' ', '-')}.xlsx"
+    copyfile(base, unsafe)
+    with ZipFile(unsafe, "a") as package:
+        package.writestr(member, b"unsafe")
+    digest = sha256(unsafe.read_bytes()).hexdigest()
+    definition = ReportDefinition(
+        "PACKAGE_FIXED:1",
+        "PACKAGE_FIXED",
+        1,
+        "包安全测试",
+        ReportKind.FIXED,
+        ReportDefinitionStatus.PUBLISHED,
+        worksheet="计时",
+        fixed_template_key="PACKAGE_TEMPLATE",
+        fixed_template_sha256=digest,
+        fixed_cells=(FixedCellMapping("A1", "work_date"),),
+    )
+    exporter = XlsxExporter(
+        fixed_template_assets={
+            "PACKAGE_TEMPLATE": xlsx_adapter.FixedTemplateAsset("PACKAGE_TEMPLATE", unsafe, digest)
+        }
+    )
+
+    with pytest.raises(ValueError, match=message):
+        exporter.write(
+            tmp_path / "output.xlsx",
+            "BATCH",
+            definition.report_key,
+            [_search_result({"work_date": "2026-07-20"})],
+            {},
+            report_definition=definition,
+        )
 
 
 def test_export_resolves_published_definition_and_snapshots_exact_version(

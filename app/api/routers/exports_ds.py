@@ -24,6 +24,9 @@ from app.modules.identity_access.policy_ds import PermissionPolicy
 from app.modules.reporting.models_ds import (
     ExportPreview,
     ExportPreviewItem,
+    FixedCellMapping,
+    FixedTableColumn,
+    FixedTableMapping,
     ReportAggregate,
     ReportColumn,
     ReportDefinition,
@@ -294,6 +297,23 @@ def _report_definition_from_request(
         ),
         sort_by=tuple(body.sort_by),
         worksheet=body.worksheet,
+        fixed_template_key=body.fixed_template_key,
+        fixed_template_sha256=body.fixed_template_sha256,
+        fixed_cells=tuple(
+            FixedCellMapping(item.cell, item.source_field) for item in body.fixed_cells
+        ),
+        fixed_table=(
+            FixedTableMapping(
+                body.fixed_table.start_row,
+                body.fixed_table.max_rows,
+                tuple(
+                    FixedTableColumn(item.column, item.source_field)
+                    for item in body.fixed_table.columns
+                ),
+            )
+            if body.fixed_table is not None
+            else None
+        ),
     )
 
 
@@ -318,6 +338,18 @@ def _report_definition_payload(definition: ReportDefinition) -> dict[str, object
         ],
         "sort_by": list(definition.sort_by),
         "worksheet": definition.worksheet,
+        "fixed_template_key": definition.fixed_template_key,
+        "fixed_template_sha256": definition.fixed_template_sha256,
+        "fixed_cells": [asdict(item) for item in definition.fixed_cells],
+        "fixed_table": (
+            {
+                "start_row": definition.fixed_table.start_row,
+                "max_rows": definition.fixed_table.max_rows,
+                "columns": [asdict(item) for item in definition.fixed_table.columns],
+            }
+            if definition.fixed_table is not None
+            else None
+        ),
     }
 
 

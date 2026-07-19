@@ -575,7 +575,7 @@ def test_status_api_replaces_legacy_raw_export_error_with_safe_public_error(
     assert "legacy-private.xlsx" not in response.text
 
 
-def test_report_definition_api_lists_six_builtins_and_reads_exact_version(
+def test_report_definition_api_lists_builtin_definitions_and_reads_exact_version(
     tmp_path: Path,
 ) -> None:
     client, _ = _build_client(tmp_path)
@@ -591,6 +591,7 @@ def test_report_definition_api_lists_six_builtins_and_reads_exact_version(
         "PRODUCT_PROCESS_STATISTICS",
         "WORKSHOP_DAILY",
         "FINANCE_ACCOUNTING",
+        "TIMEKEEPING_DAILY_FIXED",
     }
     assert detail.status_code == 200
     assert detail.json()["kind"] == "DETAIL"
@@ -598,6 +599,16 @@ def test_report_definition_api_lists_six_builtins_and_reads_exact_version(
         "source_field": "employee_id",
         "header": "员工编号",
     }
+    fixed = client.get(
+        "/api/v1/exports/report-definitions/TIMEKEEPING_DAILY_FIXED:1",
+        headers=FINANCE,
+    )
+    assert fixed.status_code == 200
+    assert fixed.json()["fixed_template_key"] == "LEGACY_TIMEKEEPING_DAILY"
+    assert fixed.json()["fixed_template_sha256"] == (
+        "2757f427bca00dcb0f87adc854762925a601fdf3b5cd970b1056766fc30068dd"
+    )
+    assert fixed.json()["fixed_table"]["start_row"] == 5
 
 
 def test_report_definition_api_creates_version_and_rejects_overwrite_or_formula(
@@ -664,3 +675,30 @@ def test_export_task_uses_exact_published_report_definition_snapshot(
     snapshot = batch.template_snapshot["report_definition"]
     assert snapshot["definition_id"] == "PAYROLL_DETAIL:1"
     assert snapshot["status"] == "PUBLISHED"
+
+
+def test_fixed_report_export_snapshots_asset_hash_and_controlled_mapping(
+    tmp_path: Path,
+) -> None:
+    client, services = _build_client(tmp_path)
+
+    created = client.post(
+        "/api/v1/exports",
+        headers={**FINANCE, "Idempotency-Key": "fixed-report-export"},
+        json={
+            "export_type": "TIMEKEEPING_DAILY_FIXED",
+            "report_definition_id": "TIMEKEEPING_DAILY_FIXED:1",
+            "filters": {"form_id": "FORM-VALID"},
+        },
+    )
+
+    assert created.status_code == 202
+    task = services.tasks.get(created.json()["task_id"])
+    assert task.status.value == "SUCCEEDED"
+    batch = services.repository.get_export_batch_by_task(task.task_id)
+    assert batch is not None
+    snapshot = batch.template_snapshot["report_definition"]
+    assert snapshot["fixed_template_sha256"] == (
+        "2757f427bca00dcb0f87adc854762925a601fdf3b5cd970b1056766fc30068dd"
+    )
+    assert snapshot["fixed_cells"] == ({"cell": "H2", "source_field": "work_date"},)

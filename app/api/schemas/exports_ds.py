@@ -101,6 +101,28 @@ class ReportAggregateRequest(BaseModel):
     header: str = Field(min_length=1)
 
 
+class FixedCellMappingRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    cell: str = Field(pattern=r"^[A-Z]{1,3}[1-9][0-9]*$")
+    source_field: str = Field(pattern=r"^[A-Za-z][A-Za-z0-9_]*$")
+
+
+class FixedTableColumnRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    column: str = Field(pattern=r"^[A-Z]{1,3}$")
+    source_field: str = Field(pattern=r"^[A-Za-z][A-Za-z0-9_]*$")
+
+
+class FixedTableMappingRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    start_row: int = Field(ge=1)
+    max_rows: int = Field(ge=1)
+    columns: list[FixedTableColumnRequest] = Field(min_length=1)
+
+
 class ReportDefinitionCreateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -116,6 +138,10 @@ class ReportDefinitionCreateRequest(BaseModel):
     aggregates: list[ReportAggregateRequest] = Field(default_factory=list)
     sort_by: list[str] = Field(default_factory=list)
     worksheet: str = Field(default="报表", min_length=1, max_length=31)
+    fixed_template_key: str | None = Field(default=None, pattern=r"^[A-Za-z][A-Za-z0-9_]*$")
+    fixed_template_sha256: str | None = Field(default=None, pattern=r"^[0-9a-fA-F]{64}$")
+    fixed_cells: list[FixedCellMappingRequest] = Field(default_factory=list)
+    fixed_table: FixedTableMappingRequest | None = None
 
 
 class ReportDefinitionResponse(ReportDefinitionCreateRequest):

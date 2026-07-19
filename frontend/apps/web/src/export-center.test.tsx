@@ -102,6 +102,7 @@ function makeApi(overrides: Partial<ExportCenterApi> = {}): ExportCenterApi {
         aggregates: [],
         sort_by: [],
         worksheet: "工资明细",
+        fixed_cells: [],
       },
     ]),
     ...overrides,
@@ -141,6 +142,7 @@ describe("ExportCenter", () => {
           aggregates: [],
           sort_by: [],
           worksheet: "自定义报表",
+          fixed_cells: [],
         },
       ]),
     });

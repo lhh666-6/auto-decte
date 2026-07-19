@@ -5,8 +5,12 @@ from sqlalchemy.orm import Session
 
 from app.adapters.database.models import ReportDefinitionVersionRow
 from app.modules.reporting.models_ds import (
+    BUILTIN_FIXED_REPORT_DEFINITIONS,
     BUILTIN_REPORT_DEFINITIONS,
     AggregateOperation,
+    FixedCellMapping,
+    FixedTableColumn,
+    FixedTableMapping,
     ReportAggregate,
     ReportColumn,
     ReportDefinition,
@@ -71,7 +75,7 @@ class SqlAlchemyReportDefinitionRepository:
 def install_builtin_report_definitions(
     repository: SqlAlchemyReportDefinitionRepository,
 ) -> None:
-    for definition in BUILTIN_REPORT_DEFINITIONS:
+    for definition in (*BUILTIN_REPORT_DEFINITIONS, *BUILTIN_FIXED_REPORT_DEFINITIONS):
         repository.add(definition)
 
 
@@ -100,12 +104,31 @@ def _to_row(definition: ReportDefinition) -> ReportDefinitionVersionRow:
             ],
             "sort_by": list(definition.sort_by),
             "worksheet": definition.worksheet,
+            "fixed_template_key": definition.fixed_template_key,
+            "fixed_template_sha256": definition.fixed_template_sha256,
+            "fixed_cells": [
+                {"cell": item.cell, "source_field": item.source_field}
+                for item in definition.fixed_cells
+            ],
+            "fixed_table": (
+                {
+                    "start_row": definition.fixed_table.start_row,
+                    "max_rows": definition.fixed_table.max_rows,
+                    "columns": [
+                        {"column": item.column, "source_field": item.source_field}
+                        for item in definition.fixed_table.columns
+                    ],
+                }
+                if definition.fixed_table is not None
+                else None
+            ),
         },
     )
 
 
 def _from_row(row: ReportDefinitionVersionRow) -> ReportDefinition:
     config = row.configuration
+    fixed_table = config.get("fixed_table")
     return ReportDefinition(
         definition_id=row.definition_id,
         report_key=row.report_key,
@@ -128,4 +151,22 @@ def _from_row(row: ReportDefinitionVersionRow) -> ReportDefinition:
         ),
         sort_by=tuple(config.get("sort_by", [])),
         worksheet=config.get("worksheet", "报表"),
+        fixed_template_key=config.get("fixed_template_key"),
+        fixed_template_sha256=config.get("fixed_template_sha256"),
+        fixed_cells=tuple(
+            FixedCellMapping(item["cell"], item["source_field"])
+            for item in config.get("fixed_cells", [])
+        ),
+        fixed_table=(
+            FixedTableMapping(
+                fixed_table["start_row"],
+                fixed_table["max_rows"],
+                tuple(
+                    FixedTableColumn(item["column"], item["source_field"])
+                    for item in fixed_table["columns"]
+                ),
+            )
+            if fixed_table is not None
+            else None
+        ),
     )

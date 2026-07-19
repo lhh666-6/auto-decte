@@ -83,6 +83,14 @@ export interface ReportDefinition {
   }>;
   sort_by: string[];
   worksheet: string;
+  fixed_template_key?: string;
+  fixed_template_sha256?: string;
+  fixed_cells: Array<{ cell: string; source_field: string }>;
+  fixed_table?: {
+    start_row: number;
+    max_rows: number;
+    columns: Array<{ column: string; source_field: string }>;
+  };
 }
 
 export interface CreateExportResponse {

@@ -545,4 +545,16 @@ def _report_definition_snapshot(definition: ReportDefinition) -> dict[str, objec
         ],
         "sort_by": list(definition.sort_by),
         "worksheet": definition.worksheet,
+        "fixed_template_key": definition.fixed_template_key,
+        "fixed_template_sha256": definition.fixed_template_sha256,
+        "fixed_cells": [asdict(item) for item in definition.fixed_cells],
+        "fixed_table": (
+            {
+                "start_row": definition.fixed_table.start_row,
+                "max_rows": definition.fixed_table.max_rows,
+                "columns": [asdict(item) for item in definition.fixed_table.columns],
+            }
+            if definition.fixed_table is not None
+            else None
+        ),
     }

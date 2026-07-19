@@ -1,13 +1,16 @@
 """Traceable four-sheet XLSX writer."""
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
+from dataclasses import dataclass
 from decimal import Decimal
 from functools import reduce
+from hashlib import sha256
 from operator import add
 from pathlib import Path
 from typing import Any
+from zipfile import ZipFile
 
-from openpyxl import Workbook
+from openpyxl import Workbook, load_workbook
 
 from app.application.query_forms import SearchResult
 from app.modules.reporting.models_ds import (
@@ -20,6 +23,13 @@ from app.modules.reporting.models_ds import (
 
 
 class XlsxExporter:
+    def __init__(
+        self,
+        *,
+        fixed_template_assets: Mapping[str, "FixedTemplateAsset"] | None = None,
+    ) -> None:
+        self._fixed_template_assets = dict(fixed_template_assets or DEFAULT_FIXED_TEMPLATE_ASSETS)
+
     def write(
         self,
         destination: Path,
@@ -86,13 +96,16 @@ class XlsxExporter:
         _neutralize_text_cells(workbook)
         workbook.save(destination)
 
-    @staticmethod
     def _write_report(
+        self,
         destination: Path,
         batch_id: str,
         rows: list[SearchResult],
         definition: ReportDefinition,
     ) -> None:
+        if definition.kind is ReportKind.FIXED and definition.fixed_template_key:
+            self._write_fixed_report(destination, rows, definition)
+            return
         workbook = Workbook()
         worksheet = workbook.active
         assert worksheet is not None
@@ -142,6 +155,63 @@ class XlsxExporter:
                 )
         destination.parent.mkdir(parents=True, exist_ok=True)
         _neutralize_text_cells(workbook)
+        workbook.save(destination)
+
+    def _write_fixed_report(
+        self,
+        destination: Path,
+        rows: list[SearchResult],
+        definition: ReportDefinition,
+    ) -> None:
+        template_key = definition.fixed_template_key
+        expected_hash = definition.fixed_template_sha256
+        assert template_key is not None
+        assert expected_hash is not None
+        asset = self._fixed_template_assets.get(template_key)
+        if asset is None:
+            raise ValueError(f"unknown fixed template asset: {template_key}")
+        if asset.path.suffix.casefold() != ".xlsx":
+            raise ValueError("fixed template must be a macro-free .xlsx file")
+        actual_hash = sha256(asset.path.read_bytes()).hexdigest()
+        if actual_hash != asset.sha256 or actual_hash != expected_hash.casefold():
+            raise ValueError("fixed template hash does not match the published definition")
+        with ZipFile(asset.path) as package:
+            members = {name.casefold() for name in package.namelist()}
+        if any(name.endswith("vbaproject.bin") for name in members):
+            raise ValueError("fixed template must not contain macros")
+        if any(name.startswith("xl/externallinks/") for name in members):
+            raise ValueError("fixed template must not contain external links")
+        workbook = load_workbook(asset.path, data_only=False, keep_links=True)
+        if getattr(workbook, "_external_links", []):
+            raise ValueError("fixed template must not contain external links")
+        if any(
+            cell.data_type == "f"
+            for worksheet in workbook.worksheets
+            for row in worksheet.iter_rows()
+            for cell in row
+        ):
+            raise ValueError("fixed template must not contain formulas")
+        if definition.worksheet not in workbook.sheetnames:
+            raise ValueError(f"fixed template does not contain worksheet {definition.worksheet!r}")
+        worksheet = workbook[definition.worksheet]
+        ordered_rows = sorted(rows, key=lambda row: _report_sort_key(row, definition.sort_by))
+        representative = ordered_rows[0] if ordered_rows else None
+        if representative is not None:
+            for mapping in definition.fixed_cells:
+                worksheet[mapping.cell] = _safe_export_value(
+                    _report_value(representative, mapping.source_field)
+                )
+        table = definition.fixed_table
+        if table is not None:
+            if len(ordered_rows) > table.max_rows:
+                raise ValueError(f"fixed template accepts at most {table.max_rows} rows")
+            for offset, result in enumerate(ordered_rows):
+                row_number = table.start_row + offset
+                for column in table.columns:
+                    worksheet[f"{column.column}{row_number}"] = _safe_export_value(
+                        _report_value(result, column.source_field)
+                    )
+        destination.parent.mkdir(parents=True, exist_ok=True)
         workbook.save(destination)
 
     @staticmethod
@@ -219,6 +289,13 @@ def _neutralize_text_cells(workbook: Workbook) -> None:
                 cell.data_type = "s"
 
 
+def _safe_export_value(value: object) -> Any:
+    if not isinstance(value, str):
+        return value
+    text = value.lstrip("\ufeff")
+    return f"'{text}" if text.startswith(("=", "+", "-", "@")) else text
+
+
 def _validate_mappings(mappings: tuple[ExportMapping, ...]) -> None:
     worksheet_names: dict[str, str] = {}
     fields_by_column: dict[tuple[str, str, str, str], str] = {}
@@ -266,6 +343,13 @@ def _report_value(result: SearchResult, field_name: str) -> object:
         "workshop_id": ("team_name",),
         "unit_price": ("piece_rate",),
         "amount": ("calculated_wage", "task_reward", "furnace_wage"),
+        "fact_description": ("exception_reason",),
+        "assessment": ("assessment_result",),
+        "labor_attitude": ("labor_assessment",),
+        "cost_saving": ("cost_assessment",),
+        "safety_prevention": ("safety_assessment",),
+        "five_s": ("workplace_5s_assessment",),
+        "equipment_maintenance": ("equipment_assessment",),
     }
     for alias in aliases.get(field_name, ()):
         if alias in values:
@@ -288,7 +372,47 @@ def _report_value(result: SearchResult, field_name: str) -> object:
                 ):
                     raise ValueError(f"quantity source {prefix!r} must be numeric")
                 return reduce(add, matching)
+    if field_name == "hours":
+        matching = [
+            value
+            for key, value in values.items()
+            if key.startswith("effective_hours_") and value not in (None, "")
+        ]
+        if matching:
+            if not all(
+                isinstance(value, int | float | Decimal) and not isinstance(value, bool)
+                for value in matching
+            ):
+                raise ValueError("hours sources must be numeric")
+            return reduce(add, matching)
+    if field_name == "time_range":
+        ranges = []
+        for suffix in ("1", "2"):
+            start = values.get(f"start_time_{suffix}")
+            end = values.get(f"end_time_{suffix}")
+            if start not in (None, "") and end not in (None, ""):
+                ranges.append(f"{start}-{end}")
+        return "；".join(ranges) if ranges else None
     return None
+
+
+@dataclass(frozen=True, slots=True)
+class FixedTemplateAsset:
+    key: str
+    path: Path
+    sha256: str
+
+
+_LEGACY_TIMEKEEPING_ASSET = (
+    Path(__file__).parents[2] / "modules" / "reporting" / "assets" / "legacy_timekeeping_daily.xlsx"
+)
+DEFAULT_FIXED_TEMPLATE_ASSETS: Mapping[str, FixedTemplateAsset] = {
+    "LEGACY_TIMEKEEPING_DAILY": FixedTemplateAsset(
+        "LEGACY_TIMEKEEPING_DAILY",
+        _LEGACY_TIMEKEEPING_ASSET,
+        "2757f427bca00dcb0f87adc854762925a601fdf3b5cd970b1056766fc30068dd",
+    )
+}
 
 
 def _report_sort_key(result: SearchResult, fields: tuple[str, ...]) -> tuple[tuple[bool, str], ...]:
