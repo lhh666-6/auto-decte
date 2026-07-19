@@ -46,12 +46,15 @@ const EMPTY_FILTERS: ExportFilters = {
 export function ExportCenter({ api }: ExportCenterProps) {
   const client = useMemo<ExportCenterApi>(() => api ?? new ExportApi("/api/v1"), [api]);
   const [filters, setFilters] = useState<ExportFilters>(EMPTY_FILTERS);
-  const [exportType, setExportType] = useState("PAYROLL");
+  const [activeTab, setActiveTab] = useState<"quick" | "custom" | "history">("quick");
+  const [exportType, setExportType] = useState("PAYROLL_DETAIL");
+  const [quickPreview, setQuickPreview] = useState<ExportPreview | null>(null);
   const [previewSnapshot, setPreviewSnapshot] = useState<PreviewSnapshot | null>(null);
   const [batches, setBatches] = useState<ExportBatch[]>([]);
   const [batchDetail, setBatchDetail] = useState<ExportBatch | null>(null);
   const [task, setTask] = useState<ExportTask | null>(null);
   const [previewing, setPreviewing] = useState(false);
+  const [quickPreviewing, setQuickPreviewing] = useState(false);
   const [creating, setCreating] = useState(false);
   const [needsRecheck, setNeedsRecheck] = useState(false);
   const [lastSupersedesBatchId, setLastSupersedesBatchId] = useState<string | undefined>();
@@ -60,6 +63,7 @@ export function ExportCenter({ api }: ExportCenterProps) {
   const [error, setError] = useState<string | null>(null);
   const mounted = useRef(true);
   const pollingController = useRef<AbortController | null>(null);
+  const quickPreviewController = useRef<AbortController | null>(null);
   const previewController = useRef<AbortController | null>(null);
   const previewGeneration = useRef(0);
   const batchGeneration = useRef(0);
@@ -70,6 +74,7 @@ export function ExportCenter({ api }: ExportCenterProps) {
     return () => {
       mounted.current = false;
       pollingController.current?.abort();
+      quickPreviewController.current?.abort();
       previewController.current?.abort();
     };
   }, []);
@@ -87,6 +92,27 @@ export function ExportCenter({ api }: ExportCenterProps) {
   useEffect(() => {
     void refreshBatches();
   }, [refreshBatches]);
+
+  const loadQuickPreview = useCallback(async () => {
+    quickPreviewController.current?.abort();
+    const controller = new AbortController();
+    quickPreviewController.current = controller;
+    setQuickPreviewing(true);
+    setError(null);
+    try {
+      const result = await client.preview(normalizeFilters(EMPTY_FILTERS), controller.signal);
+      if (mounted.current && !controller.signal.aborted) setQuickPreview(result);
+    } catch (cause) {
+      if (!isAbortError(cause) && mounted.current) setError(toMessage(cause));
+    } finally {
+      if (quickPreviewController.current === controller) quickPreviewController.current = null;
+      if (mounted.current && !controller.signal.aborted) setQuickPreviewing(false);
+    }
+  }, [client]);
+
+  useEffect(() => {
+    void loadQuickPreview();
+  }, [loadQuickPreview]);
 
   function changeFilter<K extends keyof ExportFilters>(key: K, value: ExportFilters[K]) {
     const nextValue = key === "export_status"
@@ -152,12 +178,16 @@ export function ExportCenter({ api }: ExportCenterProps) {
     }
   }
 
-  async function createExport(supersedesBatchId?: string) {
-    const activePreview = previewSnapshot;
+  async function createExport(
+    supersedesBatchId?: string,
+    activePreview: PreviewSnapshot | null = previewSnapshot,
+    requestedExportType = exportType,
+    requireCurrentGeneration = true,
+  ) {
     if (
       !activePreview?.result.included.length ||
-      activePreview.generation !== previewGeneration.current ||
-      !exportType.trim()
+      (requireCurrentGeneration && activePreview.generation !== previewGeneration.current) ||
+      !requestedExportType.trim()
     ) return;
     if (activePreview.filters.export_status === "REEXPORT_REQUIRED" && !supersedesBatchId) return;
     setLastSupersedesBatchId(supersedesBatchId);
@@ -171,7 +201,7 @@ export function ExportCenter({ api }: ExportCenterProps) {
     let createdTaskId: string | null = null;
     try {
       const created = await client.create({
-        export_type: exportType.trim(),
+        export_type: requestedExportType.trim(),
         filters: activePreview.filters,
         ...(supersedesBatchId ? { supersedes_batch_id: supersedesBatchId } : {}),
       }, makeIdempotencyKey());
@@ -257,6 +287,10 @@ export function ExportCenter({ api }: ExportCenterProps) {
     ? batches.find((batch) => batch.task_id === task.task_id)
     : undefined;
   const failedTask = task && ["FAILED", "CANCELLED", "INTERRUPTED"].includes(task.status);
+  const quickSnapshot: PreviewSnapshot | null = quickPreview
+    ? { result: quickPreview, filters: normalizeFilters(EMPTY_FILTERS), generation: -1 }
+    : null;
+  const summaryPreview = activeTab === "quick" ? quickPreview : preview;
 
   return (
     <main className="export-center">
@@ -267,24 +301,40 @@ export function ExportCenter({ api }: ExportCenterProps) {
           <p>选择并检查最终数据，生成 Excel，再从受控入口下载文件。</p>
         </div>
         <div className="export-center-summary" aria-label="导出摘要">
-          <span><strong>{preview?.included.length ?? "—"}</strong> 拟包含</span>
-          <span><strong>{preview?.excluded.length ?? "—"}</strong> 已排除</span>
+          <span><strong>{summaryPreview?.included.length ?? "—"}</strong> 拟包含</span>
+          <span><strong>{summaryPreview?.excluded.length ?? "—"}</strong> 已排除</span>
           <span><strong>{batches.length}</strong> 导出记录</span>
         </div>
       </header>
 
-      <nav className="export-steps" aria-label="导出步骤">
+      <nav className="export-mode-tabs" aria-label="导出方式" role="tablist">
+        <button type="button" role="tab" aria-selected={activeTab === "quick"} className={activeTab === "quick" ? "active" : ""} onClick={() => setActiveTab("quick")}>快速导出</button>
+        <button type="button" role="tab" aria-selected={activeTab === "custom"} className={activeTab === "custom" ? "active" : ""} onClick={() => setActiveTab("custom")}>自定义导出</button>
+        <button type="button" role="tab" aria-selected={activeTab === "history"} className={activeTab === "history" ? "active" : ""} onClick={() => setActiveTab("history")}>导出记录</button>
+      </nav>
+
+      {activeTab === "quick" && (
+        <section className="quick-export-card" aria-label="快速导出摘要">
+          <div><span className="eyebrow">默认导出未导出的已确认记录</span><h2>可以导出 {quickPreview?.included.length ?? "—"} 条</h2><p>需要处理 {quickPreview?.excluded.length ?? "—"} 条</p></div>
+          <div className="quick-export-actions">
+            <button type="button" className="button button-secondary" disabled={quickPreviewing || creating} onClick={() => void loadQuickPreview()}>{quickPreviewing ? "正在检查…" : "刷新数量"}</button>
+            <button type="button" className="button button-primary" disabled={!quickPreview?.included.length || creating} onClick={() => void createExport(undefined, quickSnapshot, "PAYROLL_DETAIL", false)}>{creating ? "正在生成…" : "一键生成 Excel"}</button>
+          </div>
+        </section>
+      )}
+
+      {activeTab === "custom" && <nav className="export-steps" aria-label="导出步骤">
         <ol>
           <li><span>1</span><h2>选择数据</h2></li>
           <li><span>2</span><h2>检查数据</h2></li>
           <li><span>3</span><h2>生成并下载</h2></li>
         </ol>
-      </nav>
+      </nav>}
 
       {error && <ProblemNotice title="导出操作没有完成" reason={error} actionLabel="返回并重新检查数据" onAction={() => setError(null)} />}
       {message && <div className="success-banner export-center-message" role="status">{message}</div>}
 
-      <section className="export-filter-card" aria-labelledby="export-filter-title">
+      {activeTab === "custom" && <section className="export-filter-card" aria-labelledby="export-filter-title">
         <div className="export-section-heading">
           <div>
             <span className="eyebrow">第一步 · 选择数据</span>
@@ -318,9 +368,14 @@ export function ExportCenter({ api }: ExportCenterProps) {
             </select>
           </label>
           <label>
-            文件用途
+            报表类型
             <select disabled={creating} value={exportType} onChange={(event) => changeExportType(event.target.value)}>
-              <option value="PAYROLL">工资记录</option>
+              <option value="PAYROLL_DETAIL">工资明细</option>
+              <option value="EMPLOYEE_PAYROLL_SUMMARY">员工工资汇总</option>
+              <option value="WORK_ORDER_OUTPUT_SUMMARY">工单产量汇总</option>
+              <option value="PRODUCT_PROCESS_STATISTICS">产品/工序统计</option>
+              <option value="WORKSHOP_DAILY">车间日报</option>
+              <option value="FINANCE_ACCOUNTING">财务核算表</option>
             </select>
           </label>
         </div>
@@ -335,9 +390,9 @@ export function ExportCenter({ api }: ExportCenterProps) {
             <span>记录在上次导出后发生修改；选择包含旧数据的导出记录；系统生成修正版；旧文件继续保留。</span>
           </div>
         )}
-      </section>
+      </section>}
 
-      {preview && (
+      {activeTab === "custom" && preview && (
         <section className="export-preview-grid" aria-label="导出预览结果">
           <div className="export-preview-card included-records">
             <div className="export-section-heading compact">
@@ -397,7 +452,7 @@ export function ExportCenter({ api }: ExportCenterProps) {
         </section>
       )}
 
-      {task && (
+      {activeTab !== "history" && task && (
         <section className="export-task-card" aria-live="polite">
           <div className="export-section-heading compact">
             <div><span className="eyebrow">第三步 · 生成并下载</span><h2>{exportTaskStatusLabel(task.status)}</h2></div>
@@ -428,7 +483,7 @@ export function ExportCenter({ api }: ExportCenterProps) {
         </section>
       )}
 
-      <section className="export-history-card" role="region" aria-label="导出记录">
+      {activeTab === "history" && <section className="export-history-card" role="region" aria-label="导出记录">
         <div className="export-section-heading">
           <div><span className="eyebrow">独立记录区</span><h2>导出记录</h2></div>
           <button type="button" className="button button-secondary" onClick={() => void refreshBatches()}>刷新记录</button>
@@ -467,7 +522,7 @@ export function ExportCenter({ api }: ExportCenterProps) {
             <TraceDetails defaultOpen items={traceItems(batchDetail)} />
           </aside>
         )}
-      </section>
+      </section>}
     </main>
   );
 }
