@@ -280,10 +280,9 @@ def test_review_uses_active_master_data_options_and_blocks_unknown_codes(
     assert blocked.status_code == 422
     assert blocked.json()["failures"] == [
         {
-            "code": "INVALID_MASTER_DATA",
+            "code": "INVALID_WORKER_NUMBER",
             "field_key": "employee_id",
-            "message": "字段值不在有效主数据中",
+            "message": "工号未在员工库中匹配，必须人工处理",
         }
     ]
     assert confirmed.status_code == 200
-

@@ -618,12 +618,12 @@ A5 竖向 · V3
 
 ### Task 12：工号自动比对、姓名人工核对和角色化复核
 
-- [ ] 工号命中员工库显示“工号已匹配”。
-- [ ] 工号异常必须人工处理。
-- [ ] 姓名不得自动放行。
-- [ ] 按工人填写、质量填写、主管填写、签字确认分组。
-- [ ] 所有人工修正保留原候选、时间、操作人和原因。
-- [ ] 提交：`feat(review): validate worker number and require name confirmation`
+- [x] 工号命中员工库显示“工号已匹配”。
+- [x] 工号异常必须人工处理。
+- [x] 姓名不得自动放行。
+- [x] 按工人填写、质量填写、主管填写、签字确认分组。
+- [x] 所有人工修正保留原候选、时间、操作人和原因。
+- [x] 提交：`feat(review): validate worker number and require name confirmation`
 
 ### Task 13：重构导出数据前端流程
 

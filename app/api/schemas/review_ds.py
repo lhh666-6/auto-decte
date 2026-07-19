@@ -11,6 +11,7 @@ class ConfirmRequest(BaseModel):
     values: dict[str, object]
     reason: str = Field(min_length=1, max_length=500)
     evidence_ids: list[str] = Field(default_factory=list)
+    manually_confirmed_field_keys: list[str] = Field(default_factory=list)
 
 
 class ConfirmAndClaimNextRequest(ConfirmRequest):

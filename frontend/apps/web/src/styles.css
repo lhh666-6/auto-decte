@@ -86,6 +86,8 @@ button { cursor: pointer; }
 .evidence-shortcut-context { display: contents; }
 
 .field-table { display: grid; min-width: 0; }
+.field-group-heading { padding: 8px 12px; border-bottom: 1px solid #dbe4ef; background: #f4f7fb; color: #31516f; font-size: 12px; font-weight: 700; letter-spacing: .04em; }
+.field-confirm-button { margin-top: 4px; border: 0; padding: 0; background: transparent; color: #1d4ed8; font: inherit; font-weight: 600; cursor: pointer; text-align: left; }
 .field-row { display: grid; grid-template-columns: 1.1fr .8fr .5fr 1fr 1.25fr; align-items: center; min-height: 54px; border-bottom: 1px solid #eef2f7; padding: 0 12px; color: #334155; column-gap: 8px; font-size: 13px; text-align: left; }
 .field-row:not(.field-head) { cursor: pointer; }
 .field-row:not(.field-head):hover { background: #f8fbff; }

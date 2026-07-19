@@ -158,6 +158,7 @@ def confirm(
                 actor_id=actor.actor_id,
                 reason=body.reason,
                 evidence_ids=tuple(body.evidence_ids),
+                manually_confirmed_field_keys=tuple(body.manually_confirmed_field_keys),
                 actor=actor,
                 lease_token=body.lease_token,
             )
@@ -279,6 +280,7 @@ def confirm_and_claim_next(
                 actor_id=actor.actor_id,
                 reason=body.reason,
                 evidence_ids=tuple(body.evidence_ids),
+                manually_confirmed_field_keys=tuple(body.manually_confirmed_field_keys),
                 lease_token=body.lease_token,
                 queue_key=body.queue_key,
                 actor=actor,

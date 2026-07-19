@@ -1,7 +1,7 @@
 import type { ReviewField } from "@form-detection/api-client";
 
 import { reviewValueIssue } from "../review-model";
-import { fieldUsesAutomaticRecognition } from "./field-behavior";
+import { fieldUsesAutomaticRecognition, workerNumberIssue } from "./field-behavior";
 
 export interface FieldNavigationState {
   readonly selectedFieldId: string | null;
@@ -68,7 +68,7 @@ function fieldIssuePriority(
     : editedByName
       ? edits[field.field_name]
       : field.current_value;
-  const issue = reviewValueIssue(
+  const issue = workerNumberIssue(field, value) ?? reviewValueIssue(
     value,
     fieldUsesAutomaticRecognition(field) ? field.candidates[0]?.confidence : undefined,
     editedById || editedByName || field.current_value_source === "HUMAN_CONFIRMED",

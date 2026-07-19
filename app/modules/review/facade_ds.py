@@ -38,6 +38,7 @@ class ConfirmReviewCommand:
     actor_id: str
     reason: str
     evidence_ids: tuple[str, ...]
+    manually_confirmed_field_keys: tuple[str, ...] = ()
     actor: Actor | None = None
     lease_token: str | None = None
 
@@ -73,6 +74,7 @@ class ConfirmAndClaimNextCommand:
     evidence_ids: tuple[str, ...]
     lease_token: str
     queue_key: str
+    manually_confirmed_field_keys: tuple[str, ...] = ()
     actor: Actor | None = None
 
 
@@ -148,6 +150,7 @@ class ReviewFacade:
                 form.template_id,
                 form.template_version,
                 command.values,
+                command.manually_confirmed_field_keys,
             )
             record = self._append_confirmation(
                 uow, form, replace(command, values=normalized_values)
@@ -284,6 +287,7 @@ class ReviewFacade:
                 form.template_id,
                 form.template_version,
                 command.values,
+                command.manually_confirmed_field_keys,
             )
             record = self._append_confirmation(
                 uow,
@@ -295,6 +299,7 @@ class ReviewFacade:
                     actor_id=command.actor_id,
                     reason=command.reason,
                     evidence_ids=command.evidence_ids,
+                    manually_confirmed_field_keys=command.manually_confirmed_field_keys,
                 ),
             )
             uow.review_state.delete_draft(command.form_id)
@@ -381,6 +386,7 @@ class ReviewFacade:
         template_key: str,
         template_version: str,
         values: dict[str, object],
+        manually_confirmed_field_keys: tuple[str, ...],
     ) -> dict[str, object]:
         normalized = dict(values)
         if self._template_versions is None:
@@ -393,6 +399,7 @@ class ReviewFacade:
         if template is None:
             return normalized
         failures: list[ReviewRuleFailure] = []
+        manual_confirmations = set(manually_confirmed_field_keys)
         form_fields = uow.forms.list_form_fields(form_id)
         ids_by_name = {field.field_name: field.field_id for field in form_fields}
         for definition in template.fields:
@@ -426,15 +433,37 @@ class ReviewFacade:
             if value is None or (isinstance(value, str) and not value.strip()):
                 continue
             if (
+                definition.requires_manual_confirmation
+                and definition.field_key not in manual_confirmations
+                and (field_id is None or field_id not in manual_confirmations)
+            ):
+                failures.append(
+                    ReviewRuleFailure(
+                        "MANUAL_CONFIRMATION_REQUIRED",
+                        definition.field_key,
+                        "姓名必须对照原图裁片人工确认",
+                    )
+                )
+            if (
                 rules.master_data_source
                 and self._master_data is not None
                 and not self._master_data.is_active(rules.master_data_source, str(value))
             ):
                 failures.append(
                     ReviewRuleFailure(
-                        "INVALID_MASTER_DATA",
+                        (
+                            "INVALID_WORKER_NUMBER"
+                            if definition.field_key in {"worker_number", "employee_id"}
+                            and rules.master_data_source == "employees"
+                            else "INVALID_MASTER_DATA"
+                        ),
                         definition.field_key,
-                        "字段值不在有效主数据中",
+                        (
+                            "工号未在员工库中匹配，必须人工处理"
+                            if definition.field_key in {"worker_number", "employee_id"}
+                            and rules.master_data_source == "employees"
+                            else "字段值不在有效主数据中"
+                        ),
                     )
                 )
             if rules.allowed_values and str(value) not in rules.allowed_values:

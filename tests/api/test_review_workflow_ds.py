@@ -5,7 +5,15 @@ from typing import cast
 from fastapi.testclient import TestClient
 
 from app.api.main import create_app
-from app.domain.models import Form, FormField, RecordStatus, ReviewStatus
+from app.domain.models import (
+    EvidenceFile,
+    EvidenceType,
+    Form,
+    FormField,
+    RecognitionAttempt,
+    RecordStatus,
+    ReviewStatus,
+)
 from app.domain.templates_ds import (
     FieldDefinition,
     FieldRules,
@@ -13,6 +21,7 @@ from app.domain.templates_ds import (
     Rect,
     TemplateVersion,
 )
+from app.modules.master_data.models_ds import MasterDataCatalog
 from app.modules.review.repository_ds import SqlAlchemyReviewLeaseRepository
 from app.services.container import Services, build_services
 from config.settings import Settings
@@ -261,6 +270,156 @@ def test_confirm_and_claim_next_rolls_back_when_template_rules_block_values(
     assert services.repository.list_record_versions("FORM-1") == []
     assert SqlAlchemyReviewLeaseRepository(services.engine).get("FORM-1") is not None
     assert SqlAlchemyReviewLeaseRepository(services.engine).get("FORM-2") is None
+
+
+def test_worker_number_and_name_require_active_employee_and_explicit_manual_confirmation(
+    tmp_path: Path,
+) -> None:
+    services = build_services(Settings(data_root=tmp_path, allow_header_identity=True))
+    services.master_data.create(
+        MasterDataCatalog.EMPLOYEES,
+        "E001",
+        "张三",
+        {"team": "A班"},
+        "operator-a",
+        "建立在职员工",
+    )
+    page = PageSpec.a4_portrait()
+    template = TemplateVersion.draft("TPL-WORKER-1", "PAYROLL_WORKER", 1, page)
+    template.add_field(
+        FieldDefinition(
+            field_key="worker_number",
+            display_name="工号",
+            data_type="text",
+            input_type="text_box",
+            page=page,
+            region=Rect(0.1, 0.1, 0.2, 0.05),
+            rules=FieldRules(required=True, master_data_source="employees"),
+        )
+    )
+    template.add_field(
+        FieldDefinition(
+            field_key="worker_name",
+            display_name="姓名",
+            data_type="text",
+            input_type="text_box",
+            page=page,
+            region=Rect(0.4, 0.1, 0.2, 0.05),
+            rules=FieldRules(required=True),
+            requires_manual_confirmation=True,
+        )
+    )
+    template.mark_ready_to_publish()
+    template.publish()
+    services.template_repository.add_version(template)
+    services.repository.add_form(
+        Form("FORM-WORKER", "PAYROLL_WORKER", "1", review_status=ReviewStatus.NEEDS_REVIEW)
+    )
+    for field_name, value in (("worker_number", "E001"), ("worker_name", "候选姓名")):
+        services.repository.add_form_field(
+            FormField(
+                f"FORM-WORKER:{field_name}",
+                "FORM-WORKER",
+                field_name,
+                {"x": 10, "y": 10, "width": 80, "height": 30},
+                current_value=value,
+            )
+        )
+    services.repository.add_evidence(
+        EvidenceFile(
+            file_id="CROP-NAME",
+            form_id="FORM-WORKER",
+            type=EvidenceType.FIELD_CROP,
+            uri="controlled/CROP-NAME.png",
+            sha256="a" * 64,
+            related_field_id="FORM-WORKER:worker_name",
+        )
+    )
+    services.repository.add_recognition_attempt(
+        RecognitionAttempt(
+            attempt_id="ATTEMPT-NAME",
+            field_id="FORM-WORKER:worker_name",
+            engine="legacy-name",
+            model_version="1",
+            candidate_value="候选姓名",
+            confidence=0.99,
+            crop_file_id="CROP-NAME",
+        )
+    )
+    client = TestClient(create_app(services), raise_server_exceptions=False)
+    lease = _lease(client, "FORM-WORKER")
+    base_body = {
+        "expected_version": 0,
+        "lease_token": lease["lease_token"],
+        "reason": "核对纸面工号和姓名",
+        "evidence_ids": [],
+        "queue_key": "review",
+    }
+
+    invalid_number = client.post(
+        "/api/v1/forms/FORM-WORKER/confirm-and-claim-next",
+        headers=_headers(),
+        json={
+            **base_body,
+            "values": {
+                "FORM-WORKER:worker_number": "E999",
+                "FORM-WORKER:worker_name": "张三",
+            },
+            "manually_confirmed_field_keys": ["worker_name"],
+        },
+    )
+    missing_name_confirmation = client.post(
+        "/api/v1/forms/FORM-WORKER/confirm-and-claim-next",
+        headers=_headers(),
+        json={
+            **base_body,
+            "values": {
+                "FORM-WORKER:worker_number": "E001",
+                "FORM-WORKER:worker_name": "张三",
+            },
+        },
+    )
+    confirmed = client.post(
+        "/api/v1/forms/FORM-WORKER/confirm-and-claim-next",
+        headers=_headers(),
+        json={
+            **base_body,
+            "values": {
+                "FORM-WORKER:worker_number": "E001",
+                "FORM-WORKER:worker_name": "张三",
+            },
+            "manually_confirmed_field_keys": ["worker_name"],
+        },
+    )
+
+    assert invalid_number.status_code == 422
+    assert invalid_number.json()["failures"] == [
+        {
+            "code": "INVALID_WORKER_NUMBER",
+            "field_key": "worker_number",
+            "message": "工号未在员工库中匹配，必须人工处理",
+        }
+    ]
+    assert missing_name_confirmation.status_code == 422
+    assert missing_name_confirmation.json()["failures"] == [
+        {
+            "code": "MANUAL_CONFIRMATION_REQUIRED",
+            "field_key": "worker_name",
+            "message": "姓名必须对照原图裁片人工确认",
+        }
+    ]
+    assert confirmed.status_code == 200
+    attempts = services.repository.list_recognition_attempts("FORM-WORKER:worker_name")
+    assert attempts[0].candidate_value == "候选姓名"
+    audit = [
+        event
+        for event in services.repository.list_audit_events("FORM-WORKER")
+        if event.event_type == "CONFIRM"
+    ][0]
+    assert audit.actor_id == "reviewer-a"
+    assert audit.reason == "核对纸面工号和姓名"
+    assert isinstance(audit.timestamp, datetime)
+    assert isinstance(attempts[0].created_at, datetime)
 
 
 def test_confirm_allows_an_optional_numeric_field_to_remain_blank(tmp_path: Path) -> None:

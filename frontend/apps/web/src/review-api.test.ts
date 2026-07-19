@@ -42,6 +42,7 @@ describe("ReviewWorkbenchApi", () => {
       values: { "FIELD-1": "9" },
       reason: "人工审核工作台更正",
       evidenceIds: ["FILE-1"],
+      manuallyConfirmedFieldKeys: ["worker_name"],
     });
 
     expect(fetcher).toHaveBeenCalledWith("/api/v1/forms/FORM%2F1/confirm", {
@@ -53,6 +54,7 @@ describe("ReviewWorkbenchApi", () => {
         values: { "FIELD-1": "9" },
         reason: "人工审核工作台更正",
         evidence_ids: ["FILE-1"],
+        manually_confirmed_field_keys: ["worker_name"],
       }),
     });
   });
@@ -90,6 +92,7 @@ describe("ReviewWorkbenchApi", () => {
       reason: "确认",
       evidenceIds: [],
       queueKey: "review",
+      manuallyConfirmedFieldKeys: [],
     });
     await api.getClassificationOptions("FORM-4");
     await api.assignTemplate("FORM-4", {
@@ -123,6 +126,7 @@ describe("ReviewWorkbenchApi", () => {
       reason: "确认",
       evidenceIds: [],
       queueKey: "review",
+      manuallyConfirmedFieldKeys: [],
     });
 
     await expect(request).rejects.toEqual(expect.objectContaining({

@@ -38,6 +38,7 @@ function field(
     recognition_mode: options.confidence === undefined ? "NONE" : "HANDWRITING_OCR",
     fill_policy: options.confidence === undefined ? "MANUAL_ONLY" : "SUGGEST_ONLY",
     requires_manual_confirmation: options.requiresManualConfirmation ?? false,
+    review_group: "WORKER",
     rules: options.rules ?? null,
     source_region: {},
     current_value: currentValue,

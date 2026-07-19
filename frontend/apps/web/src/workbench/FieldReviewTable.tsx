@@ -1,7 +1,15 @@
+import { Fragment } from "react";
+
 import type { ReviewField } from "@form-detection/api-client";
 
 import { reviewValueIssue } from "../review-model";
-import { fieldUsesAutomaticRecognition } from "./field-behavior";
+import {
+  fieldReviewGroup,
+  fieldUsesAutomaticRecognition,
+  REVIEW_GROUPS,
+  workerNumberIssue,
+  workerNumberMatch,
+} from "./field-behavior";
 
 interface FieldReviewTableProps {
   fields: readonly ReviewField[];
@@ -26,6 +34,9 @@ export function FieldReviewTable({
   onHoverField,
   onEdit,
 }: FieldReviewTableProps) {
+  const orderedFields = REVIEW_GROUPS.flatMap(({ key }) => (
+    fields.filter((field) => fieldReviewGroup(field) === key)
+  ));
   return (
     <section className="field-panel" aria-label="可编辑电子表格">
       <div className="panel-toolbar"><strong>电子表格</strong><span>{fields.length} 个字段</span></div>
@@ -33,13 +44,18 @@ export function FieldReviewTable({
         <div className="field-row field-head" role="row">
           <span>字段</span><span>系统识别值</span><span>识别可靠度</span><span>最终填写值</span><span>文字状态</span>
         </div>
-        {fields.length === 0 ? <div className="table-empty">尚未加载字段</div> : fields.map((field) => {
+        {fields.length === 0 ? <div className="table-empty">尚未加载字段</div> : orderedFields.map((field, index) => {
+          const group = fieldReviewGroup(field);
+          const showGroupHeading = index === 0 || fieldReviewGroup(orderedFields[index - 1]) !== group;
           const automaticRecognition = fieldUsesAutomaticRecognition(field);
           const candidate = automaticRecognition ? field.candidates[0] : undefined;
           const displayValue = valueForField(field, edits, recordValues);
           const manuallyEdited = Object.hasOwn(edits, field.field_id) || Object.hasOwn(edits, field.field_name);
           const manuallyConfirmed = manuallyEdited || field.current_value_source === "HUMAN_CONFIRMED";
-          const issue = ruleFailures[field.field_id] ?? ruleFailures[field.field_name] ?? reviewValueIssue(
+          const issue = ruleFailures[field.field_id] ?? ruleFailures[field.field_name] ?? workerNumberIssue(
+            field,
+            displayValue,
+          ) ?? reviewValueIssue(
             displayValue,
             candidate?.confidence,
             manuallyConfirmed,
@@ -47,9 +63,16 @@ export function FieldReviewTable({
             field.rules,
             field.requires_manual_confirmation,
           );
+          const workerMatch = workerNumberMatch(field, displayValue);
           const label = field.display_name ?? field.field_name;
           return (
-            <div
+            <Fragment key={field.field_id}>
+              {showGroupHeading ? (
+                <div className="field-group-heading">
+                  {REVIEW_GROUPS.find((item) => item.key === group)?.label ?? group}
+                </div>
+              ) : null}
+              <div
               id={`review-field-row-${field.field_id}`}
               className={[
                 "field-row",
@@ -57,7 +80,6 @@ export function FieldReviewTable({
                 field.field_id === hoveredFieldId ? "hovered" : "",
                 issue ? "has-warning" : "",
               ].filter(Boolean).join(" ")}
-              key={field.field_id}
               role="row"
               tabIndex={0}
               onClick={() => onSelectField(field.field_id)}
@@ -95,10 +117,29 @@ export function FieldReviewTable({
                   />
                 )}
               </label>
-              <span>{issue
-                ? <><em className="inline-warning">待确认</em><small className="field-rule-message">{issue}</small></>
-                : <em className="inline-success">已就绪</em>}</span>
-            </div>
+              <span>{issue ? (
+                <>
+                  <em className="inline-warning">待确认</em>
+                  <small className="field-rule-message">{issue}</small>
+                  {field.requires_manual_confirmation && !manuallyConfirmed &&
+                  stringValue(displayValue).trim() ? (
+                    <button
+                      type="button"
+                      className="field-confirm-button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onEdit(field.field_id, stringValue(displayValue));
+                      }}
+                    >确认姓名与原图一致</button>
+                  ) : null}
+                </>
+              ) : (
+                <em className="inline-success">
+                  {workerMatch === "MATCHED" ? "工号已匹配" : "已就绪"}
+                </em>
+              )}</span>
+              </div>
+            </Fragment>
           );
         })}
       </div>

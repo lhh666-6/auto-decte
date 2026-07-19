@@ -19,6 +19,8 @@ export interface RecognitionCandidate {
   crop_file_id: string;
 }
 
+export type ReviewGroup = "WORKER" | "QUALITY" | "SUPERVISOR" | "SIGNATURE";
+
 export interface ReviewField {
   field_id: string;
   field_name: string;
@@ -29,6 +31,7 @@ export interface ReviewField {
   recognition_mode: string | null;
   fill_policy: string | null;
   requires_manual_confirmation: boolean;
+  review_group: ReviewGroup;
   rules: ReviewFieldRules | null;
   source_region: Record<string, number>;
   current_value: unknown;
@@ -190,6 +193,7 @@ export class ReviewWorkbenchApi {
       values: Record<string, unknown>;
       reason: string;
       evidenceIds: string[];
+      manuallyConfirmedFieldKeys: string[];
     },
   ): Promise<{ record_id: string; version: number; status: string }> {
     return this.request(`/forms/${encodeURIComponent(formId)}/confirm`, {
@@ -201,6 +205,7 @@ export class ReviewWorkbenchApi {
         values: input.values,
         reason: input.reason,
         evidence_ids: input.evidenceIds,
+        manually_confirmed_field_keys: input.manuallyConfirmedFieldKeys,
       },
     });
   }
@@ -238,6 +243,7 @@ export class ReviewWorkbenchApi {
     input: ReviewActionInput & {
       values: Record<string, unknown>;
       queueKey: "review";
+      manuallyConfirmedFieldKeys: string[];
     },
   ): Promise<ConfirmAndClaimNextResult> {
     return this.request(`/forms/${encodeURIComponent(formId)}/confirm-and-claim-next`, {
@@ -249,6 +255,7 @@ export class ReviewWorkbenchApi {
         values: input.values,
         reason: input.reason,
         evidence_ids: input.evidenceIds,
+        manually_confirmed_field_keys: input.manuallyConfirmedFieldKeys,
         queue_key: input.queueKey,
       },
     });

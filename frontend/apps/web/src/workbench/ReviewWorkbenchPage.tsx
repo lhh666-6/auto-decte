@@ -24,7 +24,7 @@ import { ClassificationStage } from "./ClassificationStage";
 import { RecaptureStage } from "./RecaptureStage";
 import { FieldDetailPanel } from "./FieldDetailPanel";
 import { FieldReviewTable } from "./FieldReviewTable";
-import { fieldUsesAutomaticRecognition } from "./field-behavior";
+import { fieldUsesAutomaticRecognition, workerNumberIssue } from "./field-behavior";
 import { selectFirstIssueFieldId } from "./field-navigation";
 import { WorkbenchActionBar } from "./WorkbenchActionBar";
 import { WorkbenchEmptyState, WorkbenchErrorNotice } from "./WorkbenchEmptyState";
@@ -93,7 +93,7 @@ export function ReviewWorkbenchPage({
   const issueFieldIds = detail?.fields.filter((field) => {
     const best = fieldUsesAutomaticRecognition(field) ? field.candidates[0] : undefined;
     const value = fieldValue(detail, field, edits);
-    return Boolean(ruleFailures[field.field_name] ?? reviewValueIssue(
+    return Boolean(ruleFailures[field.field_name] ?? workerNumberIssue(field, value) ?? reviewValueIssue(
       value, best?.confidence,
       Object.hasOwn(edits, field.field_id) || Object.hasOwn(edits, field.field_name) ||
         field.current_value_source === "HUMAN_CONFIRMED",
@@ -276,6 +276,7 @@ export function ReviewWorkbenchPage({
         })),
         edits,
       );
+      const manuallyConfirmedFieldKeys = manualConfirmationKeys(detail, edits);
       if (detail.form.current_record_version > 0) {
         const formId = detail.form.form_id;
         await api.confirm(formId, {
@@ -284,6 +285,7 @@ export function ReviewWorkbenchPage({
           values,
           reason: "人工审核工作台更正",
           evidenceIds: detail.evidence.map((evidence) => evidence.file_id),
+          manuallyConfirmedFieldKeys,
         });
         const [updatedDetail, updatedHistory] = await Promise.all([
           api.getWorkbench(formId),
@@ -316,6 +318,7 @@ export function ReviewWorkbenchPage({
         reason: "人工审核工作台确认",
         evidenceIds: detail.evidence.map((evidence) => evidence.file_id),
         queueKey: "review",
+        manuallyConfirmedFieldKeys,
       });
       await notificationPort.notify({
         title: "表单已确认",
@@ -820,6 +823,19 @@ function fieldValue(
   edits: Readonly<Record<string, unknown>>,
 ): unknown {
   return valueForField(field, edits, detail?.current_record?.values ?? {});
+}
+
+function manualConfirmationKeys(
+  detail: WorkbenchDetail,
+  edits: Readonly<Record<string, unknown>>,
+): string[] {
+  return detail.fields.filter((field) => (
+    field.requires_manual_confirmation && (
+      Object.hasOwn(edits, field.field_id) ||
+      Object.hasOwn(edits, field.field_name) ||
+      field.current_value_source === "HUMAN_CONFIRMED"
+    )
+  )).map((field) => field.field_name);
 }
 
 function valueForField(

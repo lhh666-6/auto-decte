@@ -41,6 +41,20 @@ def _enum_value(value: Enum | None) -> str | None:
     return str(value.value) if value is not None else None
 
 
+def _review_group(field_name: str, paper_entry_mode: Enum | None) -> str:
+    if _enum_value(paper_entry_mode) == "SIGNATURE" or field_name.endswith("_signature"):
+        return "SIGNATURE"
+    if field_name == "facts_description" or field_name.startswith(
+        ("assessment_", "qualified_", "defective_", "rework_", "scrap_")
+    ):
+        return "QUALITY"
+    if field_name == "planned_batch" or field_name.endswith(
+        ("_rate", "_price", "_wage", "_deduction", "_bonus")
+    ):
+        return "SUPERVISOR"
+    return "WORKER"
+
+
 def _actor(request: Request, services: Services) -> Actor:
     return get_current_actor(request, services)
 
@@ -236,6 +250,12 @@ def build_workbench_response(
                     template_fields[field.field_name].requires_manual_confirmation
                     if field.field_name in template_fields
                     else False
+                ),
+                review_group=_review_group(
+                    field.field_name,
+                    template_fields[field.field_name].paper_entry_mode
+                    if field.field_name in template_fields
+                    else None,
                 ),
                 rules=(
                     FieldRulesResponse(

@@ -1,4 +1,11 @@
-import type { ReviewField } from "@form-detection/api-client";
+import type { ReviewField, ReviewGroup } from "@form-detection/api-client";
+
+export const REVIEW_GROUPS: ReadonlyArray<{ key: ReviewGroup; label: string }> = [
+  { key: "WORKER", label: "工人填写" },
+  { key: "QUALITY", label: "质量填写" },
+  { key: "SUPERVISOR", label: "主管填写" },
+  { key: "SIGNATURE", label: "签字确认" },
+];
 
 const PAPER_ENTRY_LABELS: Readonly<Record<string, string>> = {
   HANDWRITTEN_TEXT: "手写文字",
@@ -42,6 +49,48 @@ export function fieldBehaviorSummary(field: ReviewField): string {
   );
   const fill = label(FILL_POLICY_LABELS, field.fill_policy, "填入方式未配置");
   return `${paper} · ${recognition} · ${fill}`;
+}
+
+export function fieldReviewGroup(field: ReviewField): ReviewGroup {
+  if (field.review_group) return field.review_group;
+  if (field.paper_entry_mode === "SIGNATURE" || field.field_name.endsWith("_signature")) {
+    return "SIGNATURE";
+  }
+  if (
+    field.field_name === "facts_description" ||
+    /^(assessment_|qualified_|defective_|rework_|scrap_)/.test(field.field_name)
+  ) {
+    return "QUALITY";
+  }
+  if (
+    field.field_name === "planned_batch" ||
+    /(_rate|_price|_wage|_deduction|_bonus)$/.test(field.field_name)
+  ) {
+    return "SUPERVISOR";
+  }
+  return "WORKER";
+}
+
+export type WorkerNumberMatch = "NOT_WORKER_NUMBER" | "EMPTY" | "MATCHED" | "UNMATCHED";
+
+export function workerNumberMatch(field: ReviewField, value: unknown): WorkerNumberMatch {
+  if (
+    !["worker_number", "employee_id"].includes(field.field_name) ||
+    field.rules?.master_data_source !== "employees"
+  ) {
+    return "NOT_WORKER_NUMBER";
+  }
+  const normalized = value === null || value === undefined ? "" : String(value).trim();
+  if (!normalized) return "EMPTY";
+  return field.rules.master_data_options.some((option) => option.value === normalized)
+    ? "MATCHED"
+    : "UNMATCHED";
+}
+
+export function workerNumberIssue(field: ReviewField, value: unknown): string | null {
+  return workerNumberMatch(field, value) === "UNMATCHED"
+    ? "工号未在员工库中匹配，必须人工处理"
+    : null;
 }
 
 function label(

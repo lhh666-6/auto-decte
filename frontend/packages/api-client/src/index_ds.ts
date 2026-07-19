@@ -43,6 +43,7 @@ export {
   type RecognitionCandidate,
   type RecordVersion,
   type ReviewField,
+  type ReviewGroup,
   type ReviewFieldRules,
   type ReviewRuleFailure,
   type ReviewDraft,

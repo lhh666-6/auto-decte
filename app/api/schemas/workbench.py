@@ -51,6 +51,7 @@ class FieldResponse(BaseModel):
     recognition_mode: str | None
     fill_policy: str | None
     requires_manual_confirmation: bool
+    review_group: str
     rules: FieldRulesResponse | None
     source_region: dict[str, int]
     current_value: Any

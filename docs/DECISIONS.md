@@ -120,6 +120,12 @@
 - 原因：旧候选可能在模板改为不识别后仍存在，如果继续显示会误导审核人员；分类队列脱离原图也会迫使人员在没有证据的情况下选模板。把行为纳入稳定接口并统一证据骨架，可以让不同队列保持一致且不伪造自动识别能力。
 - 证据：`app/api/routers/workbench_ds.py`、`frontend/apps/web/src/workbench/field-behavior.ts`、`ClassificationStage.tsx`、`FieldDetailPanel.tsx` 及 Task 11 API/组件测试和 Edge 冒烟。
 
+### D-020：姓名确认是显式提交事实，工号状态由有效员工主数据决定
+
+- 决定：姓名字段除了模板的 `requires_manual_confirmation` 标记外，审核提交还必须携带已人工确认字段键；后端在写入记录前独立校验。工号匹配只接受有效员工主数据，未知或停用工号必须人工选择或修正。工作台按稳定的四类业务角色分组，不从候选可靠度推断人员身份。
+- 原因：仅在前端显示警告可被旧客户端或直接 API 调用绕过；仅凭高可靠度候选也不能证明姓名经过人员核对。员工有效状态和显式确认声明进入提交边界后，才能阻止自动放行并保留责任人、时间和原因。
+- 证据：`app/modules/review/facade_ds.py`、`app/api/schemas/review_ds.py`、`frontend/apps/web/src/workbench/FieldReviewTable.tsx`、`ReviewWorkbenchPage.tsx` 及 Task 12 审核工作流、主数据和组件测试。
+
 ## 已否决方案及原因
 
 | 已否决方案 | 原因 |

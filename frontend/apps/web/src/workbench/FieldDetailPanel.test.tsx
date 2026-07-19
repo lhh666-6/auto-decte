@@ -19,6 +19,7 @@ const NAME_FIELD: ReviewField = {
   recognition_mode: "NONE",
   fill_policy: "MANUAL_ONLY",
   requires_manual_confirmation: true,
+  review_group: "WORKER",
   rules: {
     required: true,
     minimum_value: null,

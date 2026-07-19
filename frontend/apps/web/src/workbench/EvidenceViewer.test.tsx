@@ -35,6 +35,7 @@ function field(fieldId: string, x: number): ReviewField {
     recognition_mode: "NONE",
     fill_policy: "MANUAL_ONLY",
     requires_manual_confirmation: false,
+    review_group: "WORKER",
     rules: null,
     source_region: { x, y: 20, width: 30, height: 40 },
     current_value: "",
