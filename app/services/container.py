@@ -17,6 +17,7 @@ from app.adapters.vector.local import LocalVectorIndex
 from app.application.ai_review_forms import AIReviewForms
 from app.application.export_forms import ExportForms
 from app.application.import_forms import ImportForms
+from app.application.job_profiles_ds import JobProfiles
 from app.application.query_forms import QueryForms
 from app.application.recognize_forms import RecognizeForms
 from app.application.review_forms import ReviewForms
@@ -54,6 +55,7 @@ class Services:
     repository: SqlAlchemyFormRepository
     template_repository: SqlAlchemyTemplateRepository
     templates: TemplateVersions
+    job_profiles: JobProfiles
     template_renderer: TemplatePrintRenderer
     imports: ImportForms
     reviews: ReviewForms
@@ -127,6 +129,7 @@ def build_services(settings: Settings, *, install_seed_templates: bool = False) 
         repository=repository,
         template_repository=template_repository,
         templates=TemplateVersions(template_repository),
+        job_profiles=JobProfiles(template_repository, template_repository),
         template_renderer=template_renderer,
         imports=ImportForms(repository, repository, repository, storage),
         reviews=ReviewForms(repository, repository),

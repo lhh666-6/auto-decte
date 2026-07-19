@@ -2,25 +2,26 @@
 
 最后更新：2026-07-19
 
-状态：V2 的岗位配置领域、持久化和应用服务已完成；当前只执行下面一个 HTTP API 任务。
+状态：V2 的岗位配置领域、持久化、应用服务和 HTTP API 已完成；当前只执行下面一个二维码任务。
 
 目标分支：`modular-architecture`
 
-## 当前唯一任务：岗位配置 HTTP API
+## 当前唯一任务：模板 + 岗位配置双版本二维码
 
 规格来源：[工业纸质工资表系统：低 Token 实施与统一 UI 规范](superpowers/specs/2026-07-19-industrial-payroll-low-token-ui-v2.md) 第 3、4 章。
 
-执行计划：[Job Profile HTTP API Plan](superpowers/plans/2026-07-20-job-profile-api.md)。
+执行计划：[Template and Job Profile Dual-Version QR Plan](superpowers/plans/2026-07-20-dual-version-qr.md)。
 
-目标：向本地前端提供岗位配置草稿、列表、详情、修改、发布、复制和停用接口；路由必须只调用应用服务。
+目标：新打印实例同时绑定纸面模板版本和岗位配置版本；旧 IFD 二维码保持可解析。
 
 只读取和修改：
 
-- `app/services/container.py`
-- `app/api/routers/templates_ds.py`
-- `tests/api/test_templates_api_ds.py`
+- `app/domain/templates_ds.py`
+- `tests/unit/test_templates_domain_ds.py`
+- `app/adapters/templates/print_renderer_ds.py`
+- `tests/adapters/test_template_print_renderer_ds.py`
 
-只运行模板 API 测试、Ruff 和相关 mypy，不重复运行前端、种子模板、审核工作台、导出或实体闭环验收。
+只运行领域和打印渲染测试、Ruff 和相关 mypy，不重复运行 API、前端、种子模板、审核工作台、导出或实体闭环验收。
 
 ## 当前执行状态
 

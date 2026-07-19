@@ -382,6 +382,119 @@ def test_template_field_routes_declare_openapi_request_bodies(tmp_path: Path) ->
     assert "requestBody" in schema["paths"][field_path]["patch"]
 
 
+def test_admin_manages_versioned_job_profiles_through_the_template_api(
+    tmp_path: Path,
+) -> None:
+    client = _client(tmp_path)
+    template = client.post(
+        "/api/v1/templates",
+        headers=_headers(),
+        json={"template_key": "CORE_TIMEKEEPING", "page_size": "A5"},
+    ).json()
+    created = client.post(
+        "/api/v1/job-profile-versions",
+        headers=_headers(),
+        json={
+            "profile_key": "TIMEKEEPING_DAY",
+            "version": 1,
+            "display_name": "计时工白班",
+            "core_layout": "TIMEKEEPING",
+            "template_version_id": template["version_id"],
+            "template_version": template["version"],
+            "unit": "小时",
+            "fixed_options": {"shift": ["白班"]},
+            "pricing_rules": {"hourly_rate": 18.5},
+            "deduction_rules": {},
+            "export_mapping": {"normal_hours": "正常工时"},
+        },
+    )
+    profile_id = created.json()["profile_version_id"]
+    patched = client.patch(
+        f"/api/v1/job-profile-versions/{profile_id}",
+        headers=_headers(),
+        json={"unit": "工时"},
+    )
+    listed = client.get(
+        "/api/v1/job-profile-versions",
+        headers=_headers(),
+        params={"profile_key": "TIMEKEEPING_DAY"},
+    )
+    detail = client.get(
+        f"/api/v1/job-profile-versions/{profile_id}", headers=_headers()
+    )
+    published = client.post(
+        f"/api/v1/job-profile-versions/{profile_id}/publish", headers=_headers()
+    )
+    cloned = client.post(
+        f"/api/v1/job-profile-versions/{profile_id}/clone",
+        headers=_headers(),
+        json={"version": 2},
+    )
+    retired = client.post(
+        f"/api/v1/job-profile-versions/{profile_id}/retire", headers=_headers()
+    )
+
+    assert created.status_code == 201
+    assert created.json()["profile_version_id"].startswith("PROFILE-")
+    assert created.json()["core_layout"] == "TIMEKEEPING"
+    assert created.json()["template_version_id"] == template["version_id"]
+    assert patched.json()["unit"] == "工时"
+    assert listed.json() == [patched.json()]
+    assert detail.json() == patched.json()
+    assert published.json()["status"] == "PUBLISHED"
+    assert cloned.status_code == 201
+    assert cloned.json()["status"] == "DRAFT"
+    assert cloned.json()["parent_profile_version_id"] == profile_id
+    assert retired.json()["status"] == "RETIRED"
+    assert "internal" not in repr(created.json()).lower()
+
+
+def test_job_profile_api_maps_missing_binding_and_permission_errors(tmp_path: Path) -> None:
+    client = _client(tmp_path)
+    missing = client.get(
+        "/api/v1/job-profile-versions/PROFILE-MISSING", headers=_headers()
+    )
+    forbidden = client.post(
+        "/api/v1/job-profile-versions",
+        headers={"X-Actor-ID": "operator-a", "X-Roles": "OPERATOR"},
+        json={
+            "profile_key": "TIMEKEEPING_DAY",
+            "version": 1,
+            "display_name": "计时工",
+            "core_layout": "TIMEKEEPING",
+            "template_version_id": "TPL-ANY",
+            "template_version": 1,
+        },
+    )
+    created = client.post(
+        "/api/v1/templates",
+        headers=_headers(),
+        json={"template_key": "CORE_TIMEKEEPING", "page_size": "A5"},
+    ).json()
+    mismatched = client.post(
+        "/api/v1/job-profile-versions",
+        headers=_headers(),
+        json={
+            "profile_key": "TIMEKEEPING_DAY",
+            "version": 1,
+            "display_name": "计时工",
+            "core_layout": "TIMEKEEPING",
+            "template_version_id": created["version_id"],
+            "template_version": 99,
+        },
+    )
+    conflict = client.post(
+        f"/api/v1/job-profile-versions/{mismatched.json()['profile_version_id']}/publish",
+        headers=_headers(),
+    )
+
+    assert missing.status_code == 404
+    assert missing.json()["code"] == "JOB_PROFILE_NOT_FOUND"
+    assert forbidden.status_code == 403
+    assert conflict.status_code == 409
+    assert conflict.json()["code"] == "JOB_PROFILE_BINDING_INVALID"
+
+
 def test_template_field_routes_return_field_not_found_for_unknown_fields(tmp_path: Path) -> None:
     client = _client(tmp_path)
     created = client.post(

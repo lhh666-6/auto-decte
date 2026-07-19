@@ -16,6 +16,8 @@
 
 岗位配置应用服务已完成：HTTP 之外已有创建、读取、列表、修改、发布、复制和停用用例；发布时强制验证绑定模板版本存在且版本号一致。验证为 `3 passed`、Ruff 和 mypy 通过。下一任务是 [岗位配置 HTTP API](superpowers/plans/2026-07-20-job-profile-api.md)。
 
+岗位配置 HTTP API 已完成：本地前端可创建、列表、读取、修改、发布、复制和停用岗位配置，路由只调用应用服务。模板 API 全文件验证 `13 passed`，Ruff 和 mypy 通过。下一任务是 [模板 + 岗位配置双版本二维码](superpowers/plans/2026-07-20-dual-version-qr.md)。
+
 ## 本轮结论
 
 工业表单前端重建实施计划的任务 1—16 已按顺序完成。协作同步基线为 `ff03a39 fix(review): preserve confirmed values across reload and export`，并已在其上完成新主线 Task 1—10；集成分支为 `modular-architecture`。

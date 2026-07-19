@@ -2,6 +2,7 @@
 
 from pathlib import Path
 from typing import Literal
+from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import FileResponse
@@ -12,12 +13,14 @@ from app.adapters.templates.print_renderer_ds import ChineseFontUnavailable
 from app.api.dependencies_ds import get_current_actor, get_services
 from app.application.template_versions_ds import PreflightReport
 from app.domain.templates_ds import (
+    CoreLayoutKind,
     ExportTarget,
     FieldDefinition,
     FieldRules,
     FillPolicy,
     PageSpec,
     PaperEntryMode,
+    PayrollJobProfileVersion,
     RecognitionMode,
     Rect,
     TemplateArtifact,
@@ -92,6 +95,33 @@ class FieldRequest(BaseModel):
     export_target: ExportTargetRequest = PydanticField(default_factory=ExportTargetRequest)
 
 
+class CreateJobProfileRequest(BaseModel):
+    profile_key: str
+    version: int
+    display_name: str
+    core_layout: CoreLayoutKind
+    template_version_id: str
+    template_version: int
+    unit: str = ""
+    fixed_options: dict[str, object] = PydanticField(default_factory=dict)
+    pricing_rules: dict[str, object] = PydanticField(default_factory=dict)
+    deduction_rules: dict[str, object] = PydanticField(default_factory=dict)
+    export_mapping: dict[str, object] = PydanticField(default_factory=dict)
+
+
+class UpdateJobProfileRequest(BaseModel):
+    display_name: str | None = None
+    unit: str | None = None
+    fixed_options: dict[str, object] | None = None
+    pricing_rules: dict[str, object] | None = None
+    deduction_rules: dict[str, object] | None = None
+    export_mapping: dict[str, object] | None = None
+
+
+class CloneJobProfileRequest(BaseModel):
+    version: int
+
+
 def _actor(request: Request, services: Services) -> Actor:
     return get_current_actor(request, services)
 
@@ -103,6 +133,156 @@ def _require(actor: Actor, permission: Permission) -> None:
         raise HTTPException(
             status_code=403,
             detail={"code": "PERMISSION_DENIED", "detail": str(error)},
+        ) from error
+
+
+@router.post("/job-profile-versions", status_code=status.HTTP_201_CREATED)
+def create_job_profile(
+    body: CreateJobProfileRequest,
+    request: Request,
+    services: Services = Depends(get_services),  # noqa: B008
+) -> dict[str, object]:
+    _require(_actor(request, services), Permission.TEMPLATE_CREATE_VERSION)
+    try:
+        profile = services.job_profiles.create_draft(
+            f"PROFILE-{uuid4().hex}",
+            body.profile_key,
+            body.version,
+            display_name=body.display_name,
+            core_layout=body.core_layout,
+            template_version_id=body.template_version_id,
+            template_version=body.template_version,
+            unit=body.unit,
+            fixed_options=body.fixed_options,
+            pricing_rules=body.pricing_rules,
+            deduction_rules=body.deduction_rules,
+            export_mapping=body.export_mapping,
+        )
+    except (KeyError, ValueError) as error:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "INVALID_JOB_PROFILE", "detail": str(error)},
+        ) from error
+    return _job_profile_payload(profile)
+
+
+@router.get("/job-profile-versions")
+def list_job_profiles(
+    profile_key: str,
+    request: Request,
+    services: Services = Depends(get_services),  # noqa: B008
+) -> list[dict[str, object]]:
+    _require(_actor(request, services), Permission.TEMPLATE_READ)
+    return [
+        _job_profile_payload(profile)
+        for profile in services.job_profiles.list_versions(profile_key)
+    ]
+
+
+@router.get("/job-profile-versions/{profile_version_id}")
+def get_job_profile(
+    profile_version_id: str,
+    request: Request,
+    services: Services = Depends(get_services),  # noqa: B008
+) -> dict[str, object]:
+    _require(_actor(request, services), Permission.TEMPLATE_READ)
+    try:
+        return _job_profile_payload(services.job_profiles.get(profile_version_id))
+    except KeyError as error:
+        raise _job_profile_not_found(error) from error
+
+
+@router.patch("/job-profile-versions/{profile_version_id}")
+def update_job_profile(
+    profile_version_id: str,
+    body: UpdateJobProfileRequest,
+    request: Request,
+    services: Services = Depends(get_services),  # noqa: B008
+) -> dict[str, object]:
+    _require(_actor(request, services), Permission.TEMPLATE_CREATE_VERSION)
+    try:
+        profile = services.job_profiles.update_configuration(
+            profile_version_id,
+            display_name=body.display_name,
+            unit=body.unit,
+            fixed_options=body.fixed_options,
+            pricing_rules=body.pricing_rules,
+            deduction_rules=body.deduction_rules,
+            export_mapping=body.export_mapping,
+        )
+    except KeyError as error:
+        raise _job_profile_not_found(error) from error
+    except ValueError as error:
+        code = (
+            "INVALID_JOB_PROFILE_LIFECYCLE"
+            if "published" in str(error)
+            else "INVALID_JOB_PROFILE"
+        )
+        http_status = 409 if code.endswith("LIFECYCLE") else 422
+        raise HTTPException(
+            status_code=http_status, detail={"code": code, "detail": str(error)}
+        ) from error
+    return _job_profile_payload(profile)
+
+
+@router.post("/job-profile-versions/{profile_version_id}/publish")
+def publish_job_profile(
+    profile_version_id: str,
+    request: Request,
+    services: Services = Depends(get_services),  # noqa: B008
+) -> dict[str, object]:
+    _require(_actor(request, services), Permission.TEMPLATE_CREATE_VERSION)
+    try:
+        return _job_profile_payload(services.job_profiles.publish(profile_version_id))
+    except KeyError as error:
+        raise _job_profile_not_found(error) from error
+    except ValueError as error:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "JOB_PROFILE_BINDING_INVALID", "detail": str(error)},
+        ) from error
+
+
+@router.post(
+    "/job-profile-versions/{profile_version_id}/clone",
+    status_code=status.HTTP_201_CREATED,
+)
+def clone_job_profile(
+    profile_version_id: str,
+    body: CloneJobProfileRequest,
+    request: Request,
+    services: Services = Depends(get_services),  # noqa: B008
+) -> dict[str, object]:
+    _require(_actor(request, services), Permission.TEMPLATE_CREATE_VERSION)
+    try:
+        profile = services.job_profiles.clone_as_draft(
+            profile_version_id, f"PROFILE-{uuid4().hex}", body.version
+        )
+    except KeyError as error:
+        raise _job_profile_not_found(error) from error
+    except ValueError as error:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "INVALID_JOB_PROFILE_LIFECYCLE", "detail": str(error)},
+        ) from error
+    return _job_profile_payload(profile)
+
+
+@router.post("/job-profile-versions/{profile_version_id}/retire")
+def retire_job_profile(
+    profile_version_id: str,
+    request: Request,
+    services: Services = Depends(get_services),  # noqa: B008
+) -> dict[str, object]:
+    _require(_actor(request, services), Permission.TEMPLATE_CREATE_VERSION)
+    try:
+        return _job_profile_payload(services.job_profiles.retire(profile_version_id))
+    except KeyError as error:
+        raise _job_profile_not_found(error) from error
+    except ValueError as error:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "INVALID_JOB_PROFILE_LIFECYCLE", "detail": str(error)},
         ) from error
 
 
@@ -390,6 +570,32 @@ def download_artifact(
         raise HTTPException(status_code=404, detail={"code": "ARTIFACT_NOT_FOUND"})
     path = _safe_artifact_path(artifact, services.settings.evidence_root)
     return FileResponse(path, filename=artifact.download_name)
+
+
+def _job_profile_payload(profile: PayrollJobProfileVersion) -> dict[str, object]:
+    return {
+        "profile_version_id": profile.profile_version_id,
+        "profile_key": profile.profile_key,
+        "version": profile.version,
+        "display_name": profile.display_name,
+        "core_layout": profile.core_layout.value,
+        "template_version_id": profile.template_version_id,
+        "template_version": profile.template_version,
+        "status": profile.status.value,
+        "parent_profile_version_id": profile.parent_profile_version_id,
+        "unit": profile.unit,
+        "fixed_options": profile.fixed_options,
+        "pricing_rules": profile.pricing_rules,
+        "deduction_rules": profile.deduction_rules,
+        "export_mapping": profile.export_mapping,
+    }
+
+
+def _job_profile_not_found(error: KeyError) -> HTTPException:
+    return HTTPException(
+        status_code=404,
+        detail={"code": "JOB_PROFILE_NOT_FOUND", "detail": str(error)},
+    )
 
 
 def _page_spec(
