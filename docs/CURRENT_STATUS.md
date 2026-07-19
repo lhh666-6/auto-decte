@@ -14,6 +14,8 @@
 
 岗位配置持久化已完成：新增 `job_profile_versions` 和纯增量 Alembic 009，仓储可按 ID 或“岗位键 + 版本”读取，并保护已发布配置内容。验证为仓储 `7 passed`、迁移完整性 `18 passed`、Ruff 和 mypy 通过；迁移测试证明从 008 升级后旧模板仍可读取。下一任务是 [岗位配置应用服务](superpowers/plans/2026-07-20-job-profile-application-service.md)。
 
+岗位配置应用服务已完成：HTTP 之外已有创建、读取、列表、修改、发布、复制和停用用例；发布时强制验证绑定模板版本存在且版本号一致。验证为 `3 passed`、Ruff 和 mypy 通过。下一任务是 [岗位配置 HTTP API](superpowers/plans/2026-07-20-job-profile-api.md)。
+
 ## 本轮结论
 
 工业表单前端重建实施计划的任务 1—16 已按顺序完成。协作同步基线为 `ff03a39 fix(review): preserve confirmed values across reload and export`，并已在其上完成新主线 Task 1—10；集成分支为 `modular-architecture`。
