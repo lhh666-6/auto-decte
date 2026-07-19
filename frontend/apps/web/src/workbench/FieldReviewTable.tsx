@@ -95,7 +95,7 @@ export function FieldReviewTable({
               <span className="candidate-value">{candidate ? stringValue(candidate.candidate_value) : "—"}</span>
               <span>{candidate ? `${Math.round(candidate.confidence * 100)}%` : "—"}</span>
               <label className="final-value-control" onClick={(event) => event.stopPropagation()}>
-                <span className="visually-hidden">{label} 确认值</span>
+                <span className="visually-hidden">{label} 最终填写值</span>
                 {field.rules && (field.rules.master_data_options.length || field.rules.allowed_values.length) ? (
                   <select
                     id={`review-final-${field.field_id}`}

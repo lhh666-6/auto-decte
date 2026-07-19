@@ -103,7 +103,10 @@ describe("ClassificationStage", () => {
       reason: "二维码污损",
     }));
     expect(screen.getByText("二维码未能确定表单类型")).toBeTruthy();
-    expect(await screen.findByText("识别任务 TASK-1")).toBeTruthy();
+    expect(await screen.findByText("正在识别表单")).toBeTruthy();
+    expect(screen.queryByText("TASK-1")).toBeNull();
+    fireEvent.click(screen.getByText("追溯详情"));
+    expect(await screen.findByText("TASK-1")).toBeTruthy();
   });
 });
 
@@ -148,7 +151,7 @@ describe("RecognitionProgress", () => {
 
     expect(await screen.findByText("识别没有完成")).toBeTruthy();
     expect(screen.getByText(/识别服务中断/)).toBeTruthy();
-    expect(screen.getByText(/请检查照片后重试/)).toBeTruthy();
+    expect(screen.getByText(/照片是否清晰完整/)).toBeTruthy();
     expect(onFailure).toHaveBeenCalledWith(expect.objectContaining({ status }));
   });
 

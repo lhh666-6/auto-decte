@@ -168,7 +168,7 @@ export function MasterDataCenter({
       setBusinessValues(mapped.values);
       setExtraAttributesText(JSON.stringify(mapped.extra, null, 2));
       setReason("");
-      setMessage(wasCreating ? "主数据已创建。" : `已保存第 ${saved.revision} 版。`);
+      setMessage(wasCreating ? "基础数据已创建。" : `已保存第 ${saved.revision} 版。`);
       setAudits(await client.audits(catalog, saved.code).catch(() => []));
       await refresh();
     } catch (cause) {
@@ -214,14 +214,14 @@ export function MasterDataCenter({
     <main className="master-data-center">
       <header className="master-data-header">
         <div>
-          <span className="eyebrow">主数据中心</span>
+          <span className="eyebrow">基础数据</span>
           <h1>员工、工单、产品与工序</h1>
           <p>统一维护复核和模板下拉项使用的业务基础数据；编码不可改，记录只停用、不删除。</p>
         </div>
         <button type="button" className="button button-primary" onClick={startCreate}>新增{meta.label}</button>
       </header>
 
-      <nav className="master-data-tabs" aria-label="主数据类型">
+      <nav className="master-data-tabs" aria-label="基础数据类型">
         {CATALOGS.map((item) => (
           <button
             type="button"
@@ -241,7 +241,7 @@ export function MasterDataCenter({
       <div className="master-data-layout">
         <section className="master-data-list-card">
           <form className="master-data-search" onSubmit={(event) => { event.preventDefault(); void refresh(); }}>
-            <input aria-label="搜索主数据" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="按编码或名称搜索" />
+            <input aria-label="搜索基础数据" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="按编码或名称搜索" />
             <button type="submit" className="button button-secondary">搜索</button>
           </form>
           <label className="master-data-checkbox">

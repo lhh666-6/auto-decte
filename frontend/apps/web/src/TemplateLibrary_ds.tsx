@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { ConfirmDialog } from "./ui/ConfirmDialog";
 import { ProblemNotice } from "./ui/ProblemNotice";
+import { getTemplateStatusCopy } from "./ui/business-language";
 
 type Props = {
   api: TemplateApi;
@@ -222,5 +223,9 @@ function TemplateCard({ api, item, onChanged, onSelectPublished, onOpenDraft }: 
 }
 
 function pageLabel(page: TemplatePage): string { return `${page.size} · ${page.orientation === "portrait" ? "纵向" : page.orientation}`; }
-function statusLabel(status: StatusFilter | string): string { return ({ ALL: "全部", PUBLISHED: "已发布", EDITABLE: "可编辑草稿", DRAFT: "草稿", PREFLIGHT_FAILED: "预检失败", READY_TO_PUBLISH: "可发布", DEPRECATED: "已停用", RETIRED: "已退役" } as Record<string, string>)[status] ?? status; }
+function statusLabel(status: StatusFilter | string): string {
+  if (status === "ALL") return "全部";
+  if (status === "EDITABLE") return "可编辑草稿";
+  return getTemplateStatusCopy(status).label;
+}
 function requestMessage(cause: unknown): string { return cause instanceof Error ? cause.message : "模板请求无法完成。"; }

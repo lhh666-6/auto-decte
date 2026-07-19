@@ -105,7 +105,7 @@ describe("review correction", () => {
     await user.type(screen.getByLabelText("表单编号"), "FORM-EXPORTED");
     await user.click(screen.getByRole("button", { name: "加载表单" }));
     expect(await screen.findByRole("button", { name: "保存本次修改" })).toBeTruthy();
-    await user.click(screen.getByRole("button", { name: "获取审核锁" }));
+    await user.click(screen.getByRole("button", { name: "开始审核" }));
     const field = await screen.findByLabelText("工时 最终填写值");
     await user.clear(field);
     await user.type(field, "9");
@@ -125,12 +125,13 @@ describe("review correction", () => {
       expected_version: 1,
       lease_token: "lease-correction",
       values: { "FIELD-1": "9" },
+      manually_confirmed_field_keys: [],
       reason: "人工审核工作台更正",
       evidence_ids: ["FILE-1"],
     });
     expect(fetcher.mock.calls.some(([path]) => String(path).endsWith("/confirm-and-claim-next"))).toBe(false);
     expect(workbenchReadCount).toBe(2);
-    await waitFor(() => expect(screen.getByText(/审核锁有效至/)).toBeTruthy());
+    await waitFor(() => expect(screen.getAllByText(/你正在审核/).length).toBeGreaterThan(0));
   });
 
   it("keeps version zero on confirm-and-claim-next", async () => {
@@ -169,7 +170,7 @@ describe("review correction", () => {
     await user.type(screen.getByLabelText("表单编号"), "FORM-NEW");
     await user.click(screen.getByRole("button", { name: "加载表单" }));
     expect(await screen.findByRole("button", { name: "确认并下一张" })).toBeTruthy();
-    await user.click(screen.getByRole("button", { name: "获取审核锁" }));
+    await user.click(screen.getByRole("button", { name: "开始审核" }));
     await user.click(screen.getByRole("button", { name: "确认并下一张" }));
 
     await waitFor(() => expect(fetcher.mock.calls.some(([path]) => (

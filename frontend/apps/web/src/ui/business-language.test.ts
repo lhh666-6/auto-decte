@@ -4,6 +4,7 @@ import {
   BUSINESS_ACTION_LABELS,
   getExportStatusCopy,
   getReviewStatusCopy,
+  getTaskStatusCopy,
   getTemplateStatusCopy,
 } from "./business-language";
 
@@ -112,6 +113,17 @@ const TEMPLATE_STATUS_COPIES: Record<string, ExpectedCopy> = {
   },
 };
 
+const TASK_STATUS_COPIES: Record<string, ExpectedCopy> = {
+  PENDING: { label: "等待处理", description: "任务已经提交，正在等待系统开始处理。", nextAction: "等待任务开始" },
+  RUNNING: { label: "正在处理", description: "系统正在处理当前任务。", nextAction: "查看处理进度" },
+  SUCCEEDED: { label: "处理完成", description: "任务已经完成，可以继续下一步。", nextAction: "继续下一步" },
+  FAILED: { label: "处理失败", description: "任务没有完成，请检查当前数据后重试。", nextAction: "检查后重试" },
+  CANCEL_REQUESTED: { label: "正在取消", description: "系统正在停止当前任务。", nextAction: "等待任务停止" },
+  CANCELLED: { label: "已取消", description: "任务已取消，没有生成最终结果。", nextAction: "按需重新开始" },
+  INTERRUPTED: { label: "处理已中断", description: "任务在完成前中断，请检查当前数据后重试。", nextAction: "检查后重试" },
+  RECOVERING: { label: "正在恢复", description: "系统正在恢复此前中断的任务。", nextAction: "等待恢复完成" },
+};
+
 function expectCompleteCopies(
   expected: Record<string, ExpectedCopy>,
   getCopy: (status: string) => ExpectedCopy & { technicalLabel: string },
@@ -134,10 +146,15 @@ describe("business status language", () => {
     expectCompleteCopies(TEMPLATE_STATUS_COPIES, getTemplateStatusCopy);
   });
 
+  it("defines complete task status copy", () => {
+    expectCompleteCopies(TASK_STATUS_COPIES, getTaskStatusCopy);
+  });
+
   it.each([
     [getReviewStatusCopy, "FUTURE_REVIEW_STATE"],
     [getExportStatusCopy, "FUTURE_EXPORT_STATE"],
     [getTemplateStatusCopy, "FUTURE_TEMPLATE_STATE"],
+    [getTaskStatusCopy, "FUTURE_TASK_STATE"],
   ])("keeps an unknown technical state traceable", (getCopy, status) => {
     expect(getCopy(status)).toEqual({
       label: "未知状态",

@@ -64,7 +64,7 @@ export function WorkbenchHeader({
       </form>
       <div className="form-summary">
         <strong>{detail?.form.form_id ?? "未加载表单"}</strong>
-        <span>{detail ? `模板 ${detail.form.template_id} · v${detail.form.template_version}` : "输入编号后加载"}</span>
+        <span>{detail ? `已绑定模板 · V${detail.form.template_version}` : "输入编号后加载"}</span>
         {detail && (
           <span>
             记录版本 {detail.form.current_record_version} · {reviewStatus?.label} · {exportStatus?.label}
@@ -72,6 +72,8 @@ export function WorkbenchHeader({
         )}
         {detail && (
           <TraceDetails items={[
+            { label: "模板编号", value: detail.form.template_id },
+            { label: "模板版本", value: detail.form.template_version },
             { label: "审核状态代码", value: reviewStatus?.technicalLabel ?? "" },
             { label: "导出状态代码", value: exportStatus?.technicalLabel ?? "" },
           ]} />
@@ -79,12 +81,12 @@ export function WorkbenchHeader({
       </div>
       <div className="lease-summary">
         {lease
-          ? <span className="lease-active">审核锁有效至 {new Date(lease.expires_at).toLocaleTimeString()}</span>
-          : <span>未获取审核锁</span>}
+          ? <span className="lease-active">你正在审核 · 有效至 {new Date(lease.expires_at).toLocaleTimeString()}</span>
+          : <span>尚未开始审核</span>}
         {lease ? (
-          <button type="button" className="text-button" onClick={onReleaseLease}>释放</button>
+          <button type="button" className="text-button" onClick={onReleaseLease}>暂停审核</button>
         ) : (
-          <button type="button" className="text-button" disabled={!detail} onClick={onAcquireLease}>获取审核锁</button>
+          <button type="button" className="text-button" disabled={!detail} onClick={onAcquireLease}>开始审核</button>
         )}
       </div>
     </section>

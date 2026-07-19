@@ -131,7 +131,7 @@ describe("workbench empty and error states", () => {
     );
 
     expect(getByText("操作没有完成")).toBeTruthy();
-    expect(getByText(/审核锁已被其他人获取/)).toBeTruthy();
+    expect(getByText(/正在由其他工作人员审核/)).toBeTruthy();
     expect(getByText(/请刷新状态后重试/)).toBeTruthy();
     expect(queryByText("LEASE_CONFLICT")).toBeNull();
     await user.click(getByText("追溯详情"));

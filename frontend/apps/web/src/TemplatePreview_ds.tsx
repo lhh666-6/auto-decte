@@ -118,13 +118,13 @@ export function TemplatePreview({ api, versionId, onBack, onTune }: Props) {
               </div>
             </section>
             <details>
-              <summary>高级信息</summary>
+              <summary>追溯详情</summary>
               <p>模板编号：{version.template_key}</p>
               <p>标准画布：{version.page.canonical_dpi} DPI · {version.page.canonical_width_px} × {version.page.canonical_height_px}</p>
               <ul>{version.fields.map((field) => <li key={field.field_key}>{field.field_key} · {field.recognition_engine}</li>)}</ul>
               <ul>{version.artifacts.map((artifact) => <li key={artifact.artifact_id}>{artifact.download_name} · SHA-256 {artifact.sha256}</li>)}</ul>
             </details>
-            {version.status === "PUBLISHED" ? <button className="button button-primary" disabled={tuning} onClick={() => void tune()}>{tuning ? "正在创建草稿…" : "基于此模板调优"}</button> : <p className="inline-warning">已退役模板仅供历史追溯，不能再创建调优版本。</p>}
+            {version.status === "PUBLISHED" ? <button className="button button-primary" disabled={tuning} onClick={() => void tune()}>{tuning ? "正在创建草稿…" : "基于此版本创建新草稿"}</button> : <p className="inline-warning">已退役模板仅供历史追溯，不能再创建新草稿。</p>}
           </aside>
         </section>
       ) : null}

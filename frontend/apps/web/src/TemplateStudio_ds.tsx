@@ -12,6 +12,7 @@ import { TemplateCanvasEditor } from "./TemplateCanvasEditor_ds";
 import { TemplateLibrary } from "./TemplateLibrary_ds";
 import { TemplatePreview } from "./TemplatePreview_ds";
 import { businessErrorMessage } from "./ui/business-errors";
+import { getTemplateStatusCopy } from "./ui/business-language";
 import {
   PROTECTED_PLACEMENT_MESSAGE,
   PROTECTED_ZONES,
@@ -377,7 +378,7 @@ function TemplateEditor({
       <header className="studio-header">
         <button className="text-button" onClick={onBack}>返回模板库</button>
         <div><span className="eyebrow">模板可视化设计器</span><h1>{version?.display_name ?? "正在加载草稿…"}</h1><p>{version ? `${version.template_key} · ${version.description || "尚未填写用途说明"}` : "字段坐标、识别策略和发布状态均由模板 API 持久化。"}</p></div>
-        <span className={`status-pill ${version?.status === "PUBLISHED" ? "success" : "warning"}`}>{version?.status ?? "加载中"}</span>
+        <span className={`status-pill ${version?.status === "PUBLISHED" ? "success" : "warning"}`}>{version ? getTemplateStatusCopy(version.status).label : "加载中"}</span>
       </header>
       {error && <div className="error-banner studio-message" role="alert">{error}</div>}
       {version && (
@@ -388,7 +389,7 @@ function TemplateEditor({
             <button className="button button-secondary" disabled={working} onClick={() => void preflight()}>发布前检查</button>
             <button className="button button-primary" disabled={version.status !== "READY_TO_PUBLISH" || working} onClick={() => void publish()}>发布模板</button>
             <button className="button button-danger-secondary" disabled={working} onClick={() => void discardDraft()}>放弃草稿</button>
-          </> : <button className="button button-primary" disabled={working} onClick={() => void cloneReadOnlyVersion()}>克隆为新草稿后修改</button>}
+          </> : <button className="button button-primary" disabled={working} onClick={() => void cloneReadOnlyVersion()}>基于此版本创建新草稿</button>}
         </nav>
       )}
       {version ? (

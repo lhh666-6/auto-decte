@@ -2,6 +2,9 @@ import { useEffect, useRef, useState } from "react";
 
 import type { TaskStatusDetail } from "@form-detection/api-client";
 
+import { TraceDetails } from "../ui/TraceDetails";
+import { getTaskStatusCopy } from "../ui/business-language";
+
 export interface TaskStatusReader {
   getTask(taskId: string, signal?: AbortSignal): Promise<TaskStatusDetail>;
 }
@@ -96,12 +99,13 @@ export function RecognitionProgress({
   }, [taskApi, taskId]);
 
   const status = task?.status.toUpperCase();
+  const statusCopy = getTaskStatusCopy(status ?? "PENDING");
   const failed = status ? FAILED_STATUSES.has(status) : false;
   const progress = Math.max(0, Math.min(100, task?.progress ?? 0));
 
   return (
     <section className="classification-task" aria-live="polite">
-      <strong>识别任务 {taskId}</strong>
+      <strong>{failed ? "识别没有完成" : "正在识别表单"}</strong>
       {!failed ? (
         <>
           <p>{status === "SUCCEEDED" ? "识别完成，正在刷新工作台" : describeStep(task?.step)}</p>
@@ -111,11 +115,15 @@ export function RecognitionProgress({
         </>
       ) : (
         <>
-          <h3>识别没有完成</h3>
-          <p>{task?.error || `任务状态：${task?.status}`}</p>
-          <p>请检查照片后重试。</p>
+          <p>{task?.error || statusCopy.description}</p>
+          <p>{statusCopy.nextAction}，并检查照片是否清晰完整。</p>
         </>
       )}
+      <TraceDetails items={[
+        { label: "任务 ID", value: taskId },
+        { label: "任务状态代码", value: status ?? "PENDING" },
+        { label: "任务步骤代码", value: task?.step ?? "无" },
+      ]} />
     </section>
   );
 }

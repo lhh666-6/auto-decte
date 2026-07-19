@@ -147,8 +147,8 @@ describe("ReviewWorkbenchPage", () => {
     expect((screen.getByLabelText("正常字段 最终填写值") as HTMLInputElement).value).toBe("最终值");
     expect(normalRow.textContent).toContain("已就绪");
     expect(screen.getByText("剩余问题 1")).toBeTruthy();
-    await user.click(screen.getByRole("button", { name: "获取审核锁" }));
-    expect(await screen.findByText(/租约到期/)).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "开始审核" }));
+    expect((await screen.findAllByText(/你正在审核/)).length).toBeGreaterThan(0);
   });
 
   it("persists a dragged desktop split within the 35 to 65 percent bounds", async () => {

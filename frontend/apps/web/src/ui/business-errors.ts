@@ -6,7 +6,7 @@ const BUSINESS_ERROR_COPY: Readonly<Record<string, string>> = {
   INTERNAL_ERROR:
     "服务暂时无法完成操作。请稍后重试；如问题持续，请记录发生时间并查看追溯详情。",
   INVALID_LIFECYCLE:
-    "该模板版本当前不能修改。已发布版本请先克隆为新草稿，再调整版面或字段。",
+    "该模板版本当前不能修改。请基于此版本创建新草稿，再调整版面或字段。",
   INVALID_FIELD:
     "字段设置不符合模板规则。请检查纸面填写方式、识别方式和审核填入方式后重试。",
   INVALID_PAGE_SIZE:

@@ -45,7 +45,11 @@ export function WorkbenchEmptyState({ queue, onUpload, onFind }: WorkbenchEmptyS
 export function WorkbenchErrorNotice({ error }: { error: string }) {
   const match = /^([A-Z][A-Z0-9_]+)：(.+)$/.exec(error);
   const code = match?.[1] ?? null;
-  const message = match?.[2] ?? error;
+  const message = code ? ({
+    LEASE_CONFLICT: "这张表单正在由其他工作人员审核",
+    REVIEW_LEASE_HELD: "这张表单正在由其他工作人员审核",
+    REVIEW_LEASE_NOT_OWNED: "本次审核已经结束，请重新开始审核",
+  } as Record<string, string>)[code] ?? match?.[2] ?? error : error;
 
   return <ProblemNotice title="操作没有完成" reason={`${message}，当前步骤不能继续。请刷新状态后重试；若仍失败，请检查输入与网络连接。`} actionLabel="刷新当前页面" onAction={() => window.location.reload()} code={code} />;
 }

@@ -73,7 +73,7 @@ export function FieldDetailPanel({
               {selectedField.rules.minimum_value !== null ? ` · 最小值 ${selectedField.rules.minimum_value}` : ""}
               {selectedField.rules.maximum_value !== null ? ` · 最大值 ${selectedField.rules.maximum_value}` : ""}
               {selectedField.rules.allowed_values.length ? ` · 允许值：${selectedField.rules.allowed_values.join("、")}` : ""}
-              {selectedField.rules.master_data_options.length ? ` · 主数据选项 ${selectedField.rules.master_data_options.length} 项` : ""}
+              {selectedField.rules.master_data_options.length ? ` · 基础数据选项 ${selectedField.rules.master_data_options.length} 项` : ""}
             </span>
           ) : <span className="muted">没有额外填报规则</span>}
         </div>

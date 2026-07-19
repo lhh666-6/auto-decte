@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 
 import type { ClassificationOption, TaskStatusDetail, WorkbenchDetail } from "@form-detection/api-client";
 
+import { getTaskStatusCopy } from "../ui/business-language";
 import { EvidenceViewer } from "./EvidenceViewer";
 import { RecognitionProgress, type TaskStatusReader } from "./RecognitionProgress";
 
@@ -141,7 +142,7 @@ export function ClassificationStage({
             taskId={taskId}
             taskApi={taskApi}
             onSucceeded={onRecognitionSucceeded}
-            onFailure={(task) => onError(task.error || `识别任务${task.status}`)}
+            onFailure={(task) => onError(task.error || getTaskStatusCopy(task.status).description)}
           />
         )}
       </section>

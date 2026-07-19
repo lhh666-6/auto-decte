@@ -24,7 +24,7 @@ describe("MasterDataCenter", () => {
     const onCatalogChange = vi.fn();
     render(<MasterDataCenter api={client} initialCatalog="products" onCatalogChange={onCatalogChange} />);
 
-    const tabs = within(screen.getByRole("navigation", { name: "主数据类型" }));
+    const tabs = within(screen.getByRole("navigation", { name: "基础数据类型" }));
     for (const name of ["员工", "工单", "产品", "工序"]) {
       expect(tabs.getByRole("button", { name })).toBeTruthy();
     }
@@ -41,7 +41,7 @@ describe("MasterDataCenter", () => {
     render(<MasterDataCenter api={api()} initialCatalog="employees" />);
     expect(await screen.findByText("员工目录为空")).toBeTruthy();
 
-    await user.type(screen.getByLabelText("搜索主数据"), "E001");
+    await user.type(screen.getByLabelText("搜索基础数据"), "E001");
     await user.click(screen.getByRole("button", { name: "搜索" }));
     expect(await screen.findByText("没有找到匹配的员工")).toBeTruthy();
   });

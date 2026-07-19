@@ -37,6 +37,8 @@ describe("TemplateStudio field creation", () => {
     vi.stubGlobal("fetch", fetcher);
     render(<TemplateStudio initialScreen={{ kind: "editor", versionId: "VERSION-1" }} />);
 
+    expect(await screen.findByText("草稿")).toBeTruthy();
+    expect(screen.queryByText("DRAFT")).toBeNull();
     await user.click(await screen.findByRole("button", { name: "＋ 添加业务字段" }));
     const dialog = screen.getByRole("dialog", { name: "添加业务字段" });
     expect((within(dialog).getByLabelText("字段键") as HTMLInputElement).value).toBe("field_2");

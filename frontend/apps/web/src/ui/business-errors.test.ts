@@ -33,7 +33,7 @@ describe("business error boundary", () => {
     expect(businessErrorMessage(
       new ApiRequestError(409, "INVALID_LIFECYCLE", "published template versions cannot be mutated"),
       "模板请求无法完成。",
-    )).toContain("克隆为新草稿");
+    )).toContain("基于此版本创建新草稿");
     expect(businessErrorMessage(
       new ApiRequestError(422, "INVALID_FIELD", "FIELD_BEHAVIOR_MISMATCH"),
       "模板请求无法完成。",

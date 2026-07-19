@@ -46,7 +46,7 @@ export function WorkbenchActionBar({
       ) : null}
       <span className="action-hint">
         <strong>剩余问题 {warningCount}</strong>
-        <span>{lease ? `租约到期 ${new Date(lease.expires_at).toLocaleTimeString()}` : "尚未获取审核锁"}</span>
+        <span>{lease ? `你正在审核 · 有效至 ${new Date(lease.expires_at).toLocaleTimeString()}` : "请先开始审核"}</span>
       </span>
       <button
         type="button"

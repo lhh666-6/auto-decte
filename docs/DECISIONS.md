@@ -138,6 +138,12 @@
 - 原因：直接改写 V1 的导出目标会改变历史表单的导出事实并触发种子内容冲突；按 V2 追加可以让已有数据库安全升级，同时让固定生产明细形成可追溯的主记录/明细行结构，并保持四个历史通用模板原样可导出。
 - 证据：`app/modules/templates/payroll_profiles_ds.py`、`app/modules/templates/seed_templates_ds.py`、`app/application/export_forms.py`、`tests/integration/test_payroll_xlsx_export_ds.py` 及 Task 14 的 41 项定向测试和静态检查。
 
+### D-023：工作人员主界面只展示业务语义，技术原值收进追溯详情
+
+- 决定：任务状态通过集中字典转换为中文短文案、说明和下一步动作；审核 Lease 对工作人员表达为“开始审核 / 你正在审核”。模板 ID、任务 ID、后端状态码和步骤码仍保留，但只在主动展开的追溯详情中展示。
+- 原因：后端代码和 Lease 实现术语无法直接指导现场人员操作，但完全删除又会损害故障排查和审计。主界面与追溯层分离可以同时保证可用性和可追溯性。
+- 证据：`frontend/apps/web/src/ui/business-language.ts`、`frontend/apps/web/src/ui/TraceDetails.tsx`、审核工作台、识别进度、模板中心和导出中心组件，以及 Task 15 的 74 项定向前端测试。
+
 ## 已否决方案及原因
 
 | 已否决方案 | 原因 |

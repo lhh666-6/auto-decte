@@ -231,7 +231,7 @@ export function ReviewWorkbenchPage({
     const timer = window.setInterval(() => {
       void api.heartbeatLease(detail.form.form_id, lease.lease_token).then(setLease).catch((cause) => {
         setLease(null);
-        setError(`审核锁已失效：${toMessage(cause)}`);
+        setError(`本次审核已结束：${toMessage(cause)}`);
       });
     }, 120_000);
     return () => window.clearInterval(timer);
@@ -249,7 +249,7 @@ export function ReviewWorkbenchPage({
 
   async function releaseLease() {
     if (!detail || !lease) return;
-    if (hasUnsavedEdits && !window.confirm("尚有未保存修改，释放审核锁后将无法保存，仍要释放吗？")) {
+    if (hasUnsavedEdits && !window.confirm("尚有未保存修改，暂停审核后将无法保存，仍要暂停吗？")) {
       return;
     }
     try {
@@ -263,7 +263,7 @@ export function ReviewWorkbenchPage({
   async function submitPrimaryReviewAction() {
     if (!detail) return;
     if (!lease) {
-      setError("请先获取审核锁，再确认表单。");
+      setError("请先开始审核，再确认表单。");
       return;
     }
     try {
@@ -366,7 +366,7 @@ export function ReviewWorkbenchPage({
 
   async function saveDraft() {
     if (!detail || !lease) {
-      setError("请先获取审核锁，再保存草稿。");
+      setError("请先开始审核，再保存草稿。");
       return;
     }
     try {
@@ -797,7 +797,7 @@ function ReviewActionDialog({
       title={isVoid ? "作废当前表单" : "退回当前表单"}
       description={isVoid
         ? "作废会保存不可更改的操作记录，并将表单从审核队列移除。"
-        : "退回会清除审核草稿和审核锁，并将表单送入重新采集队列。"}
+        : "退回会清除审核草稿、结束本次审核，并将表单送入重新采集队列。"}
       confirmLabel={isVoid ? "确认作废当前表单" : "确认退回当前表单"}
       cancelLabel={isVoid ? "取消作废" : "取消退回"}
       loading={loading}

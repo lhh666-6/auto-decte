@@ -42,7 +42,7 @@ export function reviewValueIssue(
     rules?.master_data_source &&
     !rules.master_data_options.some((option) => option.value === String(value))
   ) {
-    return "请选择有效的主数据记录";
+    return "请选择有效的基础数据记录";
   }
   if (dataType === "integer" || dataType === "decimal") {
     const text = String(value).trim();
@@ -61,7 +61,7 @@ export function reviewValueIssue(
     return "必须对照字段裁片人工确认";
   }
   if (!manuallyEdited && candidateConfidence !== undefined && candidateConfidence < 0.8) {
-    return "识别置信度较低，请人工确认";
+    return "识别可靠度较低，请人工确认";
   }
   return null;
 }

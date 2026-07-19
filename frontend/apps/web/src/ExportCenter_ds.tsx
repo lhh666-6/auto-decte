@@ -14,6 +14,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ProblemNotice } from "./ui/ProblemNotice";
 import { TraceDetails } from "./ui/TraceDetails";
 import { businessErrorMessage } from "./ui/business-errors";
+import { getTaskStatusCopy } from "./ui/business-language";
 
 export interface ExportCenterApi {
   preview(filters: ExportFilters, signal?: AbortSignal): Promise<ExportPreview>;
@@ -399,7 +400,7 @@ export function ExportCenter({ api }: ExportCenterProps) {
       {task && (
         <section className="export-task-card" aria-live="polite">
           <div className="export-section-heading compact">
-            <div><span className="eyebrow">第三步 · 生成并下载</span><h2>{taskStatusLabel(task.status)}</h2></div>
+            <div><span className="eyebrow">第三步 · 生成并下载</span><h2>{exportTaskStatusLabel(task.status)}</h2></div>
             <strong>{task.progress}%</strong>
           </div>
           <progress value={task.progress} max={100} aria-label="导出任务进度" aria-valuenow={task.progress} />
@@ -492,17 +493,11 @@ function reasonMessage(reason: ExportExclusionReason): string {
   } as Record<string, string>)[reason.code] ?? reason.message;
 }
 
-function taskStatusLabel(status: ExportTask["status"]): string {
-  return {
-    PENDING: "等待生成",
-    RUNNING: "正在生成 Excel",
-    SUCCEEDED: "Excel 已生成",
-    FAILED: "生成失败",
-    CANCEL_REQUESTED: "正在取消",
-    CANCELLED: "已取消",
-    INTERRUPTED: "生成已中断",
-    RECOVERING: "正在恢复生成",
-  }[status];
+function exportTaskStatusLabel(status: ExportTask["status"]): string {
+  if (status === "RUNNING") return "正在生成 Excel";
+  if (status === "SUCCEEDED") return "Excel 已生成";
+  if (status === "PENDING") return "等待生成";
+  return getTaskStatusCopy(status).label;
 }
 
 function taskStepLabel(step: string | null): string {

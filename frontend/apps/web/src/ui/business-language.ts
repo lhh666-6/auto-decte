@@ -113,6 +113,49 @@ export const TEMPLATE_STATUS_COPIES = defineStatusCopies({
   },
 });
 
+export const TASK_STATUS_COPIES = defineStatusCopies({
+  PENDING: {
+    label: "等待处理",
+    description: "任务已经提交，正在等待系统开始处理。",
+    nextAction: "等待任务开始",
+  },
+  RUNNING: {
+    label: "正在处理",
+    description: "系统正在处理当前任务。",
+    nextAction: "查看处理进度",
+  },
+  SUCCEEDED: {
+    label: "处理完成",
+    description: "任务已经完成，可以继续下一步。",
+    nextAction: "继续下一步",
+  },
+  FAILED: {
+    label: "处理失败",
+    description: "任务没有完成，请检查当前数据后重试。",
+    nextAction: "检查后重试",
+  },
+  CANCEL_REQUESTED: {
+    label: "正在取消",
+    description: "系统正在停止当前任务。",
+    nextAction: "等待任务停止",
+  },
+  CANCELLED: {
+    label: "已取消",
+    description: "任务已取消，没有生成最终结果。",
+    nextAction: "按需重新开始",
+  },
+  INTERRUPTED: {
+    label: "处理已中断",
+    description: "任务在完成前中断，请检查当前数据后重试。",
+    nextAction: "检查后重试",
+  },
+  RECOVERING: {
+    label: "正在恢复",
+    description: "系统正在恢复此前中断的任务。",
+    nextAction: "等待恢复完成",
+  },
+});
+
 export const BUSINESS_ACTION_LABELS = Object.freeze({
   uploadFormPhoto: "上传表单照片",
   findForm: "查找表单",
@@ -151,4 +194,8 @@ export function getExportStatusCopy(status: string): BusinessStatusCopy {
 
 export function getTemplateStatusCopy(status: string): BusinessStatusCopy {
   return getStatusCopy(TEMPLATE_STATUS_COPIES, status);
+}
+
+export function getTaskStatusCopy(status: string): BusinessStatusCopy {
+  return getStatusCopy(TASK_STATUS_COPIES, status);
 }

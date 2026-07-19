@@ -84,7 +84,7 @@ describe("reviewValueIssue", () => {
       ...baseRules,
       master_data_source: "employees",
       master_data_options: [{ value: "E001", label: "张三" }],
-    })).toBe("请选择有效的主数据记录");
+    })).toBe("请选择有效的基础数据记录");
     expect(reviewValueIssue("E001", undefined, true, "text", {
       ...baseRules,
       master_data_source: "employees",
@@ -94,7 +94,7 @@ describe("reviewValueIssue", () => {
 
   it("requires an explicit edit for a low-confidence candidate", () => {
     expect(reviewValueIssue("8", 0.4, false, "integer", baseRules)).toBe(
-      "识别置信度较低，请人工确认",
+      "识别可靠度较低，请人工确认",
     );
     expect(reviewValueIssue("8", 0.4, true, "integer", baseRules)).toBeNull();
   });

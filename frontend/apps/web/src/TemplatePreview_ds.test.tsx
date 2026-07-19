@@ -75,9 +75,10 @@ describe("TemplatePreview", () => {
     const api = { getVersion: vi.fn().mockResolvedValue(VERSION) } as unknown as TemplateApi;
     render(<TemplatePreview api={api} versionId="VERSION-1" onBack={vi.fn()} onTune={vi.fn()} />);
 
+    expect(await screen.findByRole("button", { name: "基于此版本创建新草稿" })).toBeTruthy();
     expect(await screen.findByRole("link", { name: "下载 PDF" })).toBeTruthy();
     expect(screen.getByRole("link", { name: "下载 PNG" })).toBeTruthy();
-    const advanced = screen.getByText("高级信息").closest("details") as HTMLDetailsElement;
+    const advanced = screen.getByText("追溯详情").closest("details") as HTMLDetailsElement;
     expect(advanced.open).toBe(false);
     expect(advanced.textContent).toContain("PAYROLL_HOURLY_V1.pdf");
     expect(advanced.textContent).toContain("hours");
