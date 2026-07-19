@@ -55,6 +55,60 @@ def test_operator_uploads_image_bytes_into_a_form_import_task(tmp_path: Path) ->
     assert imported.review_status is ReviewStatus.NEEDS_CLASSIFICATION
 
 
+def test_batch_imports_keep_independent_item_statuses_and_expose_thumbnail_overview(
+    tmp_path: Path,
+) -> None:
+    services = build_services(Settings(data_root=tmp_path, allow_header_identity=True))
+    client = TestClient(create_app(services), raise_server_exceptions=False)
+    first_content = _png_bytes(np.full((180, 240), 245, dtype=np.uint8))
+    second_content = _png_bytes(np.full((220, 160), 210, dtype=np.uint8))
+
+    def upload(content: bytes, name: str, key: str):
+        return client.post(
+            "/api/v1/imports",
+            headers={
+                "X-Actor-ID": "operator-a",
+                "X-Roles": "OPERATOR",
+                "Idempotency-Key": key,
+                "X-Import-Batch-ID": "BATCH-20260720-A",
+                "X-Original-Filename": name,
+                "Content-Type": "image/png",
+            },
+            content=content,
+        )
+
+    first = upload(first_content, "first.png", "batch-first")
+    second = upload(second_content, "second.png", "batch-second")
+    duplicate = upload(first_content, "duplicate.png", "batch-duplicate")
+    read_headers = {"X-Actor-ID": "operator-a", "X-Roles": "OPERATOR"}
+    batches = client.get("/api/v1/import-batches", headers=read_headers)
+    images = client.get("/api/v1/images", headers=read_headers)
+
+    assert first.status_code == second.status_code == 202
+    assert duplicate.status_code == 409
+    assert duplicate.json()["batch_id"] == "BATCH-20260720-A"
+    summary = batches.json()[0]
+    assert summary["batch_id"] == "BATCH-20260720-A"
+    assert summary["counts"] == {
+        "total": 3,
+        "succeeded": 2,
+        "processing": 0,
+        "needs_action": 1,
+        "failed": 0,
+    }
+    assert {item["file_name"] for item in summary["items"]} == {
+        "first.png",
+        "second.png",
+        "duplicate.png",
+    }
+    assert images.status_code == 200
+    assert len(images.json()) == 2
+    assert all(item["thumbnail_url"] for item in images.json())
+    thumbnail = client.get(images.json()[0]["thumbnail_url"], headers=read_headers)
+    assert thumbnail.status_code == 200
+    assert thumbnail.headers["content-type"].startswith("image/")
+
+
 def test_repeated_idempotency_key_returns_the_original_import_task(tmp_path: Path) -> None:
     client = TestClient(
         create_app(build_services(Settings(data_root=tmp_path, allow_header_identity=True))),

@@ -168,3 +168,33 @@ class ImportForms:
             )
         )
         return item
+
+    def import_thumbnail_bytes(
+        self,
+        content: bytes,
+        form_id: str,
+        actor_id: str,
+    ) -> EvidenceFile:
+        """Store an immutable derived thumbnail beside the original evidence."""
+        if self._forms.get_form(form_id) is None:
+            raise KeyError(f"Unknown form: {form_id}")
+        stored = self._storage.store_bytes(content, ".jpg", "thumbnails")
+        item = EvidenceFile(
+            file_id=stored.file_id,
+            form_id=form_id,
+            type=EvidenceType.THUMBNAIL,
+            uri=stored.uri,
+            sha256=stored.sha256,
+        )
+        self._evidence.add_evidence(item)
+        self._audits.add_audit_event(
+            AuditEvent(
+                event_id=f"EVENT-{uuid4().hex}",
+                form_id=form_id,
+                event_type="THUMBNAIL_CREATED",
+                actor_id=actor_id,
+                after={"file_id": item.file_id, "sha256": item.sha256},
+                evidence_ids=(item.file_id,),
+            )
+        )
+        return item

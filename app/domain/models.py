@@ -54,6 +54,7 @@ class AIStatus(StrEnum):
 
 class EvidenceType(StrEnum):
     ORIGINAL_IMAGE = "ORIGINAL_IMAGE"
+    THUMBNAIL = "THUMBNAIL"
     AUDIO = "AUDIO"
     FIELD_CROP = "FIELD_CROP"
     CORRECTED_IMAGE = "CORRECTED_IMAGE"
