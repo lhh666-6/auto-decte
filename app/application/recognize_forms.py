@@ -23,17 +23,26 @@ from app.domain.models import (
     ReviewStatus,
 )
 from app.domain.templates_ds import (
+    JobProfileStatus,
+    PayrollJobProfileVersion,
     TemplateStatus,
     TemplateVersion,
     parse_sheet_payload,
     parse_template_payload,
+    parse_template_profile_payload,
 )
 
 
 class RecognitionRepository(Protocol):
     def add_recognition_attempt(self, attempt: RecognitionAttempt) -> None: ...
     def set_template(
-        self, form_id: str, template_id: str, template_version: str, status: ReviewStatus
+        self,
+        form_id: str,
+        template_id: str,
+        template_version: str,
+        status: ReviewStatus,
+        job_profile_key: str | None = None,
+        job_profile_version: str | None = None,
     ) -> None: ...
 
 
@@ -44,6 +53,10 @@ class TemplateVersionResolver(Protocol):
         self, template_key: str, version: int
     ) -> TemplateVersion | None: ...
 
+    def get_job_profile_by_key_version(
+        self, profile_key: str, version: int
+    ) -> PayrollJobProfileVersion | None: ...
+
 
 @dataclass(frozen=True, slots=True)
 class ClassificationResult:
@@ -51,6 +64,8 @@ class ClassificationResult:
     source: str
     confidence: float
     sheet_reference: str | None = None
+    job_profile_key: str | None = None
+    job_profile_version: int | None = None
     conflict_references: tuple[str, ...] = ()
 
 
@@ -80,39 +95,85 @@ class RecognizeForms:
     def classify_image(self, form_id: str, image: NDArray[Any]) -> ClassificationResult:
         form = self._require_form(form_id)
         references = self._pipeline.read_qr_payloads(image)
-        template_references = {
-            identity: reference
+        profile_references = {
+            profile_candidate: reference
             for reference in references
-            if (identity := parse_template_payload(reference)) is not None
+            if (profile_candidate := parse_template_profile_payload(reference)) is not None
+        }
+        template_references = {
+            template_candidate: reference
+            for reference in references
+            if (template_candidate := parse_template_payload(reference)) is not None
         }
         sheet_references = {
-            identity: reference
+            sheet_candidate: reference
             for reference in references
-            if (identity := parse_sheet_payload(reference)) is not None
+            if (sheet_candidate := parse_sheet_payload(reference)) is not None
         }
-        if len(template_references) > 1 or len(sheet_references) > 1:
-            conflicts = tuple(sorted((*template_references.values(), *sheet_references.values())))
+        if (
+            len(profile_references) > 1
+            or len(template_references) > 1
+            or len(sheet_references) > 1
+            or (profile_references and template_references)
+        ):
+            conflicts = tuple(
+                sorted(
+                    (
+                        *profile_references.values(),
+                        *template_references.values(),
+                        *sheet_references.values(),
+                    )
+                )
+            )
             self._mark_classification_conflict(form, conflicts)
             return ClassificationResult(None, "CONFLICT", 0.0, conflict_references=conflicts)
-        identity, reference = next(iter(template_references.items()), (None, None))
+        profile_identity, profile_reference = next(
+            iter(profile_references.items()), (None, None)
+        )
+        legacy_identity, legacy_reference = next(
+            iter(template_references.items()), (None, None)
+        )
+        selected_template_identity = (
+            (profile_identity[0], profile_identity[1])
+            if profile_identity is not None
+            else legacy_identity
+        )
+        reference = profile_reference or legacy_reference
         sheet_reference = next(iter(sheet_references.values()), None)
         template = (
-            self._template_versions.get_version_by_key_version(*identity)
-            if identity is not None and self._template_versions is not None
+            self._template_versions.get_version_by_key_version(*selected_template_identity)
+            if selected_template_identity is not None and self._template_versions is not None
             else None
         )
+        profile = (
+            self._template_versions.get_job_profile_by_key_version(
+                profile_identity[2], profile_identity[3]
+            )
+            if profile_identity is not None and self._template_versions is not None
+            else None
+        )
+        valid_profile = profile_identity is None or (
+            profile is not None
+            and profile.status is JobProfileStatus.PUBLISHED
+            and template is not None
+            and profile.template_version_id == template.version_id
+            and profile.template_version == template.version
+        )
         if (
-            identity is not None
+            selected_template_identity is not None
             and template is not None
             and template.status is TemplateStatus.PUBLISHED
+            and valid_profile
         ):
-            template_id, version_number = identity
+            template_id, version_number = selected_template_identity
             version = str(version_number)
             self._recognition.set_template(
                 form_id,
                 template_id,
                 version,
                 ReviewStatus.CLASSIFIED,
+                profile.profile_key if profile is not None else None,
+                str(profile.version) if profile is not None else None,
             )
             source = "SHEET_QR" if sheet_reference is not None else "QR"
             self._audit_classification(
@@ -121,8 +182,17 @@ class RecognizeForms:
                 version,
                 source,
                 sheet_reference=sheet_reference,
+                job_profile_key=profile.profile_key if profile is not None else None,
+                job_profile_version=str(profile.version) if profile is not None else None,
             )
-            return ClassificationResult(reference, source, 1.0, sheet_reference)
+            return ClassificationResult(
+                reference,
+                source,
+                1.0,
+                sheet_reference,
+                profile.profile_key if profile is not None else None,
+                profile.version if profile is not None else None,
+            )
         self._forms.set_review_status(form_id, ReviewStatus.NEEDS_CLASSIFICATION)
         return ClassificationResult(None, "NONE", 0.0)
 
@@ -350,6 +420,8 @@ class RecognizeForms:
         source: str,
         *,
         sheet_reference: str | None = None,
+        job_profile_key: str | None = None,
+        job_profile_version: str | None = None,
     ) -> None:
         self._audits.add_audit_event(
             AuditEvent(
@@ -366,6 +438,8 @@ class RecognizeForms:
                     "template_version": template_version,
                     "source": source,
                     "sheet_reference": sheet_reference,
+                    "job_profile_key": job_profile_key,
+                    "job_profile_version": job_profile_version,
                 },
             )
         )

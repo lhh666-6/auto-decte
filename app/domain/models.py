@@ -74,6 +74,8 @@ class Form:
     export_status: ExportStatus = ExportStatus.NOT_EXPORTED
     current_record_version: int = 0
     priority: int = 0
+    job_profile_key: str | None = None
+    job_profile_version: str | None = None
     created_at: datetime = field(default_factory=utc_now)
 
 

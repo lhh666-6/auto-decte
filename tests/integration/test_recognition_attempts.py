@@ -17,12 +17,15 @@ from app.application.recognize_forms import RecognizeForms
 from app.application.review_forms import ReviewForms
 from app.domain.models import FormField, ReviewStatus
 from app.domain.templates_ds import (
+    CoreLayoutKind,
     FieldDefinition,
     PageSpec,
+    PayrollJobProfileVersion,
     Rect,
     TemplateVersion,
     build_sheet_payload,
     build_template_payload,
+    build_template_profile_payload,
 )
 from app.modules.templates.payroll_profiles_ds import reviewed_payroll_seed_templates
 
@@ -179,6 +182,78 @@ def test_all_reviewed_print_pngs_route_to_their_exact_published_versions(
             template.template_key,
             str(template.version),
         )
+
+
+def test_dual_version_qr_routes_to_published_template_and_job_profile(
+    tmp_path: Path,
+) -> None:
+    imports, recognizer, repository, template_repository = build(tmp_path)
+    template = TemplateVersion.draft(
+        "TPL-TIMEKEEPING-V2", "CORE_TIMEKEEPING", 2, PageSpec.a5_landscape()
+    )
+    template.mark_ready_to_publish()
+    template.publish()
+    profile = PayrollJobProfileVersion.draft(
+        "PROFILE-DAY-V4",
+        "TIMEKEEPING_DAY",
+        4,
+        display_name="计时工白班",
+        core_layout=CoreLayoutKind.TIMEKEEPING,
+        template_version_id=template.version_id,
+        template_version=template.version,
+    )
+    profile.mark_ready_to_publish()
+    profile.publish()
+    template_repository.add_version(template)
+    template_repository.add_job_profile(profile)
+    source = tmp_path / "dual-version-source.png"
+    source.write_bytes(b"dual-version")
+    imports.import_image(source, "FORM-DUAL", "UNKNOWN", "0", "operator")
+    artifact = next(
+        item
+        for item in TemplatePrintRenderer(tmp_path / "prints").render(
+            template, job_profile=profile
+        )
+        if item.kind == "PRINT_PNG"
+    )
+
+    result = recognizer.classify_image("FORM-DUAL", cv2.imread(artifact.internal_uri))
+    restored = repository.get_form("FORM-DUAL")
+
+    assert result.template_reference == build_template_profile_payload(
+        template.template_key, template.version, profile.profile_key, profile.version
+    )
+    assert result.job_profile_key == profile.profile_key
+    assert result.job_profile_version == profile.version
+    assert restored is not None
+    assert restored.job_profile_key == profile.profile_key
+    assert restored.job_profile_version == str(profile.version)
+
+
+def test_unknown_job_profile_in_dual_qr_requires_manual_classification(
+    tmp_path: Path,
+) -> None:
+    imports, recognizer, repository, template_repository = build(tmp_path)
+    template = TemplateVersion.draft(
+        "TPL-TIMEKEEPING-V2", "CORE_TIMEKEEPING", 2, PageSpec.a5_landscape()
+    )
+    template.mark_ready_to_publish()
+    template.publish()
+    template_repository.add_version(template)
+    source = tmp_path / "unknown-profile.png"
+    source.write_bytes(b"unknown-profile")
+    imports.import_image(source, "FORM-UNKNOWN-PROFILE", "UNKNOWN", "0", "operator")
+    payload = build_template_profile_payload(
+        template.template_key, template.version, "MISSING_PROFILE", 1
+    )
+    qr = cv2.QRCodeEncoder_create().encode(payload)
+
+    result = recognizer.classify_image("FORM-UNKNOWN-PROFILE", qr)
+    restored = repository.get_form("FORM-UNKNOWN-PROFILE")
+
+    assert result.source == "NONE"
+    assert restored is not None
+    assert restored.review_status is ReviewStatus.NEEDS_CLASSIFICATION
 
 
 def test_two_up_crops_prioritize_their_independent_sheet_qrs(

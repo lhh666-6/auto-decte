@@ -9,7 +9,7 @@ from sqlalchemy import Engine, inspect, text
 from alembic import command
 from app.domain.models import stable_json_sha256
 
-HEAD_REVISION = "009"
+HEAD_REVISION = "010"
 
 _EMPTY_MAPPING_HASH = "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
 
@@ -35,13 +35,21 @@ def ensure_auto_created_schema_compatibility(engine: Engine) -> None:
     tables = set(inspector.get_table_names())
     if "forms" in tables:
         form_columns = {column["name"] for column in inspector.get_columns("forms")}
-        if "priority" not in form_columns:
-            with engine.begin() as connection:
+        with engine.begin() as connection:
+            if "priority" not in form_columns:
                 connection.execute(
                     text(
                         "ALTER TABLE forms ADD COLUMN priority "
                         "INTEGER NOT NULL DEFAULT 0"
                     )
+                )
+            if "job_profile_key" not in form_columns:
+                connection.execute(
+                    text("ALTER TABLE forms ADD COLUMN job_profile_key VARCHAR")
+                )
+            if "job_profile_version" not in form_columns:
+                connection.execute(
+                    text("ALTER TABLE forms ADD COLUMN job_profile_version VARCHAR")
                 )
     inspector = inspect(engine)
     if "evidence_files" in inspector.get_table_names():

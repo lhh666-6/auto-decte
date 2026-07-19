@@ -2,29 +2,26 @@
 
 最后更新：2026-07-19
 
-状态：岗位配置全栈基础和双版本打印二维码已完成；当前只执行下面一个识别身份任务。
+状态：岗位配置双版本打印、识别和持久化闭环已完成；当前只执行下面一个纸表组件任务。
 
 目标分支：`modular-architecture`
 
-## 当前唯一任务：识别并持久化岗位配置身份
+## 当前唯一任务：受控明细表网格组件
 
 规格来源：[工业纸质工资表系统：低 Token 实施与统一 UI 规范](superpowers/specs/2026-07-19-industrial-payroll-low-token-ui-v2.md) 第 3、4 章。
 
-执行计划：[Recognition Job Profile Identity Plan](superpowers/plans/2026-07-20-recognition-job-profile-identity.md)。
+执行计划：[Controlled Table Grid Primitive Plan](superpowers/plans/2026-07-20-controlled-table-grid.md)。
 
-目标：IFD2 分类后同时保存模板身份与岗位配置身份；旧表单和旧 IFD 二维码保持兼容。
+目标：让固定明细表拥有真实的行数、列数和受控列宽，打印时绘制内部线条；不再把 TABLE_GRID 当成空外框。
 
 只读取和修改：
 
-- `app/domain/models.py`
-- `app/adapters/database/models.py`
-- `app/adapters/database/repositories.py`
-- `app/application/recognize_forms.py`
-- `alembic/versions/010_form_job_profile_identity_ds.py`
-- `app/infrastructure/database/migrations.py`
-- 相关仓储、识别、迁移测试
+- `app/domain/templates_ds.py`
+- `app/adapters/templates/print_renderer_ds.py`
+- `app/adapters/database/template_repository_ds.py`
+- 相关领域、renderer、模板仓储测试
 
-只运行表单仓储、识别和迁移测试、Ruff 与相关 mypy，不重复运行前端、审核工作台、导出或完整套件。
+只运行领域、renderer、模板仓储测试、Ruff 与相关 mypy，不重复运行 API、前端、审核工作台、导出或完整套件。
 
 ## 当前执行状态
 

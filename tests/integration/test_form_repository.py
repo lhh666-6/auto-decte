@@ -40,3 +40,24 @@ def test_repository_retains_history_and_points_to_latest_version(tmp_path: Path)
     assert [version.version for version in versions] == [1, 2]
     assert versions[0].values == {"total_quantity": 10}
     assert versions[1].values == {"total_quantity": 12}
+
+
+def test_repository_round_trips_optional_job_profile_identity(tmp_path: Path) -> None:
+    engine = create_engine(f"sqlite:///{tmp_path / 'profile-form.db'}")
+    Base.metadata.create_all(engine)
+    repository = SqlAlchemyFormRepository(engine)
+    repository.add_form(
+        Form(
+            "FORM-PROFILE",
+            "CORE_TIMEKEEPING",
+            "2",
+            job_profile_key="TIMEKEEPING_DAY",
+            job_profile_version="4",
+        )
+    )
+
+    restored = repository.get_form("FORM-PROFILE")
+
+    assert restored is not None
+    assert restored.job_profile_key == "TIMEKEEPING_DAY"
+    assert restored.job_profile_version == "4"

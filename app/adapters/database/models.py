@@ -36,6 +36,8 @@ class FormRow(Base):
     form_id: Mapped[str] = mapped_column(String, primary_key=True)
     template_id: Mapped[str] = mapped_column(String, nullable=False)
     template_version: Mapped[str] = mapped_column(String, nullable=False)
+    job_profile_key: Mapped[str | None] = mapped_column(String)
+    job_profile_version: Mapped[str | None] = mapped_column(String)
     coordinate_version: Mapped[str] = mapped_column(String, nullable=False)
     review_status: Mapped[str] = mapped_column(String, nullable=False)
     export_status: Mapped[str] = mapped_column(String, nullable=False)

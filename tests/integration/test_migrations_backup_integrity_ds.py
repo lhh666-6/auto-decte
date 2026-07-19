@@ -99,8 +99,37 @@ def test_alembic_upgrade_creates_job_profile_versions_without_changing_templates
         revision = connection.execute(
             text("SELECT version_num FROM alembic_version")
         ).scalar_one()
-        assert revision == "009"
+        assert revision == "010"
     upgraded.dispose()
+
+
+def test_upgrade_010_preserves_forms_and_adds_optional_job_profile_identity(
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "form-profile-identity.db"
+    _upgrade_to_revision(database_path, "009")
+    engine = create_engine(f"sqlite:///{database_path}")
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO forms "
+                "(form_id, template_id, template_version, coordinate_version, "
+                "review_status, export_status, current_record_version, priority, created_at) "
+                "VALUES ('FORM-LEGACY', 'T1', '1', '1', 'IMPORTED', "
+                "'NOT_EXPORTED', 0, 0, CURRENT_TIMESTAMP)"
+            )
+        )
+    engine.dispose()
+
+    upgrade_database(database_path)
+
+    upgraded = create_engine(f"sqlite:///{database_path}")
+    columns = {column["name"] for column in inspect(upgraded).get_columns("forms")}
+    assert {"job_profile_key", "job_profile_version"} <= columns
+    restored = SqlAlchemyFormRepository(upgraded).get_form("FORM-LEGACY")
+    assert restored is not None
+    assert restored.job_profile_key is None
+    assert restored.job_profile_version is None
 
 
 def test_upgrade_007_preserves_legacy_template_and_adds_layout_storage(
@@ -159,7 +188,7 @@ def test_upgrade_007_preserves_legacy_template_and_adds_layout_storage(
         revision = connection.execute(
             text("SELECT version_num FROM alembic_version")
         ).scalar_one()
-        assert revision == "009"
+        assert revision == "010"
     upgraded.dispose()
 
 
@@ -196,7 +225,10 @@ def test_evidence_hash_is_unique_only_for_original_images(tmp_path: Path) -> Non
     with engine.begin() as connection:
         connection.execute(
             text(
-                "INSERT INTO forms VALUES "
+                "INSERT INTO forms "
+                "(form_id, template_id, template_version, coordinate_version, "
+                "review_status, export_status, current_record_version, priority, created_at) "
+                "VALUES "
                 "('FORM-1', 'T1', '1', '1', 'CLASSIFIED', 'NOT_EXPORTED', 0, 0, "
                 "CURRENT_TIMESTAMP), "
                 "('FORM-2', 'T1', '1', '1', 'CLASSIFIED', 'NOT_EXPORTED', 0, 0, "
@@ -374,7 +406,7 @@ def test_upgrade_006_export_batch_preserves_data_and_adds_snapshot_columns(
         revision = connection.execute(
             text("SELECT version_num FROM alembic_version")
         ).scalar_one()
-        assert revision == "009"
+        assert revision == "010"
     upgraded.dispose()
 
     _downgrade_to_revision(database_path, "006")

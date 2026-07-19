@@ -74,6 +74,8 @@ class SqlAlchemyFormRepository:
                     form_id=form.form_id,
                     template_id=form.template_id,
                     template_version=form.template_version,
+                    job_profile_key=form.job_profile_key,
+                    job_profile_version=form.job_profile_version,
                     coordinate_version=form.coordinate_version,
                     review_status=form.review_status.value,
                     export_status=form.export_status.value,
@@ -92,6 +94,8 @@ class SqlAlchemyFormRepository:
                 form_id=row.form_id,
                 template_id=row.template_id,
                 template_version=row.template_version,
+                job_profile_key=row.job_profile_key,
+                job_profile_version=row.job_profile_version,
                 coordinate_version=row.coordinate_version,
                 review_status=ReviewStatus(row.review_status),
                 export_status=ExportStatus(row.export_status),
@@ -178,7 +182,13 @@ class SqlAlchemyFormRepository:
             form.review_status = status.value
 
     def set_template(
-        self, form_id: str, template_id: str, template_version: str, status: ReviewStatus
+        self,
+        form_id: str,
+        template_id: str,
+        template_version: str,
+        status: ReviewStatus,
+        job_profile_key: str | None = None,
+        job_profile_version: str | None = None,
     ) -> None:
         with self._transaction() as session:
             form = session.get(FormRow, form_id)
@@ -186,6 +196,8 @@ class SqlAlchemyFormRepository:
                 raise KeyError(f"Unknown form: {form_id}")
             form.template_id = template_id
             form.template_version = template_version
+            form.job_profile_key = job_profile_key
+            form.job_profile_version = job_profile_version
             form.review_status = status.value
 
     def set_export_status(self, form_id: str, status: ExportStatus) -> None:
@@ -654,6 +666,8 @@ class SqlAlchemyFormRepository:
             form_id=row.form_id,
             template_id=row.template_id,
             template_version=row.template_version,
+            job_profile_key=row.job_profile_key,
+            job_profile_version=row.job_profile_version,
             coordinate_version=row.coordinate_version,
             review_status=ReviewStatus(row.review_status),
             export_status=ExportStatus(row.export_status),

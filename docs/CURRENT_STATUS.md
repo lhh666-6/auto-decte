@@ -20,6 +20,8 @@
 
 双版本二维码与打印已完成：新 `IFD2` 同时校验模板键/版本和岗位键/版本，旧 `IFD` 保持兼容；传入已发布岗位配置时打印产物使用 IFD2 且文件名区分岗位版本，错误绑定会拒绝打印。领域与渲染验证 `28 passed`，Ruff 和 mypy 通过。下一任务是 [识别并持久化岗位配置身份](superpowers/plans/2026-07-20-recognition-job-profile-identity.md)。
 
+IFD2 识别与岗位身份持久化已完成：Form 和数据库可空保存岗位键/版本，Alembic 010 纯增量加列；分类同时验证已发布模板、已发布岗位配置及其绑定关系，未知/不匹配进入人工分类。仓储、识别、迁移合计 `32 passed`，Ruff 和 mypy 通过。下一任务是 [受控明细表网格组件](superpowers/plans/2026-07-20-controlled-table-grid.md)。
+
 ## 本轮结论
 
 工业表单前端重建实施计划的任务 1—16 已按顺序完成。协作同步基线为 `ff03a39 fix(review): preserve confirmed values across reload and export`，并已在其上完成新主线 Task 1—10；集成分支为 `modular-architecture`。
