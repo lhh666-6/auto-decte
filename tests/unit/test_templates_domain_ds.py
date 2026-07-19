@@ -16,6 +16,7 @@ from app.domain.templates_ds import (
     TemplateVersion,
     build_sheet_payload,
     build_template_payload,
+    parse_sheet_payload,
     parse_template_payload,
 )
 
@@ -99,6 +100,12 @@ def test_template_payload_parser_rejects_tampering_and_returns_exact_identity() 
 
 def test_sheet_payload_has_zero_padded_sequence_and_checksum() -> None:
     assert build_sheet_payload("PB20260713A", 128) == "SHEET|PB20260713A|000128|44D8"
+    assert parse_sheet_payload("SHEET|PB20260713A|000128|44D8") == (
+        "PB20260713A",
+        128,
+    )
+    assert parse_sheet_payload("SHEET|PB20260713A|128|44D8") is None
+    assert parse_sheet_payload("SHEET|PB20260713A|000128|FFFF") is None
 
 
 def test_invalid_template_key_and_out_of_canvas_field_are_rejected() -> None:

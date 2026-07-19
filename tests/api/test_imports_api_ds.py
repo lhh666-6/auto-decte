@@ -13,6 +13,7 @@ from app.domain.templates_ds import (
     PageSpec,
     Rect,
     TemplateVersion,
+    build_sheet_payload,
     build_template_payload,
 )
 from app.services.container import build_services
@@ -200,6 +201,53 @@ def test_import_binds_only_the_exact_published_template_from_its_qr(tmp_path: Pa
     assert imported is not None
     assert (imported.template_id, imported.template_version) == ("PAYROLL_HOURLY", "3")
     assert imported.review_status is ReviewStatus.CLASSIFIED
+
+
+def test_import_prioritizes_valid_sheet_identity_when_both_qrs_are_present(
+    tmp_path: Path,
+) -> None:
+    services = build_services(Settings(data_root=tmp_path, allow_header_identity=True))
+    template = TemplateVersion.draft("TPL-SHEET", "PAYROLL_HOURLY", 4, PageSpec.a4_portrait())
+    template.mark_ready_to_publish()
+    template.publish()
+    services.template_repository.add_version(template)
+    artifact = next(
+        item
+        for item in services.template_renderer.render(
+            template,
+            print_batch="PB20260719C",
+            sequence=19,
+        )
+        if item.kind == "PRINT_PNG"
+    )
+    client = TestClient(create_app(services), raise_server_exceptions=False)
+
+    response = client.post(
+        "/api/v1/imports",
+        headers={
+            "X-Actor-ID": "operator-a",
+            "X-Roles": "OPERATOR",
+            "Idempotency-Key": "import-sheet-priority",
+            "Content-Type": "image/png",
+        },
+        content=Path(artifact.internal_uri).read_bytes(),
+    )
+
+    assert response.status_code == 202
+    form_id = response.json()["form_id"]
+    imported = services.repository.get_form(form_id)
+    classification = next(
+        event
+        for event in services.repository.list_audit_events(form_id)
+        if event.event_type == "CLASSIFY"
+    )
+    assert imported is not None
+    assert (imported.template_id, imported.template_version) == ("PAYROLL_HOURLY", "4")
+    assert classification.after["source"] == "SHEET_QR"
+    assert classification.after["sheet_reference"] == build_sheet_payload(
+        "PB20260719C",
+        19,
+    )
 
 
 def test_import_rejects_invalid_image_bytes_despite_png_content_type(

@@ -124,7 +124,7 @@ async def import_image(
             )
             services.tasks.report(task.task_id, 60, "classify_template_qr")
             classification = services.recognition.classify_image(form_id, image)
-            if classification.source == "QR":
+            if classification.source in {"QR", "SHEET_QR"}:
                 classified_form = services.repository.get_form(form_id)
                 if classified_form is not None:
                     template = services.template_repository.get_version_by_key_version(

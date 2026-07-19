@@ -22,7 +22,12 @@ from app.domain.models import (
     RecognitionAttempt,
     ReviewStatus,
 )
-from app.domain.templates_ds import TemplateStatus, TemplateVersion, parse_template_payload
+from app.domain.templates_ds import (
+    TemplateStatus,
+    TemplateVersion,
+    parse_sheet_payload,
+    parse_template_payload,
+)
 
 
 class RecognitionRepository(Protocol):
@@ -45,6 +50,8 @@ class ClassificationResult:
     template_reference: str | None
     source: str
     confidence: float
+    sheet_reference: str | None = None
+    conflict_references: tuple[str, ...] = ()
 
 
 class RecognizeForms:
@@ -72,8 +79,23 @@ class RecognizeForms:
 
     def classify_image(self, form_id: str, image: NDArray[Any]) -> ClassificationResult:
         form = self._require_form(form_id)
-        reference = self._pipeline.read_template_qr(image)
-        identity = parse_template_payload(reference) if reference else None
+        references = self._pipeline.read_qr_payloads(image)
+        template_references = {
+            identity: reference
+            for reference in references
+            if (identity := parse_template_payload(reference)) is not None
+        }
+        sheet_references = {
+            identity: reference
+            for reference in references
+            if (identity := parse_sheet_payload(reference)) is not None
+        }
+        if len(template_references) > 1 or len(sheet_references) > 1:
+            conflicts = tuple(sorted((*template_references.values(), *sheet_references.values())))
+            self._mark_classification_conflict(form, conflicts)
+            return ClassificationResult(None, "CONFLICT", 0.0, conflict_references=conflicts)
+        identity, reference = next(iter(template_references.items()), (None, None))
+        sheet_reference = next(iter(sheet_references.values()), None)
         template = (
             self._template_versions.get_version_by_key_version(*identity)
             if identity is not None and self._template_versions is not None
@@ -92,8 +114,15 @@ class RecognizeForms:
                 version,
                 ReviewStatus.CLASSIFIED,
             )
-            self._audit_classification(form, template_id, version, "QR")
-            return ClassificationResult(reference, "QR", 1.0)
+            source = "SHEET_QR" if sheet_reference is not None else "QR"
+            self._audit_classification(
+                form,
+                template_id,
+                version,
+                source,
+                sheet_reference=sheet_reference,
+            )
+            return ClassificationResult(reference, source, 1.0, sheet_reference)
         self._forms.set_review_status(form_id, ReviewStatus.NEEDS_CLASSIFICATION)
         return ClassificationResult(None, "NONE", 0.0)
 
@@ -308,7 +337,13 @@ class RecognizeForms:
         return form
 
     def _audit_classification(
-        self, before: Form, template_id: str, template_version: str, source: str
+        self,
+        before: Form,
+        template_id: str,
+        template_version: str,
+        source: str,
+        *,
+        sheet_reference: str | None = None,
     ) -> None:
         self._audits.add_audit_event(
             AuditEvent(
@@ -324,6 +359,31 @@ class RecognizeForms:
                     "template_id": template_id,
                     "template_version": template_version,
                     "source": source,
+                    "sheet_reference": sheet_reference,
                 },
+            )
+        )
+
+    def _mark_classification_conflict(
+        self,
+        before: Form,
+        references: tuple[str, ...],
+    ) -> None:
+        self._forms.set_review_status(before.form_id, ReviewStatus.NEEDS_CLASSIFICATION)
+        self._audits.add_audit_event(
+            AuditEvent(
+                event_id=f"EVENT-{uuid4().hex}",
+                form_id=before.form_id,
+                event_type="CLASSIFICATION_CONFLICT",
+                actor_id="system",
+                before={
+                    "template_id": before.template_id,
+                    "template_version": before.template_version,
+                },
+                after={
+                    "review_status": ReviewStatus.NEEDS_CLASSIFICATION.value,
+                    "references": references,
+                },
+                reason="同一图片包含冲突的二维码身份，禁止自动猜测模板。",
             )
         )

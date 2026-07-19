@@ -10,6 +10,7 @@ from app.adapters.database.template_repository_ds import SqlAlchemyTemplateRepos
 from app.adapters.recognition.candidate import RecognitionCandidate
 from app.adapters.recognition.opencv import OpenCvImagePipeline
 from app.adapters.storage.local import LocalEvidenceStorage
+from app.adapters.templates.print_renderer_ds import TemplatePrintRenderer
 from app.application.import_forms import ImportForms
 from app.application.query_forms import QueryForms
 from app.application.recognize_forms import RecognizeForms
@@ -20,8 +21,10 @@ from app.domain.templates_ds import (
     PageSpec,
     Rect,
     TemplateVersion,
+    build_sheet_payload,
     build_template_payload,
 )
+from app.modules.templates.payroll_profiles_ds import reviewed_payroll_seed_templates
 
 
 def build(tmp_path: Path):  # type: ignore[no-untyped-def]
@@ -144,6 +147,111 @@ def test_valid_ifd_qr_binds_the_exact_template_key_and_version(tmp_path: Path) -
     restored = repository.get_form("FORM-0001")
     assert restored is not None
     assert (restored.template_id, restored.template_version) == ("PAYROLL_HOURLY", "3")
+
+
+def test_all_reviewed_print_pngs_route_to_their_exact_published_versions(
+    tmp_path: Path,
+) -> None:
+    imports, recognizer, repository, template_repository = build(tmp_path)
+    renderer = TemplatePrintRenderer(tmp_path / "prints")
+
+    for index, template in enumerate(reviewed_payroll_seed_templates(), start=1):
+        template_repository.add_version(template)
+        source = tmp_path / f"source-{index}.png"
+        source.write_bytes(f"source-{index}".encode())
+        form_id = f"FORM-PROFILE-{index:02d}"
+        imports.import_image(source, form_id, "UNKNOWN", "0", "operator")
+        artifact = next(
+            item for item in renderer.render(template) if item.kind == "PRINT_PNG"
+        )
+        image = cv2.imread(artifact.internal_uri)
+
+        result = recognizer.classify_image(form_id, image)
+        restored = repository.get_form(form_id)
+
+        assert result.source == "QR"
+        assert result.template_reference == build_template_payload(
+            template.template_key,
+            template.version,
+        )
+        assert restored is not None
+        assert (restored.template_id, restored.template_version) == (
+            template.template_key,
+            str(template.version),
+        )
+
+
+def test_two_up_crops_prioritize_their_independent_sheet_qrs(
+    tmp_path: Path,
+) -> None:
+    imports, recognizer, repository, template_repository = build(tmp_path)
+    template = reviewed_payroll_seed_templates()[0]
+    template_repository.add_version(template)
+    imposed = TemplatePrintRenderer(tmp_path / "prints").compose_imposition(
+        template,
+        print_batch="PB20260719B",
+        first_sequence=71,
+    )
+    halves = (
+        np.asarray(imposed.crop((0, 0, imposed.width // 2, imposed.height)).convert("RGB")),
+        np.asarray(
+            imposed.crop((imposed.width // 2, 0, imposed.width, imposed.height)).convert("RGB")
+        ),
+    )
+
+    for offset, image in enumerate(halves):
+        form_id = f"FORM-TWO-UP-{offset + 1}"
+        source = tmp_path / f"two-up-{offset + 1}.png"
+        source.write_bytes(f"two-up-{offset + 1}".encode())
+        imports.import_image(source, form_id, "UNKNOWN", "0", "operator")
+
+        result = recognizer.classify_image(form_id, image)
+        restored = repository.get_form(form_id)
+
+        assert result.source == "SHEET_QR"
+        assert result.sheet_reference == build_sheet_payload(
+            "PB20260719B",
+            71 + offset,
+        )
+        assert restored is not None
+        assert (restored.template_id, restored.template_version) == (
+            template.template_key,
+            "1",
+        )
+
+
+def test_conflicting_template_qrs_require_manual_classification_and_are_audited(
+    tmp_path: Path,
+) -> None:
+    imports, recognizer, repository, template_repository = build(tmp_path)
+    templates = reviewed_payroll_seed_templates()[:2]
+    for template in templates:
+        template_repository.add_version(template)
+    source = tmp_path / "conflict.png"
+    source.write_bytes(b"conflict")
+    imports.import_image(source, "FORM-CONFLICT", "UNKNOWN", "0", "operator")
+    canvas = np.full((360, 720), 255, dtype=np.uint8)
+    expected_references: list[str] = []
+    for index, template in enumerate(templates):
+        reference = build_template_payload(template.template_key, template.version)
+        expected_references.append(reference)
+        qr = cv2.QRCodeEncoder_create().encode(reference)
+        qr = np.pad(qr, 4, mode="constant", constant_values=255)
+        qr = cv2.resize(qr, (260, 260), interpolation=cv2.INTER_NEAREST)
+        left = 60 + index * 340
+        canvas[50:310, left : left + 260] = qr
+
+    result = recognizer.classify_image("FORM-CONFLICT", canvas)
+    restored = repository.get_form("FORM-CONFLICT")
+    audit = repository.list_audit_events("FORM-CONFLICT")[-1]
+
+    assert result.source == "CONFLICT"
+    assert result.conflict_references == tuple(sorted(expected_references))
+    assert restored is not None
+    assert restored.review_status is ReviewStatus.NEEDS_CLASSIFICATION
+    assert (restored.template_id, restored.template_version) == ("UNKNOWN", "0")
+    assert audit.event_type == "CLASSIFICATION_CONFLICT"
+    assert audit.after["references"] == sorted(expected_references)
 
 
 def test_canonical_canvas_yields_immutable_template_field_crop_evidence(tmp_path: Path) -> None:

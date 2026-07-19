@@ -564,6 +564,25 @@ def build_sheet_payload(print_batch: str, sequence: int) -> str:
     return f"SHEET|{print_batch}|{padded}|{checksum}"
 
 
+def parse_sheet_payload(payload: str) -> tuple[str, int] | None:
+    """Validate a non-business paper-instance identity without inferring a template."""
+    parts = payload.split("|")
+    if len(parts) != 4 or parts[0] != "SHEET":
+        return None
+    _, print_batch, raw_sequence, checksum = parts
+    if not _BATCH_KEY.fullmatch(print_batch) or len(raw_sequence) != 6:
+        return None
+    try:
+        sequence = int(raw_sequence)
+    except ValueError:
+        return None
+    if sequence < 1 or sequence > 999999 or raw_sequence != f"{sequence:06d}":
+        return None
+    if checksum != _checksum(f"{print_batch}|{raw_sequence}"):
+        return None
+    return print_batch, sequence
+
+
 def _paper_entry_mode_from_legacy(input_type: str) -> PaperEntryMode:
     return {
         "digit_boxes": PaperEntryMode.DIGIT_BOXES,

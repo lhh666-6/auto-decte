@@ -62,6 +62,11 @@ class OpenCvImagePipeline:
         )
 
     def read_template_qr(self, image: Image) -> str | None:
+        payloads = self.read_qr_payloads(image)
+        return payloads[0] if payloads else None
+
+    def read_qr_payloads(self, image: Image) -> tuple[str, ...]:
+        """Decode every visible QR so callers can reject ambiguous paper identities."""
         self._require_image(image)
         candidate = image
         if min(image.shape[:2]) < 100:
@@ -70,8 +75,32 @@ class OpenCvImagePipeline:
                 Image,
                 cv2.resize(image, None, fx=scale, fy=scale, interpolation=cv2.INTER_NEAREST),
             )
-        value, _, _ = cv2.QRCodeDetector().detectAndDecode(candidate)
-        return value or None
+        height, width = candidate.shape[:2]
+        regions = (
+            candidate,
+            candidate[
+                int(height * 0.02) : int(height * 0.27),
+                int(width * 0.70) : int(width * 0.95),
+            ],
+            candidate[
+                int(height * 0.04) : int(height * 0.25),
+                int(width * 0.75) : int(width * 0.93),
+            ],
+            candidate[
+                int(height * 0.01) : int(height * 0.28),
+                int(width * 0.45) : int(width * 0.80),
+            ],
+        )
+        payloads: dict[str, None] = {}
+        for region in regions:
+            detector = cv2.QRCodeDetector()
+            detected, values, _, _ = detector.detectAndDecodeMulti(region)
+            if detected:
+                payloads.update((value, None) for value in values if value)
+            value, _, _ = detector.detectAndDecode(region)
+            if value:
+                payloads[value] = None
+        return tuple(payloads)
 
     def correct_perspective(
         self,
