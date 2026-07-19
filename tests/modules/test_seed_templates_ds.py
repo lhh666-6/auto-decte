@@ -11,18 +11,32 @@ from app.domain.templates_ds import PageSpec, TemplateStatus, TemplateVersion
 from app.infrastructure.database.sqlite_ds import create_sqlite_engine
 from app.modules.templates.seed_templates_ds import (
     SeedTemplateConflict,
+    all_payroll_seed_templates,
     install_legacy_payroll_seed_templates,
     legacy_payroll_seed_templates,
 )
 from app.services.container import build_services
 from config.settings import Settings
 
-EXPECTED_KEYS = {
+LEGACY_KEYS = {
     "PAYROLL_HOURLY",
     "PAYROLL_STANDARD_PIECE",
     "PAYROLL_FIXED_PRODUCTION_GRID",
     "PAYROLL_EQUIPMENT_PROCESS",
 }
+REVIEWED_KEYS = {
+    "PAYROLL_TIMEKEEPING_DAILY",
+    "PAYROLL_FORKLIFT_DAILY",
+    "PAYROLL_RACK_LOADING_DAILY",
+    "PAYROLL_BAMBOO_RACK_DAILY",
+    "PAYROLL_DRYING_DAILY",
+    "PAYROLL_STEAMING_DAILY",
+    "PAYROLL_CARBONIZATION_DAILY",
+    "PAYROLL_BOILER_DAILY",
+    "PAYROLL_HOT_PRESS_DAILY",
+    "PAYROLL_SHEET_CUTTING_DAILY",
+}
+EXPECTED_KEYS = LEGACY_KEYS | REVIEWED_KEYS
 
 
 def _repository(tmp_path: Path) -> SqlAlchemyTemplateRepository:
@@ -34,7 +48,7 @@ def _repository(tmp_path: Path) -> SqlAlchemyTemplateRepository:
 def test_seed_templates_are_published_complete_business_definitions() -> None:
     templates = legacy_payroll_seed_templates()
 
-    assert {template.template_key for template in templates} == EXPECTED_KEYS
+    assert {template.template_key for template in templates} == LEGACY_KEYS
     assert all(template.status is TemplateStatus.PUBLISHED for template in templates)
     for template in templates:
         keys = {field.field_key for field in template.fields}
@@ -43,6 +57,14 @@ def test_seed_templates_are_published_complete_business_definitions() -> None:
         assert all(field.rules.required is not None for field in template.fields)
         assert all(field.export_target is not None for field in template.fields)
         assert all(field.region.is_inside() for field in template.fields)
+
+
+def test_all_seed_templates_keep_legacy_compatibility_and_add_reviewed_profiles() -> None:
+    templates = all_payroll_seed_templates()
+
+    assert len(templates) == 14
+    assert {template.template_key for template in templates} == EXPECTED_KEYS
+    assert all(template.status is TemplateStatus.PUBLISHED for template in templates)
 
 
 def test_seed_install_is_idempotent_and_generates_print_artifacts(tmp_path: Path) -> None:
@@ -68,7 +90,7 @@ def test_seed_install_is_idempotent_and_generates_print_artifacts(tmp_path: Path
     assert set(second.existing) == EXPECTED_KEYS
     assert repository.list_template_keys() == sorted(EXPECTED_KEYS)
     assert all(len(repository.list_versions(key)) == 1 for key in EXPECTED_KEYS)
-    assert len(first_artifact_ids) == 8
+    assert len(first_artifact_ids) == 28
     assert second_artifact_ids == first_artifact_ids
     for key in EXPECTED_KEYS:
         version = repository.list_versions(key)[0]
@@ -133,7 +155,7 @@ def test_application_composition_can_install_seeds_into_a_new_database(tmp_path:
     assert set(second.template_repository.list_template_keys()) == EXPECTED_KEYS
     assert sum(
         len(second.template_repository.list_versions(key)) for key in EXPECTED_KEYS
-    ) == 4
+    ) == 14
 
 
 def test_application_startup_preserves_conflicting_legacy_template(tmp_path: Path) -> None:

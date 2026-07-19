@@ -18,6 +18,10 @@ from app.domain.templates_ds import (
     TemplateArtifact,
     TemplateVersion,
 )
+from app.modules.templates.payroll_profiles_ds import (
+    reviewed_payroll_metadata,
+    reviewed_payroll_seed_templates,
+)
 
 _WORKBOOK = "企业工资记录.xlsx"
 _SEED_METADATA = {
@@ -25,6 +29,7 @@ _SEED_METADATA = {
     "PAYROLL_STANDARD_PIECE": ("标准计件单", "适用于标准计件生产记录"),
     "PAYROLL_FIXED_PRODUCTION_GRID": ("固定生产明细单", "适用于固定生产明细岗位"),
     "PAYROLL_EQUIPMENT_PROCESS": ("设备工序单", "适用于设备与工序计件岗位"),
+    **reviewed_payroll_metadata(),
 }
 _COMMON_FIELDS = (
     ("work_date", "日期", "text", "text_box", True),
@@ -133,6 +138,11 @@ def legacy_payroll_seed_templates() -> tuple[TemplateVersion, ...]:
     )
 
 
+def all_payroll_seed_templates() -> tuple[TemplateVersion, ...]:
+    """Return legacy compatibility templates followed by ten reviewed product profiles."""
+    return legacy_payroll_seed_templates() + reviewed_payroll_seed_templates()
+
+
 def install_legacy_payroll_seed_templates(
     repository: SeedTemplateRepository,
     renderer: TemplatePrintRenderer,
@@ -140,7 +150,7 @@ def install_legacy_payroll_seed_templates(
     """Install reviewed V1 templates once and repair a missing artifact kind on retry."""
     installed: list[str] = []
     existing: list[str] = []
-    expected_templates = legacy_payroll_seed_templates()
+    expected_templates = all_payroll_seed_templates()
     current_versions: dict[str, TemplateVersion | None] = {}
     for expected in expected_templates:
         current = repository.get_version_by_key_version(expected.template_key, expected.version)
@@ -272,6 +282,26 @@ def _content_fingerprint(version: TemplateVersion) -> str:
         "version": version.version,
         "page": asdict(version.page),
         "parent_version_id": version.parent_version_id,
+        "static_elements": [asdict(element) for element in version.static_elements],
+        "print_imposition": (
+            asdict(version.print_imposition) if version.print_imposition is not None else None
+        ),
         "fields": [asdict(field) for field in version.fields],
     }
-    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return json.dumps(
+        _canonicalize_numbers(value),
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+
+
+def _canonicalize_numbers(value: object) -> object:
+    """Make equivalent integer and SQLite float dimensions fingerprint identically."""
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+    if isinstance(value, dict):
+        return {key: _canonicalize_numbers(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_canonicalize_numbers(item) for item in value]
+    return value
