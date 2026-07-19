@@ -10,6 +10,8 @@
 
 下一差异任务是 [6 个核心版面与岗位配置的领域模型](superpowers/plans/2026-07-19-core-layout-job-profile-domain.md)。只建立领域边界，不迁移数据、不改 API、不重写六张版面。
 
+该领域任务已完成：V2 只有六个 `CoreLayoutKind`，岗位配置版本明确绑定一个模板版本，并具备草稿、就绪、发布、停用和从已发布版本复制新草稿的生命周期。验证为 `18 passed`，Ruff 和 mypy 通过。下一任务是 [岗位配置持久化](superpowers/plans/2026-07-20-job-profile-persistence.md)。
+
 ## 本轮结论
 
 工业表单前端重建实施计划的任务 1—16 已按顺序完成。协作同步基线为 `ff03a39 fix(review): preserve confirmed values across reload and export`，并已在其上完成新主线 Task 1—10；集成分支为 `modular-architecture`。

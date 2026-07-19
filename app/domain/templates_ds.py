@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 import zlib
+from copy import deepcopy
 from dataclasses import dataclass, field, replace
 from enum import StrEnum
 
@@ -24,6 +25,167 @@ class TemplateStatus(StrEnum):
     PUBLISHED = "PUBLISHED"
     DEPRECATED = "DEPRECATED"
     RETIRED = "RETIRED"
+
+
+class CoreLayoutKind(StrEnum):
+    """The six stable paper layouts allowed by the V2 payroll workflow."""
+
+    TIMEKEEPING = "TIMEKEEPING"
+    EQUIPMENT_TIMEKEEPING = "EQUIPMENT_TIMEKEEPING"
+    RACK_DRYING_PIECEWORK = "RACK_DRYING_PIECEWORK"
+    FURNACE_WORK = "FURNACE_WORK"
+    HOT_PRESS = "HOT_PRESS"
+    SHEET_CUTTING = "SHEET_CUTTING"
+
+
+class JobProfileStatus(StrEnum):
+    """Lifecycle of a versioned job configuration."""
+
+    DRAFT = "DRAFT"
+    READY_TO_PUBLISH = "READY_TO_PUBLISH"
+    PUBLISHED = "PUBLISHED"
+    RETIRED = "RETIRED"
+
+
+@dataclass(slots=True)
+class PayrollJobProfileVersion:
+    """Versioned job configuration bound to one exact paper-layout version."""
+
+    profile_version_id: str
+    profile_key: str
+    version: int
+    display_name: str
+    core_layout: CoreLayoutKind
+    template_version_id: str
+    template_version: int
+    status: JobProfileStatus = JobProfileStatus.DRAFT
+    parent_profile_version_id: str | None = None
+    unit: str = ""
+    fixed_options: dict[str, object] = field(default_factory=dict)
+    pricing_rules: dict[str, object] = field(default_factory=dict)
+    deduction_rules: dict[str, object] = field(default_factory=dict)
+    export_mapping: dict[str, object] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if not self.profile_version_id.strip():
+            raise ValueError("profile_version_id is required")
+        _validate_profile_key(self.profile_key)
+        if self.version < 1:
+            raise ValueError("version must be a positive integer")
+        if not self.display_name.strip():
+            raise ValueError("display_name is required")
+        if not self.template_version_id.strip():
+            raise ValueError("template_version_id is required")
+        if self.template_version < 1:
+            raise ValueError("template_version must be a positive integer")
+        self.fixed_options = _copy_profile_mapping("fixed_options", self.fixed_options)
+        self.pricing_rules = _copy_profile_mapping("pricing_rules", self.pricing_rules)
+        self.deduction_rules = _copy_profile_mapping(
+            "deduction_rules", self.deduction_rules
+        )
+        self.export_mapping = _copy_profile_mapping("export_mapping", self.export_mapping)
+
+    @classmethod
+    def draft(
+        cls,
+        profile_version_id: str,
+        profile_key: str,
+        version: int,
+        *,
+        display_name: str,
+        core_layout: CoreLayoutKind,
+        template_version_id: str,
+        template_version: int,
+        parent_profile_version_id: str | None = None,
+        unit: str = "",
+        fixed_options: dict[str, object] | None = None,
+        pricing_rules: dict[str, object] | None = None,
+        deduction_rules: dict[str, object] | None = None,
+        export_mapping: dict[str, object] | None = None,
+    ) -> PayrollJobProfileVersion:
+        return cls(
+            profile_version_id=profile_version_id,
+            profile_key=profile_key,
+            version=version,
+            display_name=display_name,
+            core_layout=core_layout,
+            template_version_id=template_version_id,
+            template_version=template_version,
+            parent_profile_version_id=parent_profile_version_id,
+            unit=unit,
+            fixed_options=fixed_options or {},
+            pricing_rules=pricing_rules or {},
+            deduction_rules=deduction_rules or {},
+            export_mapping=export_mapping or {},
+        )
+
+    def update_configuration(
+        self,
+        *,
+        display_name: str | None = None,
+        unit: str | None = None,
+        fixed_options: dict[str, object] | None = None,
+        pricing_rules: dict[str, object] | None = None,
+        deduction_rules: dict[str, object] | None = None,
+        export_mapping: dict[str, object] | None = None,
+    ) -> None:
+        self._require_editable()
+        if display_name is not None:
+            if not display_name.strip():
+                raise ValueError("display_name is required")
+            self.display_name = display_name
+        if unit is not None:
+            self.unit = unit
+        if fixed_options is not None:
+            self.fixed_options = _copy_profile_mapping("fixed_options", fixed_options)
+        if pricing_rules is not None:
+            self.pricing_rules = _copy_profile_mapping("pricing_rules", pricing_rules)
+        if deduction_rules is not None:
+            self.deduction_rules = _copy_profile_mapping(
+                "deduction_rules", deduction_rules
+            )
+        if export_mapping is not None:
+            self.export_mapping = _copy_profile_mapping("export_mapping", export_mapping)
+        self.status = JobProfileStatus.DRAFT
+
+    def mark_ready_to_publish(self) -> None:
+        self._require_editable()
+        self.status = JobProfileStatus.READY_TO_PUBLISH
+
+    def publish(self) -> None:
+        if self.status is not JobProfileStatus.READY_TO_PUBLISH:
+            raise ValueError("job profile version must be ready before publication")
+        self.status = JobProfileStatus.PUBLISHED
+
+    def retire(self) -> None:
+        if self.status is not JobProfileStatus.PUBLISHED:
+            raise ValueError("only published job profile versions can be retired")
+        self.status = JobProfileStatus.RETIRED
+
+    def clone_as_draft(
+        self, profile_version_id: str, version: int
+    ) -> PayrollJobProfileVersion:
+        if self.status is not JobProfileStatus.PUBLISHED:
+            raise ValueError("only published job profile versions can be cloned")
+        return PayrollJobProfileVersion.draft(
+            profile_version_id,
+            self.profile_key,
+            version,
+            display_name=self.display_name,
+            core_layout=self.core_layout,
+            template_version_id=self.template_version_id,
+            template_version=self.template_version,
+            parent_profile_version_id=self.profile_version_id,
+            unit=self.unit,
+            fixed_options=self.fixed_options,
+            pricing_rules=self.pricing_rules,
+            deduction_rules=self.deduction_rules,
+            export_mapping=self.export_mapping,
+        )
+
+    def _require_editable(self) -> None:
+        if self.status in {JobProfileStatus.PUBLISHED, JobProfileStatus.RETIRED}:
+            raise ValueError("published job profile versions cannot be mutated")
 
 
 class ElementKind(StrEnum):
@@ -640,6 +802,17 @@ def _legacy_recognition_engine(recognition_mode: RecognitionMode) -> str:
 def _validate_template_key(template_key: str) -> None:
     if not _TEMPLATE_KEY.fullmatch(template_key):
         raise ValueError("template_key must use uppercase ASCII letters, digits and underscores")
+
+
+def _validate_profile_key(profile_key: str) -> None:
+    if not _TEMPLATE_KEY.fullmatch(profile_key):
+        raise ValueError("profile_key must use uppercase ASCII letters, digits and underscores")
+
+
+def _copy_profile_mapping(name: str, value: dict[str, object]) -> dict[str, object]:
+    if any(not isinstance(key, str) or not key.strip() for key in value):
+        raise ValueError(f"{name} keys must be non-empty strings")
+    return deepcopy(value)
 
 
 def _has_tenth_millimetre_precision(value: float) -> bool:

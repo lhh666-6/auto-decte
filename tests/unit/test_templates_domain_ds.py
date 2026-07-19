@@ -3,11 +3,14 @@
 import pytest
 
 from app.domain.templates_ds import (
+    CoreLayoutKind,
     ElementKind,
     FieldDefinition,
     FillPolicy,
+    JobProfileStatus,
     PageSpec,
     PaperEntryMode,
+    PayrollJobProfileVersion,
     PrintImposition,
     RecognitionMode,
     Rect,
@@ -19,6 +22,87 @@ from app.domain.templates_ds import (
     parse_sheet_payload,
     parse_template_payload,
 )
+
+
+def test_v2_exposes_exactly_six_core_layout_kinds() -> None:
+    assert {item.value for item in CoreLayoutKind} == {
+        "TIMEKEEPING",
+        "EQUIPMENT_TIMEKEEPING",
+        "RACK_DRYING_PIECEWORK",
+        "FURNACE_WORK",
+        "HOT_PRESS",
+        "SHEET_CUTTING",
+    }
+
+
+def test_job_profile_draft_binds_an_exact_layout_version_and_copies_configuration() -> None:
+    fixed_options: dict[str, object] = {"shift": ["白班", "夜班"]}
+    profile = PayrollJobProfileVersion.draft(
+        "PROFILE-TIMEKEEPING-V1",
+        "TIMEKEEPING_DAY",
+        1,
+        display_name="计时工白班",
+        core_layout=CoreLayoutKind.TIMEKEEPING,
+        template_version_id="TPL-TIMEKEEPING-V2",
+        template_version=2,
+        unit="小时",
+        fixed_options=fixed_options,
+        pricing_rules={"hourly_rate": 18.5},
+        deduction_rules={"late_per_minute": 0.5},
+        export_mapping={"normal_hours": "正常工时"},
+    )
+
+    fixed_options["shift"] = ["被外部修改"]
+    assert profile.status is JobProfileStatus.DRAFT
+    assert profile.template_version_id == "TPL-TIMEKEEPING-V2"
+    assert profile.template_version == 2
+    assert profile.fixed_options == {"shift": ["白班", "夜班"]}
+
+
+@pytest.mark.parametrize(
+    ("profile_key", "template_version", "message"),
+    [("invalid-key", 1, "profile_key"), ("TIMEKEEPING_DAY", 0, "template_version")],
+)
+def test_job_profile_rejects_invalid_identity(
+    profile_key: str, template_version: int, message: str
+) -> None:
+    with pytest.raises(ValueError, match=message):
+        PayrollJobProfileVersion.draft(
+            "PROFILE-INVALID",
+            profile_key,
+            1,
+            display_name="计时工",
+            core_layout=CoreLayoutKind.TIMEKEEPING,
+            template_version_id="TPL-TIMEKEEPING-V1",
+            template_version=template_version,
+        )
+
+
+def test_published_job_profile_is_immutable_and_can_be_cloned_as_next_draft() -> None:
+    profile = PayrollJobProfileVersion.draft(
+        "PROFILE-FORKLIFT-V1",
+        "FORKLIFT_DAY",
+        1,
+        display_name="叉车工日班",
+        core_layout=CoreLayoutKind.EQUIPMENT_TIMEKEEPING,
+        template_version_id="TPL-EQUIPMENT-V3",
+        template_version=3,
+        fixed_options={"equipment": ["叉车"]},
+    )
+
+    with pytest.raises(ValueError, match="ready"):
+        profile.publish()
+    profile.mark_ready_to_publish()
+    profile.publish()
+    with pytest.raises(ValueError, match="published"):
+        profile.update_configuration(unit="台班")
+
+    clone = profile.clone_as_draft("PROFILE-FORKLIFT-V2", 2)
+    clone.update_configuration(unit="台班")
+    assert clone.status is JobProfileStatus.DRAFT
+    assert clone.parent_profile_version_id == profile.profile_version_id
+    assert clone.unit == "台班"
+    assert profile.unit == ""
 
 
 def test_custom_page_uses_tenth_millimetre_precision_and_canonical_pixels() -> None:
