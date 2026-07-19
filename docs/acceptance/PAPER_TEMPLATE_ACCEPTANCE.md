@@ -59,6 +59,20 @@
 - 未使用实体卡尺、真实打印机、手机镜头、纸张折痕或污损，不得将本次 3/3 结果外推为现场准确率。
 - 重新拍照证据永久关联、独立生产 Worker、桌面设备与 Windows 安装包仍属后续工程。
 
+### 生成实体复验包
+
+在仓库根目录执行：
+
+```powershell
+.\.venv\Scripts\python.exe -m app.tools.build_paper_acceptance_pack_ds `
+  --output .runtime/paper-acceptance-pack-ready `
+  --print-batch ACCEPTANCE_20260719
+```
+
+命令只接受空目录，不会覆盖现有文件。输出包含三个 V2 代表模板的 PNG/PDF、A5 两拼 PDF、SHA-256 `manifest.json` 和 `FIELD_ACCEPTANCE_RECORD.md`。当前本地已成功生成 `E:\codex\auto-decte\.runtime\paper-acceptance-pack-ready`，共 10 个文件、2,222,647 字节。
+
+生成器定向验证：`3 passed`，Ruff 通过，mypy 已扩大到 `130 source files` 无问题。
+
 ## 计划完成判定审计
 
 | # | 计划判定 | 当前证据 | 结论 |

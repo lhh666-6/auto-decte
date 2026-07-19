@@ -137,6 +137,7 @@ Task 16 已交付的自动化与模拟部分：
 - 修复打印方向标记与透视校正中心不一致导致的字段偏移，并增加高分辨率阴影照片二维码多尺度回退；
 - 完整验证为 Python `309 passed`、Ruff 通过、mypy `129 source files` 通过、前端 `31` 个文件/`146 passed`、TypeScript 和 Vite `78 modules` 生产构建通过；
 - 详细数据见 [PAPER_TEMPLATE_ACCEPTANCE.md](acceptance/PAPER_TEMPLATE_ACCEPTANCE.md)。本轮未使用实体打印机、手机和卡尺，现场复验仍是投产前置条件。
+- 已提供 `app.tools.build_paper_acceptance_pack_ds` 生成器，可一次产出三个代表模板的实体打印包、SHA-256 manifest 和现场记录清单；定向测试 `3 passed`、Ruff 和 mypy `130 source files` 通过。
 
 当前剩余验收：用真实设备完成三个代表模板的实体闭环，并把照片、卡尺数据、打印设置和结果追加到 [PAPER_TEMPLATE_ACCEPTANCE.md](acceptance/PAPER_TEMPLATE_ACCEPTANCE.md)。在获得这些外部证据前，不得将 Task 16 或整个计划标记为完全完成。
 

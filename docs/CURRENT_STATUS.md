@@ -167,6 +167,8 @@ Task 15 定向验证：前端 `14` 个测试文件、`74 passed`；TypeScript �
 
 Task 16 完整验证：Python `309 passed`；Ruff 通过；mypy `129 source files` 无问题；前端 `31` 个测试文件、`146 passed`；TypeScript 和 Vite 生产构建（`78 modules`）通过。详细验收与实体设备边界见 [PAPER_TEMPLATE_ACCEPTANCE.md](acceptance/PAPER_TEMPLATE_ACCEPTANCE.md)。
 
+实体复验准备：新增可重复生成三个代表模板 PNG/PDF、A5 两拼 PDF、SHA-256 manifest 和现场记录清单的 `app.tools.build_paper_acceptance_pack_ds`。生成器定向测试 `3 passed`，Ruff 通过，mypy 在新工具加入后为 `130 source files` 无问题。本地验证包已生成在 `.runtime/paper-acceptance-pack-ready`。
+
 当前无剩余代码开发项；Task 16 仅剩需要真实打印机、手机、卡尺和纸质样表的实体复验。
 
 ## 已完成的前端能力
