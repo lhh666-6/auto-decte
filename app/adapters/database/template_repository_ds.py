@@ -628,6 +628,9 @@ def _static_element_to_dict(element: StaticElement) -> dict[str, object]:
         "element_id": element.element_id,
         "kind": element.kind.value,
         "text": element.text,
+        "rows": element.rows,
+        "columns": element.columns,
+        "column_weights": list(element.column_weights),
         "region": {
             "x": element.region.x,
             "y": element.region.y,
@@ -647,6 +650,9 @@ def _static_elements_from_value(value: object) -> list[StaticElement]:
         region = item.get("region")
         if not isinstance(region, dict):
             raise ValueError("template static element region must be an object")
+        raw_column_weights = item.get("column_weights", [])
+        if not isinstance(raw_column_weights, list):
+            raise ValueError("template static element column_weights must be an array")
         elements.append(
             StaticElement(
                 element_id=str(item["element_id"]),
@@ -658,6 +664,12 @@ def _static_elements_from_value(value: object) -> list[StaticElement]:
                     height=_as_float(region["height"]),
                 ),
                 text=str(item.get("text", "")),
+                rows=_as_int(item.get("rows", 1)),
+                columns=_as_int(item.get("columns", 1)),
+                column_weights=tuple(
+                    _as_float(weight)
+                    for weight in raw_column_weights
+                ),
             )
         )
     return elements

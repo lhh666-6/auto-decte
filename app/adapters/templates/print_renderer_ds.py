@@ -257,7 +257,14 @@ class TemplatePrintRenderer:
                 align="left",
             )
         elif element.kind is ElementKind.TABLE_GRID:
-            self._draw_grid(draw, box, page)
+            self._draw_grid(
+                draw,
+                box,
+                page,
+                rows=element.rows,
+                columns=element.columns,
+                column_weights=element.column_weights,
+            )
         elif element.kind is ElementKind.CHECKBOX:
             draw.rectangle(box, outline="black", width=_stroke(page))
         elif element.kind is ElementKind.SIGNATURE_LINE:
@@ -361,9 +368,25 @@ class TemplatePrintRenderer:
         draw: ImageDraw.ImageDraw,
         box: tuple[int, int, int, int],
         page: PageSpec,
+        *,
+        rows: int,
+        columns: int,
+        column_weights: tuple[float, ...],
     ) -> None:
         stroke = _stroke(page)
         draw.rectangle(box, outline="black", width=stroke)
+        width = box[2] - box[0]
+        height = box[3] - box[1]
+        for row in range(1, rows):
+            y = box[1] + round(height * row / rows)
+            draw.line((box[0], y, box[2], y), fill="black", width=stroke)
+        weights = column_weights or (1.0,) * columns
+        total_weight = sum(weights)
+        cumulative = 0.0
+        for weight in weights[:-1]:
+            cumulative += weight
+            x = box[0] + round(width * cumulative / total_weight)
+            draw.line((x, box[1], x, box[3]), fill="black", width=stroke)
 
     def _draw_fitted_text(
         self,

@@ -154,6 +154,38 @@ def test_static_elements_and_print_imposition_are_separate_from_fields() -> None
         )
 
 
+def test_table_grid_declares_controlled_rows_columns_and_widths() -> None:
+    grid = StaticElement(
+        "detail_grid",
+        ElementKind.TABLE_GRID,
+        Rect(0.1, 0.2, 0.8, 0.5),
+        rows=3,
+        columns=2,
+        column_weights=(1, 3),
+    )
+
+    assert grid.rows == 3
+    assert grid.columns == 2
+    assert grid.column_weights == (1, 3)
+    with pytest.raises(ValueError, match="column_weights"):
+        StaticElement(
+            "bad_grid",
+            ElementKind.TABLE_GRID,
+            Rect(0.1, 0.2, 0.8, 0.5),
+            rows=2,
+            columns=3,
+            column_weights=(1, 2),
+        )
+    with pytest.raises(ValueError, match="only table grids"):
+        StaticElement(
+            "title_with_grid",
+            ElementKind.TITLE,
+            Rect(0.1, 0.1, 0.8, 0.1),
+            text="标题",
+            rows=2,
+        )
+
+
 def test_published_version_cannot_mutate_static_layout_or_imposition() -> None:
     page = PageSpec.a4_portrait()
     version = TemplateVersion.draft("TPL-LAYOUT", "PAYROLL_LAYOUT", 1, page)

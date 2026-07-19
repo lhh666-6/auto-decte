@@ -331,6 +331,9 @@ class StaticElement:
     kind: ElementKind
     region: Rect
     text: str = ""
+    rows: int = 1
+    columns: int = 1
+    column_weights: tuple[float, ...] = ()
 
     def __post_init__(self) -> None:
         if not _ELEMENT_ID.fullmatch(self.element_id):
@@ -340,6 +343,18 @@ class StaticElement:
         if self.kind in {ElementKind.TITLE, ElementKind.LABEL, ElementKind.ROLE_SECTION}:
             if not self.text.strip():
                 raise ValueError(f"{self.kind.value.lower()} text is required")
+        if self.kind is ElementKind.TABLE_GRID:
+            if self.rows < 1 or self.columns < 1:
+                raise ValueError("table grid rows and columns must be positive integers")
+            if self.column_weights and (
+                len(self.column_weights) != self.columns
+                or any(weight <= 0 for weight in self.column_weights)
+            ):
+                raise ValueError(
+                    "column_weights must contain one positive weight per table column"
+                )
+        elif (self.rows, self.columns, self.column_weights) != (1, 1, ()):
+            raise ValueError("only table grids may declare rows, columns or column_weights")
 
 
 @dataclass(frozen=True, slots=True)

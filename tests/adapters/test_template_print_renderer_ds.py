@@ -13,8 +13,11 @@ from app.adapters.templates.print_renderer_ds import (
 )
 from app.domain.templates_ds import (
     CoreLayoutKind,
+    ElementKind,
     PageSpec,
     PayrollJobProfileVersion,
+    Rect,
+    StaticElement,
     TemplateArtifact,
     TemplateVersion,
     build_sheet_payload,
@@ -161,6 +164,41 @@ def test_renderer_draws_reviewed_chinese_structure_and_keeps_300_dpi(tmp_path: P
     assert _ink_in_region(image, fields["regular_hours"].region) > 500
     assert _ink_in_region(image, fields["assessment_passed"].region) > 100
     assert _ink_in_region(image, fields["worker_signature"].region) > 100
+
+
+def test_renderer_draws_internal_rows_and_weighted_columns_for_table_grid(
+    tmp_path: Path,
+) -> None:
+    page = PageSpec.a4_portrait()
+    version = TemplateVersion.draft("TPL-GRID", "CORE_GRID", 1, page)
+    version.add_static_element(
+        StaticElement(
+            "detail_grid",
+            ElementKind.TABLE_GRID,
+            Rect(0.1, 0.2, 0.8, 0.5),
+            rows=3,
+            columns=2,
+            column_weights=(1, 3),
+        )
+    )
+    version.mark_ready_to_publish()
+    version.publish()
+
+    artifact = next(
+        item
+        for item in TemplatePrintRenderer(tmp_path).render(version)
+        if item.kind == "PRINT_PNG"
+    )
+    image = np.asarray(Image.open(artifact.internal_uri).convert("L"))
+    left = round(0.1 * page.canonical_width_px)
+    top = round(0.2 * page.canonical_height_px)
+    width = round(0.8 * page.canonical_width_px)
+    height = round(0.5 * page.canonical_height_px)
+    weighted_column_x = left + round(width * 0.25)
+    first_row_y = top + round(height / 3)
+
+    assert np.count_nonzero(image[top : top + height, weighted_column_x] < 128) > height * 0.8
+    assert np.count_nonzero(image[first_row_y, left : left + width] < 128) > width * 0.8
 
 
 def test_two_up_pdf_contains_independent_decodable_form_and_sheet_qrs(tmp_path: Path) -> None:

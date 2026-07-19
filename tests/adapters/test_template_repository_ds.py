@@ -186,6 +186,16 @@ def test_repository_round_trips_custom_layout_imposition_and_field_behavior(
             text="车间工资表",
         )
     )
+    version.add_static_element(
+        StaticElement(
+            "detail_grid",
+            ElementKind.TABLE_GRID,
+            Rect(0.1, 0.25, 0.8, 0.4),
+            rows=4,
+            columns=3,
+            column_weights=(1, 2, 1),
+        )
+    )
     version.set_print_imposition(
         PrintImposition(
             carrier=PageSpec.a4_landscape(),
@@ -214,6 +224,9 @@ def test_repository_round_trips_custom_layout_imposition_and_field_behavior(
     assert loaded is not None
     assert loaded.page == page
     assert loaded.static_elements == version.static_elements
+    assert loaded.static_elements[1].rows == 4
+    assert loaded.static_elements[1].columns == 3
+    assert loaded.static_elements[1].column_weights == (1, 2, 1)
     assert loaded.print_imposition == version.print_imposition
     assert loaded.fields == version.fields
 
