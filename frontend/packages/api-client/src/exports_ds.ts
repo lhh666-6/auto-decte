@@ -93,6 +93,25 @@ export interface ReportDefinition {
   };
 }
 
+export interface ReportAssistantInput {
+  question: string;
+  selected_report_definition_id?: string;
+  preview_summary?: {
+    included_count: number;
+    excluded_count: number;
+    reason_codes: string[];
+  };
+}
+
+export interface ReportAssistantResult {
+  status: "READY" | "UNAVAILABLE";
+  answer: string;
+  suggested_report_definition_id: string | null;
+  suggested_filter_fields: string[];
+  next_steps: string[];
+  requires_user_confirmation: true;
+}
+
 export interface CreateExportResponse {
   task_id: string;
   status: ExportTaskStatus;
@@ -227,6 +246,10 @@ export class ExportApi {
 
   listReportDefinitions(): Promise<ReportDefinition[]> {
     return this.request("/exports/report-definitions", { method: "GET" });
+  }
+
+  askReportAssistant(input: ReportAssistantInput): Promise<ReportAssistantResult> {
+    return this.request("/exports/assistant", { method: "POST", body: input });
   }
 
   getBatch(batchId: string): Promise<ExportBatch> {

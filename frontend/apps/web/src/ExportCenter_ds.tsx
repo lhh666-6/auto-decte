@@ -7,6 +7,8 @@ import {
   type ExportFilters,
   type ExportPreview,
   type ReportDefinition,
+  type ReportAssistantInput,
+  type ReportAssistantResult,
   type ExportTask,
   type WaitForExportTaskOptions,
 } from "@form-detection/api-client";
@@ -25,6 +27,7 @@ export interface ExportCenterApi {
   getBatch(batchId: string): Promise<ExportBatch>;
   downloadBatch(batchId: string): Promise<Blob>;
   listReportDefinitions(): Promise<ReportDefinition[]>;
+  askReportAssistant(input: ReportAssistantInput): Promise<ReportAssistantResult>;
 }
 
 interface ExportCenterProps {
@@ -64,6 +67,9 @@ export function ExportCenter({ api }: ExportCenterProps) {
   const [busyBatchId, setBusyBatchId] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [assistantQuestion, setAssistantQuestion] = useState("");
+  const [assistantResult, setAssistantResult] = useState<ReportAssistantResult | null>(null);
+  const [assistantBusy, setAssistantBusy] = useState(false);
   const mounted = useRef(true);
   const pollingController = useRef<AbortController | null>(null);
   const quickPreviewController = useRef<AbortController | null>(null);
@@ -136,6 +142,43 @@ export function ExportCenter({ api }: ExportCenterProps) {
       if (mounted.current && !controller.signal.aborted) setQuickPreviewing(false);
     }
   }, [client]);
+
+  const askAssistant = useCallback(async () => {
+    const question = assistantQuestion.trim();
+    if (!question) return;
+    setAssistantBusy(true);
+    try {
+      const activePreview = activeTab === "quick" ? quickPreview : preview;
+      const reasonCodes = Array.from(new Set(
+        activePreview?.excluded.flatMap((item) => (
+          item.reasons?.map((reason) => reason.code) ?? (item.reason ? [item.reason] : [])
+        )) ?? [],
+      ));
+      const result = await client.askReportAssistant({
+        question,
+        ...(selectedDefinitionId ? { selected_report_definition_id: selectedDefinitionId } : {}),
+        ...(activePreview ? {
+          preview_summary: {
+            included_count: activePreview.included.length,
+            excluded_count: activePreview.excluded.length,
+            reason_codes: reasonCodes,
+          },
+        } : {}),
+      });
+      if (mounted.current) setAssistantResult(result);
+    } catch {
+      if (mounted.current) setAssistantResult({
+        status: "UNAVAILABLE",
+        answer: "AI 助手暂时不可用，不影响人工检查和导出。",
+        suggested_report_definition_id: null,
+        suggested_filter_fields: [],
+        next_steps: ["继续使用当前报表和检查结果"],
+        requires_user_confirmation: true,
+      });
+    } finally {
+      if (mounted.current) setAssistantBusy(false);
+    }
+  }, [activeTab, assistantQuestion, client, preview, quickPreview, selectedDefinitionId]);
 
   useEffect(() => {
     void loadQuickPreview();
@@ -362,6 +405,41 @@ export function ExportCenter({ api }: ExportCenterProps) {
 
       {error && <ProblemNotice title="导出操作没有完成" reason={error} actionLabel="返回并重新检查数据" onAction={() => setError(null)} />}
       {message && <div className="success-banner export-center-message" role="status">{message}</div>}
+
+      {activeTab !== "history" && (
+        <aside className="report-assistant-card" aria-label="只读 AI 报表助手">
+          <div>
+            <span className="eyebrow">只读辅助 · 不会自动执行</span>
+            <h2>AI 报表助手</h2>
+            <p>可解释排除原因或推荐已有报表；所有建议仍由你确认。请勿输入姓名、工号或原图内容。</p>
+          </div>
+          <label>
+            想了解什么？
+            <textarea
+              value={assistantQuestion}
+              maxLength={1000}
+              placeholder="例如：为什么有记录不能导出？应该选择哪种汇总报表？"
+              onChange={(event) => setAssistantQuestion(event.target.value)}
+            />
+          </label>
+          <button
+            type="button"
+            className="button button-secondary"
+            disabled={assistantBusy || !assistantQuestion.trim()}
+            onClick={() => void askAssistant()}
+          >{assistantBusy ? "正在分析…" : "询问 AI 助手"}</button>
+          {assistantResult && (
+            <div className="report-assistant-answer" role="status">
+              <strong>{assistantResult.status === "READY" ? "临时建议" : "AI 暂时不可用"}</strong>
+              <p>{assistantResult.answer}</p>
+              {assistantResult.next_steps.length > 0 && (
+                <ul>{assistantResult.next_steps.map((step) => <li key={step}>{step}</li>)}</ul>
+              )}
+              <small>本内容不会修改记录、模板或文件。</small>
+            </div>
+          )}
+        </aside>
+      )}
 
       {activeTab === "custom" && <section className="export-filter-card" aria-labelledby="export-filter-title">
         <div className="export-section-heading">

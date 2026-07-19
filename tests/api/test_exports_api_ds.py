@@ -702,3 +702,46 @@ def test_fixed_report_export_snapshots_asset_hash_and_controlled_mapping(
         "2757f427bca00dcb0f87adc854762925a601fdf3b5cd970b1056766fc30068dd"
     )
     assert snapshot["fixed_cells"] == ({"cell": "H2", "source_field": "work_date"},)
+
+
+def test_report_assistant_is_read_only_and_degrades_without_configuration(tmp_path: Path) -> None:
+    client, services = _build_client(tmp_path)
+    before_forms = [services.repository.get_form(item) for item in ("FORM-VALID", "FORM-INVALID")]
+    before_batches = services.repository.list_export_batches()
+
+    response = client.post(
+        "/api/v1/exports/assistant",
+        headers=FINANCE,
+        json={
+            "question": "为什么有记录被排除？",
+            "selected_report_definition_id": "PAYROLL_DETAIL:1",
+            "preview_summary": {
+                "included_count": 1,
+                "excluded_count": 2,
+                "reason_codes": ["NOT_CONFIRMED", "VALUE_NOT_ALLOWED"],
+            },
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "UNAVAILABLE"
+    assert response.json()["requires_user_confirmation"] is True
+    assert services.repository.list_export_batches() == before_batches
+    assert [
+        services.repository.get_form(item) for item in ("FORM-VALID", "FORM-INVALID")
+    ] == before_forms
+
+
+def test_report_assistant_rejects_unknown_input_and_requires_preview_permission(
+    tmp_path: Path,
+) -> None:
+    client, _ = _build_client(tmp_path)
+    body = {"question": "推荐报表", "execute": "DROP TABLE forms"}
+
+    assert client.post("/api/v1/exports/assistant", headers=FINANCE, json=body).status_code == 422
+    assert (
+        client.post(
+            "/api/v1/exports/assistant", headers=OPERATOR, json={"question": "推荐报表"}
+        ).status_code
+        == 403
+    )

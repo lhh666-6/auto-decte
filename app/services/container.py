@@ -5,7 +5,12 @@ from dataclasses import dataclass
 
 from sqlalchemy import Engine
 
+from app.adapters.ai.deepseek_ds import DeepSeekCompletion
 from app.adapters.ai.disabled import DisabledAIReview
+from app.adapters.ai.report_assistant_ds import (
+    DisabledReportAssistant,
+    StructuredReportAssistantProvider,
+)
 from app.adapters.database.models import Base
 from app.adapters.database.report_definition_repository_ds import (
     SqlAlchemyReportDefinitionRepository,
@@ -24,6 +29,7 @@ from app.application.import_forms import ImportForms
 from app.application.job_profiles_ds import JobProfiles
 from app.application.query_forms import QueryForms
 from app.application.recognize_forms import RecognizeForms
+from app.application.report_assistant_ds import ReportAssistant
 from app.application.review_forms import ReviewForms
 from app.application.template_versions_ds import TemplateVersions
 from app.infrastructure.database.migrations import (
@@ -73,6 +79,7 @@ class Services:
     export_handler: ExportHandler
     recognition: RecognizeForms
     ai_reviews: AIReviewForms
+    report_assistant: ReportAssistant
     vector_index: LocalVectorIndex
     review_leases: ReviewLeaseService
     review_repository: SqlAlchemyReviewLeaseRepository
@@ -164,6 +171,21 @@ def build_services(settings: Settings, *, install_seed_templates: bool = False) 
             template_repository,
         ),
         ai_reviews=AIReviewForms(repository, repository, DisabledAIReview()),
+        report_assistant=ReportAssistant(
+            report_definition_repository,
+            (
+                StructuredReportAssistantProvider(
+                    DeepSeekCompletion(
+                        settings.deepseek_api_key,
+                        settings.deepseek_endpoint,
+                        settings.deepseek_model,
+                        settings.deepseek_timeout_seconds,
+                    )
+                )
+                if settings.ai_enabled and settings.deepseek_api_key
+                else DisabledReportAssistant()
+            ),
+        ),
         vector_index=LocalVectorIndex(),
         review_leases=review_leases,
         review_repository=review_repository,

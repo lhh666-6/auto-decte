@@ -14,6 +14,8 @@ from app.api.schemas.exports_ds import (
     ExportBatchResponse,
     ExportCreateRequest,
     ExportPreviewResponse,
+    ReportAssistantRequest,
+    ReportAssistantResponse,
     ReportDefinitionCreateRequest,
     ReportDefinitionResponse,
 )
@@ -45,6 +47,31 @@ def _require(actor: Actor, permission: Permission) -> None:
             status_code=403,
             detail={"code": "PERMISSION_DENIED", "detail": str(error)},
         ) from error
+
+
+@router.post("/assistant", response_model=ReportAssistantResponse)
+def ask_report_assistant(
+    body: ReportAssistantRequest,
+    request: Request,
+    services: Services = Depends(get_services),  # noqa: B008
+) -> dict[str, object]:
+    actor = get_current_actor(request, services)
+    _require(actor, Permission.EXPORT_PREVIEW)
+    result = services.report_assistant.ask(
+        body.question,
+        selected_report_definition_id=body.selected_report_definition_id,
+        preview_summary=(
+            body.preview_summary.model_dump() if body.preview_summary is not None else None
+        ),
+    )
+    return {
+        "status": result.status,
+        "answer": result.answer,
+        "suggested_report_definition_id": result.suggested_report_definition_id,
+        "suggested_filter_fields": list(result.suggested_filter_fields),
+        "next_steps": list(result.next_steps),
+        "requires_user_confirmation": result.requires_user_confirmation,
+    }
 
 
 @router.get(

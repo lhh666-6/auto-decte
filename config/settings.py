@@ -22,6 +22,10 @@ class Settings(BaseSettings):
     auto_create_schema: bool = True
     allow_header_identity: bool = False
     ai_enabled: bool = False
+    deepseek_api_key: str | None = None
+    deepseek_endpoint: str = "https://api.deepseek.com/chat/completions"
+    deepseek_model: str = "deepseek-chat"
+    deepseek_timeout_seconds: float = Field(default=20.0, gt=0, le=60)
     task_max_workers: int = 2
     task_queue_capacity: int = 32
     review_lease_seconds: int = 300

@@ -146,3 +146,31 @@ class ReportDefinitionCreateRequest(BaseModel):
 
 class ReportDefinitionResponse(ReportDefinitionCreateRequest):
     pass
+
+
+class ReportAssistantPreviewSummary(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    included_count: int = Field(ge=0)
+    excluded_count: int = Field(ge=0)
+    reason_codes: list[str] = Field(
+        default_factory=list,
+        max_length=30,
+    )
+
+
+class ReportAssistantRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    question: str = Field(min_length=1, max_length=1000)
+    selected_report_definition_id: str | None = Field(default=None, pattern=r"^[A-Za-z0-9_:-]+$")
+    preview_summary: ReportAssistantPreviewSummary | None = None
+
+
+class ReportAssistantResponse(BaseModel):
+    status: str
+    answer: str
+    suggested_report_definition_id: str | None = None
+    suggested_filter_fields: list[str] = Field(default_factory=list)
+    next_steps: list[str] = Field(default_factory=list)
+    requires_user_confirmation: bool

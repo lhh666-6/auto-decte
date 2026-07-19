@@ -68,6 +68,8 @@ export {
   type ExportTaskStatus,
   type IncludedExportRecord,
   type ReportDefinition,
+  type ReportAssistantInput,
+  type ReportAssistantResult,
   type ReportDefinitionStatus,
   type ReportKind,
   type AggregateOperation,

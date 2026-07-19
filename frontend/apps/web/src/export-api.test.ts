@@ -183,4 +183,23 @@ describe("ExportApi", () => {
       },
     );
   });
+
+  it("asks the report assistant through a read-only JSON endpoint", async () => {
+    const result = {
+      status: "UNAVAILABLE",
+      answer: "AI 暂时不可用",
+      suggested_report_definition_id: null,
+      suggested_filter_fields: [],
+      next_steps: ["继续人工检查"],
+      requires_user_confirmation: true,
+    } as const;
+    const fetcher = vi.fn().mockResolvedValue(jsonResponse(result));
+    const api = new ExportApi("/api/v1", fetcher);
+
+    expect(await api.askReportAssistant({ question: "推荐报表" })).toEqual(result);
+    expect(fetcher).toHaveBeenCalledWith("/api/v1/exports/assistant", expect.objectContaining({
+      method: "POST",
+      body: JSON.stringify({ question: "推荐报表" }),
+    }));
+  });
 });

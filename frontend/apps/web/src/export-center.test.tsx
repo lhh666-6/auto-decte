@@ -105,6 +105,14 @@ function makeApi(overrides: Partial<ExportCenterApi> = {}): ExportCenterApi {
         fixed_cells: [],
       },
     ]),
+    askReportAssistant: vi.fn().mockResolvedValue({
+      status: "UNAVAILABLE",
+      answer: "AI 助手暂时不可用，不影响人工检查和导出。",
+      suggested_report_definition_id: null,
+      suggested_filter_fields: [],
+      next_steps: ["继续人工检查"],
+      requires_user_confirmation: true,
+    }),
     ...overrides,
   };
 }
@@ -124,6 +132,23 @@ async function openCustom(user: ReturnType<typeof userEvent.setup>) {
 }
 
 describe("ExportCenter", () => {
+  it("keeps the AI assistant read-only and safely degrades", async () => {
+    const user = userEvent.setup();
+    const api = makeApi();
+    render(<ExportCenter api={api} />);
+
+    await user.type(screen.getByLabelText("想了解什么？"), "为什么不能导出？");
+    await user.click(screen.getByRole("button", { name: "询问 AI 助手" }));
+
+    expect(await screen.findByText("AI 暂时不可用")).toBeTruthy();
+    expect(screen.getByText("本内容不会修改记录、模板或文件。")).toBeTruthy();
+    expect(api.askReportAssistant).toHaveBeenCalledWith(expect.objectContaining({
+      question: "为什么不能导出？",
+      preview_summary: expect.objectContaining({ included_count: 1, excluded_count: 1 }),
+    }));
+    expect(api.create).not.toHaveBeenCalled();
+  });
+
   it("loads published report definitions and submits the exact selected version", async () => {
     const user = userEvent.setup();
     const api = makeApi();
