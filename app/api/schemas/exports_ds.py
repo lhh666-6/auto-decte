@@ -59,6 +59,9 @@ class ExportCreateRequest(BaseModel):
     export_type: str = Field(min_length=1, pattern=r"^[A-Za-z0-9_-]+$")
     filters: ExportFiltersRequest
     supersedes_batch_id: str | None = Field(default=None, min_length=1)
+    report_definition_id: str | None = Field(
+        default=None, min_length=1, pattern=r"^[A-Za-z0-9_:-]+$"
+    )
 
 
 class IncludedRecordResponse(BaseModel):

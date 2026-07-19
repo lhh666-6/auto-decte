@@ -25,6 +25,8 @@ from app.modules.reporting.models_ds import (
     ExportPreviewItem,
     ExportReasonScope,
     ExportValidationReason,
+    ReportDefinition,
+    ReportDefinitionStatus,
 )
 
 
@@ -39,6 +41,10 @@ class ExportTemplateRepository(Protocol):
     ) -> TemplateVersion | None: ...
 
 
+class ExportReportDefinitionRepository(Protocol):
+    def get(self, definition_id: str) -> ReportDefinition | None: ...
+
+
 class ExportIntegrityError(ValueError):
     """A prepared or published workbook does not match its immutable batch."""
 
@@ -50,11 +56,13 @@ class ExportForms:
         exporter: XlsxExporter,
         queries: QueryForms,
         template_repository: ExportTemplateRepository | None = None,
+        report_definition_repository: ExportReportDefinitionRepository | None = None,
     ) -> None:
         self._repository = repository
         self._exporter = exporter
         self._queries = queries
         self._template_repository = template_repository
+        self._report_definition_repository = report_definition_repository
 
     def recover_publication(self, batch: ExportBatch) -> None:
         """Finish publishing a committed batch without rewriting its workbook."""
@@ -335,6 +343,7 @@ class ExportForms:
         task_id: str | None = None,
         supersedes_batch_id: str | None = None,
         progress: Callable[[int, str], None] | None = None,
+        report_definition_id: str | None = None,
     ) -> ExportBatch:
         batch = self.prepare(
             export_type,
@@ -344,6 +353,7 @@ class ExportForms:
             task_id=task_id,
             supersedes_batch_id=supersedes_batch_id,
             progress=progress,
+            report_definition_id=report_definition_id,
         )
         try:
             self.publish(batch)
@@ -363,6 +373,7 @@ class ExportForms:
         task_id: str | None = None,
         supersedes_batch_id: str | None = None,
         progress: Callable[[int, str], None] | None = None,
+        report_definition_id: str | None = None,
     ) -> ExportBatch:
         """Validate and write an unpublished immutable workbook candidate."""
         confirmed_filters = replace(filters, review_status=ReviewStatus.CONFIRMED)
@@ -372,6 +383,7 @@ class ExportForms:
         ]
         mapping_snapshot: tuple[ExportMapping, ...] | None = None
         template_snapshot: dict[str, object] = {}
+        report_definition = self._resolve_report_definition(export_type, report_definition_id)
         if self._template_repository is not None:
             preview = self.preview(filters, actor_id)
             included_records = {(item.form_id, item.record_version) for item in preview.included}
@@ -382,6 +394,8 @@ class ExportForms:
             ]
             mapping_snapshot = preview.mapping_snapshot
             template_snapshot = self._template_snapshot(results)
+        if report_definition is not None:
+            template_snapshot["report_definition"] = _report_definition_snapshot(report_definition)
         if not results:
             raise ValueError("No exportable records after final validation")
         reexport_results = [
@@ -423,14 +437,25 @@ class ExportForms:
         try:
             if progress is not None:
                 progress(35, "writing")
-            self._exporter.write(
-                partial,
-                batch_id,
-                export_type,
-                results,
-                serialized_filters,
-                mappings=mapping_snapshot,
-            )
+            if report_definition is None:
+                self._exporter.write(
+                    partial,
+                    batch_id,
+                    export_type,
+                    results,
+                    serialized_filters,
+                    mappings=mapping_snapshot,
+                )
+            else:
+                self._exporter.write(
+                    partial,
+                    batch_id,
+                    export_type,
+                    results,
+                    serialized_filters,
+                    mappings=mapping_snapshot,
+                    report_definition=report_definition,
+                )
             digest = hashlib.sha256(partial.read_bytes()).hexdigest()
             destination.parent.mkdir(parents=True, exist_ok=True)
             partial.replace(pending)
@@ -461,6 +486,22 @@ class ExportForms:
             destination.unlink(missing_ok=True)
             raise
 
+    def _resolve_report_definition(
+        self, export_type: str, definition_id: str | None
+    ) -> ReportDefinition | None:
+        if definition_id is None:
+            return None
+        if self._report_definition_repository is None:
+            raise RuntimeError("report definition repository is required")
+        definition = self._report_definition_repository.get(definition_id)
+        if definition is None:
+            raise KeyError(f"Unknown report definition: {definition_id}")
+        if definition.status is not ReportDefinitionStatus.PUBLISHED:
+            raise ValueError("report definition must be published")
+        if definition.report_key != export_type:
+            raise ValueError("export_type must match the report definition key")
+        return definition
+
     def _template_snapshot(self, results: list[SearchResult]) -> dict[str, object]:
         templates: dict[tuple[str, str], Mapping[str, object]] = {}
         for result in results:
@@ -481,3 +522,27 @@ class ExportForms:
 
 def _file_sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _report_definition_snapshot(definition: ReportDefinition) -> dict[str, object]:
+    return {
+        "definition_id": definition.definition_id,
+        "report_key": definition.report_key,
+        "version": definition.version,
+        "display_name": definition.display_name,
+        "kind": definition.kind.value,
+        "status": definition.status.value,
+        "columns": [asdict(column) for column in definition.columns],
+        "filters": list(definition.filters),
+        "group_by": list(definition.group_by),
+        "aggregates": [
+            {
+                "source_field": aggregate.source_field,
+                "operation": aggregate.operation.value,
+                "header": aggregate.header,
+            }
+            for aggregate in definition.aggregates
+        ],
+        "sort_by": list(definition.sort_by),
+        "worksheet": definition.worksheet,
+    }

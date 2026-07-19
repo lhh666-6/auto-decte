@@ -126,12 +126,14 @@ def build_services(settings: Settings, *, install_seed_templates: bool = False) 
         exporter,
         queries,
         template_repository=template_repository,
+        report_definition_repository=report_definition_repository,
     )
     reporting = ReportingFacade(
         repository,
         queries,
         exporter=exporter,
         template_repository=template_repository,
+        report_definition_repository=report_definition_repository,
     )
     services = Services(
         settings=settings,

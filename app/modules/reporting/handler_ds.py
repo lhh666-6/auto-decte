@@ -43,9 +43,7 @@ class ExportHandler:
         existing = self._repository.get_export_batch_by_task(task_id)
         if existing is not None:
             self._exports.recover_publication(existing)
-            self._tasks.reconcile_succeeded(
-                task_id, {"export_batch_id": existing.export_batch_id}
-            )
+            self._tasks.reconcile_succeeded(task_id, {"export_batch_id": existing.export_batch_id})
             return existing
         self._tasks.claim(task_id)
         batch: ExportBatch | None = None
@@ -61,6 +59,9 @@ class ExportHandler:
             supersedes = task.payload.get("supersedes_batch_id")
             if supersedes is not None and not isinstance(supersedes, str):
                 raise ValueError("supersedes_batch_id must be a string")
+            report_definition_id = task.payload.get("report_definition_id")
+            if report_definition_id is not None and not isinstance(report_definition_id, str):
+                raise ValueError("report_definition_id must be a string")
             self._tasks.report(task_id, 10, "validating")
             preview = self._exports.preview(filters, task.actor_id)
             if not preview.included:
@@ -77,6 +78,7 @@ class ExportHandler:
                 task_id=task_id,
                 supersedes_batch_id=supersedes,
                 progress=report,
+                report_definition_id=report_definition_id,
             )
             self._tasks.record_prepared(task_id, _prepared_detail(batch))
         except Exception as error:
@@ -111,9 +113,7 @@ class ExportHandler:
     def recover_prepared(self) -> list[ExportBatch]:
         """Resume interrupted exports from append-only prepared task events."""
         recovered: list[ExportBatch] = []
-        candidates = self._tasks.list_operation_tasks(
-            "XLSX_EXPORT", (TaskStatus.INTERRUPTED,)
-        )
+        candidates = self._tasks.list_operation_tasks("XLSX_EXPORT", (TaskStatus.INTERRUPTED,))
         for task in candidates:
             event = self._tasks.latest_prepared(task.task_id)
             if event is None or event.detail is None:
@@ -244,9 +244,7 @@ def _batch_from_prepared_detail(detail: dict[str, object]) -> ExportBatch:
         export_batch_id=_required_string(raw, "export_batch_id"),
         export_type=_required_string(raw, "export_type"),
         filters=filters,
-        included_records=tuple(
-            (_record_form_id(item), _record_version(item)) for item in included
-        ),
+        included_records=tuple((_record_form_id(item), _record_version(item)) for item in included),
         file_path=_required_string(raw, "file_path"),
         file_sha256=_required_string(raw, "file_sha256"),
         exported_by=_required_string(raw, "exported_by"),
@@ -254,9 +252,7 @@ def _batch_from_prepared_detail(detail: dict[str, object]) -> ExportBatch:
         supersedes_batch_id=_optional_string(raw, "supersedes_batch_id"),
         task_id=_optional_string(raw, "task_id"),
         template_snapshot=templates,
-        mapping_snapshot=tuple(
-            item for item in mappings if isinstance(item, dict)
-        ),
+        mapping_snapshot=tuple(item for item in mappings if isinstance(item, dict)),
         mapping_hash=_required_string(raw, "mapping_hash"),
         download_name=_required_string(raw, "download_name"),
     )

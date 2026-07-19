@@ -98,15 +98,12 @@ def test_preview_is_read_only_and_returns_field_level_exclusion_reasons(
     invalid = next(item for item in body["excluded"] if item["form_id"] == "FORM-INVALID")
     assert invalid["reason"] == "FINAL_VALIDATION_FAILED"
     assert {
-        (reason["scope"], reason["code"], reason.get("field_key"))
-        for reason in invalid["reasons"]
+        (reason["scope"], reason["code"], reason.get("field_key")) for reason in invalid["reasons"]
     } == {
         ("FIELD", "VALUE_NOT_ALLOWED", "employee_id"),
         ("FIELD", "VALUE_ABOVE_MAXIMUM", "quantity"),
     }
-    invalid_reasons = {
-        reason["code"]: reason for reason in invalid["reasons"]
-    }
+    invalid_reasons = {reason["code"]: reason for reason in invalid["reasons"]}
     assert invalid_reasons["VALUE_NOT_ALLOWED"]["allowed_values"] == ["E001"]
     assert "required" not in invalid_reasons["VALUE_NOT_ALLOWED"]
     assert "minimum_value" not in invalid_reasons["VALUE_NOT_ALLOWED"]
@@ -584,9 +581,7 @@ def test_report_definition_api_lists_six_builtins_and_reads_exact_version(
     client, _ = _build_client(tmp_path)
 
     listed = client.get("/api/v1/exports/report-definitions", headers=FINANCE)
-    detail = client.get(
-        "/api/v1/exports/report-definitions/PAYROLL_DETAIL:1", headers=FINANCE
-    )
+    detail = client.get("/api/v1/exports/report-definitions/PAYROLL_DETAIL:1", headers=FINANCE)
 
     assert listed.status_code == 200
     assert {item["report_key"] for item in listed.json()} == {
@@ -622,9 +617,7 @@ def test_report_definition_api_creates_version_and_rejects_overwrite_or_formula(
         "worksheet": "自定义明细",
     }
 
-    created = client.post(
-        "/api/v1/exports/report-definitions", headers=FINANCE, json=body
-    )
+    created = client.post("/api/v1/exports/report-definitions", headers=FINANCE, json=body)
     repeated = client.post(
         "/api/v1/exports/report-definitions",
         headers=FINANCE,
@@ -646,3 +639,28 @@ def test_report_definition_api_creates_version_and_rejects_overwrite_or_formula(
     assert repeated.status_code == 409
     assert repeated.json()["code"] == "REPORT_DEFINITION_CONFLICT"
     assert unsafe.status_code == 422
+
+
+def test_export_task_uses_exact_published_report_definition_snapshot(
+    tmp_path: Path,
+) -> None:
+    client, services = _build_client(tmp_path)
+
+    created = client.post(
+        "/api/v1/exports",
+        headers={**FINANCE, "Idempotency-Key": "report-definition-export"},
+        json={
+            "export_type": "PAYROLL_DETAIL",
+            "report_definition_id": "PAYROLL_DETAIL:1",
+            "filters": {"form_id": "FORM-VALID"},
+        },
+    )
+
+    assert created.status_code == 202
+    task = services.tasks.get(created.json()["task_id"])
+    assert task.status.value == "SUCCEEDED"
+    batch = services.repository.get_export_batch_by_task(task.task_id)
+    assert batch is not None
+    snapshot = batch.template_snapshot["report_definition"]
+    assert snapshot["definition_id"] == "PAYROLL_DETAIL:1"
+    assert snapshot["status"] == "PUBLISHED"

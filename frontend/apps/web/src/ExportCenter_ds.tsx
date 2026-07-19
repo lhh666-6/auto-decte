@@ -6,6 +6,7 @@ import {
   type ExportExclusionReason,
   type ExportFilters,
   type ExportPreview,
+  type ReportDefinition,
   type ExportTask,
   type WaitForExportTaskOptions,
 } from "@form-detection/api-client";
@@ -23,6 +24,7 @@ export interface ExportCenterApi {
   listBatches(): Promise<ExportBatch[]>;
   getBatch(batchId: string): Promise<ExportBatch>;
   downloadBatch(batchId: string): Promise<Blob>;
+  listReportDefinitions(): Promise<ReportDefinition[]>;
 }
 
 interface ExportCenterProps {
@@ -47,7 +49,8 @@ export function ExportCenter({ api }: ExportCenterProps) {
   const client = useMemo<ExportCenterApi>(() => api ?? new ExportApi("/api/v1"), [api]);
   const [filters, setFilters] = useState<ExportFilters>(EMPTY_FILTERS);
   const [activeTab, setActiveTab] = useState<"quick" | "custom" | "history">("quick");
-  const [exportType, setExportType] = useState("PAYROLL_DETAIL");
+  const [reportDefinitions, setReportDefinitions] = useState<ReportDefinition[]>([]);
+  const [selectedDefinitionId, setSelectedDefinitionId] = useState("");
   const [quickPreview, setQuickPreview] = useState<ExportPreview | null>(null);
   const [previewSnapshot, setPreviewSnapshot] = useState<PreviewSnapshot | null>(null);
   const [batches, setBatches] = useState<ExportBatch[]>([]);
@@ -68,6 +71,12 @@ export function ExportCenter({ api }: ExportCenterProps) {
   const previewGeneration = useRef(0);
   const batchGeneration = useRef(0);
   const preview = previewSnapshot?.result ?? null;
+  const selectedDefinition = reportDefinitions.find(
+    (definition) => definition.definition_id === selectedDefinitionId,
+  );
+  const quickDefinition = reportDefinitions.find(
+    (definition) => definition.report_key === "PAYROLL_DETAIL",
+  );
 
   useEffect(() => {
     mounted.current = true;
@@ -92,6 +101,24 @@ export function ExportCenter({ api }: ExportCenterProps) {
   useEffect(() => {
     void refreshBatches();
   }, [refreshBatches]);
+
+  useEffect(() => {
+    let active = true;
+    void client.listReportDefinitions().then((definitions) => {
+      if (!active) return;
+      const published = definitions.filter((definition) => definition.status === "PUBLISHED");
+      setReportDefinitions(published);
+      setSelectedDefinitionId((current) => (
+        published.some((definition) => definition.definition_id === current)
+          ? current
+          : published.find((definition) => definition.report_key === "PAYROLL_DETAIL")
+            ?.definition_id ?? published[0]?.definition_id ?? ""
+      ));
+    }).catch((cause: unknown) => {
+      if (active) setError(toMessage(cause));
+    });
+    return () => { active = false; };
+  }, [client]);
 
   const loadQuickPreview = useCallback(async () => {
     quickPreviewController.current?.abort();
@@ -138,7 +165,7 @@ export function ExportCenter({ api }: ExportCenterProps) {
     previewController.current?.abort();
     previewController.current = null;
     previewGeneration.current += 1;
-    setExportType(value);
+    setSelectedDefinitionId(value);
     setNeedsRecheck(
       (currentNeedsRecheck) =>
         currentNeedsRecheck || previewSnapshot !== null || checkInProgress,
@@ -181,8 +208,9 @@ export function ExportCenter({ api }: ExportCenterProps) {
   async function createExport(
     supersedesBatchId?: string,
     activePreview: PreviewSnapshot | null = previewSnapshot,
-    requestedExportType = exportType,
+    requestedExportType = selectedDefinition?.report_key ?? "",
     requireCurrentGeneration = true,
+    reportDefinitionId = selectedDefinition?.definition_id,
   ) {
     if (
       !activePreview?.result.included.length ||
@@ -203,6 +231,7 @@ export function ExportCenter({ api }: ExportCenterProps) {
       const created = await client.create({
         export_type: requestedExportType.trim(),
         filters: activePreview.filters,
+        ...(reportDefinitionId ? { report_definition_id: reportDefinitionId } : {}),
         ...(supersedesBatchId ? { supersedes_batch_id: supersedesBatchId } : {}),
       }, makeIdempotencyKey());
       createdTaskId = created.task_id;
@@ -318,7 +347,7 @@ export function ExportCenter({ api }: ExportCenterProps) {
           <div><span className="eyebrow">默认导出未导出的已确认记录</span><h2>可以导出 {quickPreview?.included.length ?? "—"} 条</h2><p>需要处理 {quickPreview?.excluded.length ?? "—"} 条</p></div>
           <div className="quick-export-actions">
             <button type="button" className="button button-secondary" disabled={quickPreviewing || creating} onClick={() => void loadQuickPreview()}>{quickPreviewing ? "正在检查…" : "刷新数量"}</button>
-            <button type="button" className="button button-primary" disabled={!quickPreview?.included.length || creating} onClick={() => void createExport(undefined, quickSnapshot, "PAYROLL_DETAIL", false)}>{creating ? "正在生成…" : "一键生成 Excel"}</button>
+            <button type="button" className="button button-primary" disabled={!quickPreview?.included.length || !quickDefinition || creating} onClick={() => void createExport(undefined, quickSnapshot, quickDefinition?.report_key ?? "", false, quickDefinition?.definition_id)}>{creating ? "正在生成…" : "一键生成 Excel"}</button>
           </div>
         </section>
       )}
@@ -369,13 +398,12 @@ export function ExportCenter({ api }: ExportCenterProps) {
           </label>
           <label>
             报表类型
-            <select disabled={creating} value={exportType} onChange={(event) => changeExportType(event.target.value)}>
-              <option value="PAYROLL_DETAIL">工资明细</option>
-              <option value="EMPLOYEE_PAYROLL_SUMMARY">员工工资汇总</option>
-              <option value="WORK_ORDER_OUTPUT_SUMMARY">工单产量汇总</option>
-              <option value="PRODUCT_PROCESS_STATISTICS">产品/工序统计</option>
-              <option value="WORKSHOP_DAILY">车间日报</option>
-              <option value="FINANCE_ACCOUNTING">财务核算表</option>
+            <select disabled={creating || !reportDefinitions.length} value={selectedDefinitionId} onChange={(event) => changeExportType(event.target.value)}>
+              {reportDefinitions.map((definition) => (
+                <option key={definition.definition_id} value={definition.definition_id}>
+                  {definition.display_name}
+                </option>
+              ))}
             </select>
           </label>
         </div>
@@ -407,7 +435,7 @@ export function ExportCenter({ api }: ExportCenterProps) {
             <button
               type="button"
               className="button button-primary"
-              disabled={!preview.included.length || creating || !exportType.trim() || reexportMode}
+              disabled={!preview.included.length || creating || !selectedDefinition || reexportMode}
               onClick={() => void createExport()}
             >生成 Excel</button>
             {reexportMode && <small className="reexport-create-hint">重导必须从下方选择一个覆盖全部表单旧版本的来源记录。</small>}

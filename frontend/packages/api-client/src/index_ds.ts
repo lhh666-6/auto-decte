@@ -67,6 +67,10 @@ export {
   type ExportTask,
   type ExportTaskStatus,
   type IncludedExportRecord,
+  type ReportDefinition,
+  type ReportDefinitionStatus,
+  type ReportKind,
+  type AggregateOperation,
   type WaitForExportTaskOptions,
 } from "./exports_ds.js";
 export {

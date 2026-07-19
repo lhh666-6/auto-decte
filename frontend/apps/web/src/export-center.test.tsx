@@ -88,6 +88,22 @@ function makeApi(overrides: Partial<ExportCenterApi> = {}): ExportCenterApi {
     listBatches: vi.fn().mockResolvedValue([oldBatch]),
     getBatch: vi.fn().mockResolvedValue(oldBatch),
     downloadBatch: vi.fn().mockResolvedValue(new Blob(["xlsx"])),
+    listReportDefinitions: vi.fn().mockResolvedValue([
+      {
+        definition_id: "PAYROLL_DETAIL:1",
+        report_key: "PAYROLL_DETAIL",
+        version: 1,
+        display_name: "工资明细",
+        kind: "DETAIL",
+        status: "PUBLISHED",
+        columns: [{ source_field: "employee_id", header: "员工编号" }],
+        filters: [],
+        group_by: [],
+        aggregates: [],
+        sort_by: [],
+        worksheet: "工资明细",
+      },
+    ]),
     ...overrides,
   };
 }
@@ -107,6 +123,44 @@ async function openCustom(user: ReturnType<typeof userEvent.setup>) {
 }
 
 describe("ExportCenter", () => {
+  it("loads published report definitions and submits the exact selected version", async () => {
+    const user = userEvent.setup();
+    const api = makeApi();
+    Object.assign(api, {
+      listReportDefinitions: vi.fn().mockResolvedValue([
+        {
+          definition_id: "CUSTOM_REPORT:3",
+          report_key: "CUSTOM_REPORT",
+          version: 3,
+          display_name: "自定义受控报表",
+          kind: "DETAIL",
+          status: "PUBLISHED",
+          columns: [{ source_field: "employee_id", header: "员工编号" }],
+          filters: [],
+          group_by: [],
+          aggregates: [],
+          sort_by: [],
+          worksheet: "自定义报表",
+        },
+      ]),
+    });
+    render(<ExportCenter api={api} />);
+    await openCustom(user);
+
+    const reportType = screen.getByLabelText("报表类型");
+    expect(await within(reportType).findByRole("option", { name: "自定义受控报表" })).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "检查可导出的数据" }));
+    await user.click(await screen.findByRole("button", { name: "生成 Excel" }));
+
+    await waitFor(() => expect(api.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        export_type: "CUSTOM_REPORT",
+        report_definition_id: "CUSTOM_REPORT:3",
+      }),
+      expect.any(String),
+    ));
+  });
+
   it("presents export as three business steps and keeps records outside the flow", async () => {
     const user = userEvent.setup();
     const api = makeApi();

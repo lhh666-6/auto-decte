@@ -6,6 +6,9 @@ from openpyxl import load_workbook
 from sqlalchemy import create_engine
 
 from app.adapters.database.models import Base
+from app.adapters.database.report_definition_repository_ds import (
+    SqlAlchemyReportDefinitionRepository,
+)
 from app.adapters.database.repositories import SqlAlchemyFormRepository
 from app.adapters.database.template_repository_ds import SqlAlchemyTemplateRepository
 from app.adapters.export.xlsx import XlsxExporter
@@ -31,7 +34,16 @@ from app.domain.templates_ds import (
     TemplateVersion,
 )
 from app.modules.reporting.facade_ds import ReportingFacade
-from app.modules.reporting.models_ds import ExportMapping
+from app.modules.reporting.models_ds import (
+    BUILTIN_REPORT_DEFINITIONS,
+    AggregateOperation,
+    ExportMapping,
+    ReportAggregate,
+    ReportColumn,
+    ReportDefinition,
+    ReportDefinitionStatus,
+    ReportKind,
+)
 
 
 def setup_confirmed_form(tmp_path: Path):  # type: ignore[no-untyped-def]
@@ -150,9 +162,7 @@ def test_preview_uses_stable_template_mapping_and_explains_unconfirmed_forms(
 
     preview = service.preview(FormFilters(), actor_id="finance")
 
-    assert [(item.form_id, item.record_version) for item in preview.included] == [
-        ("FORM-0001", 1)
-    ]
+    assert [(item.form_id, item.record_version) for item in preview.included] == [("FORM-0001", 1)]
     assert [(item.form_id, item.reason) for item in preview.excluded] == [
         ("FORM-0002", "NOT_CONFIRMED")
     ]
@@ -216,9 +226,7 @@ def test_preview_excludes_confirmed_record_that_fails_basic_final_validation(
     ]
     assert preview.mapping_snapshot == ()
 
-    with pytest.raises(
-        ValueError, match="No exportable records after final validation"
-    ):
+    with pytest.raises(ValueError, match="No exportable records after final validation"):
         service.export("OUTPUT", FormFilters(), tmp_path / "exports", "finance")
 
     assert repository.list_export_batches() == []
@@ -230,20 +238,14 @@ def test_reporting_facade_preview_requires_template_repository(tmp_path: Path) -
     _, _, repository = setup_confirmed_form(tmp_path)
     facade = ReportingFacade(repository, QueryForms(repository))
 
-    with pytest.raises(
-        RuntimeError, match="template repository is required for export preview"
-    ):
+    with pytest.raises(RuntimeError, match="template repository is required for export preview"):
         facade.preview(FormFilters())
 
 
 def test_reporting_facade_preview_explains_missing_template(tmp_path: Path) -> None:
     _, _, repository = setup_confirmed_form(tmp_path)
-    templates = SqlAlchemyTemplateRepository(
-        create_engine(f"sqlite:///{tmp_path / 'demo.db'}")
-    )
-    facade = ReportingFacade(
-        repository, QueryForms(repository), template_repository=templates
-    )
+    templates = SqlAlchemyTemplateRepository(create_engine(f"sqlite:///{tmp_path / 'demo.db'}"))
+    facade = ReportingFacade(repository, QueryForms(repository), template_repository=templates)
 
     preview = facade.preview(FormFilters())
 
@@ -258,9 +260,7 @@ def test_preview_excludes_template_without_any_export_mapping(tmp_path: Path) ->
     Base.metadata.create_all(engine)
     repository = SqlAlchemyFormRepository(engine)
     templates = SqlAlchemyTemplateRepository(engine)
-    templates.add_version(
-        TemplateVersion.draft("TPL-EMPTY-V1", "EMPTY", 1, PageSpec.a4_portrait())
-    )
+    templates.add_version(TemplateVersion.draft("TPL-EMPTY-V1", "EMPTY", 1, PageSpec.a4_portrait()))
     imports = ImportForms(
         repository, repository, repository, LocalEvidenceStorage(tmp_path / "unmapped-evidence")
     )
@@ -505,6 +505,283 @@ def test_template_export_preserves_non_text_cell_types(
 
     cell = load_workbook(destination, data_only=False)["data"]["D2"]
     assert cell.data_type == expected_data_type
+
+
+def test_detail_report_definition_selects_and_sorts_controlled_columns(
+    tmp_path: Path,
+) -> None:
+    definition = ReportDefinition(
+        "DETAIL:1",
+        "DETAIL",
+        1,
+        "工资明细",
+        ReportKind.DETAIL,
+        ReportDefinitionStatus.PUBLISHED,
+        columns=(
+            ReportColumn("employee_id", "员工编号"),
+            ReportColumn("amount", "金额"),
+        ),
+        sort_by=("employee_id",),
+        worksheet="工资明细",
+    )
+    first = _search_result({"employee_id": "E002", "amount": 20, "ignored": "x"})
+    second = _search_result({"employee_id": "E001", "amount": 10, "ignored": "y"})
+    destination = tmp_path / "detail.xlsx"
+
+    XlsxExporter().write(
+        destination,
+        "BATCH-DETAIL",
+        "DETAIL",
+        [first, second],
+        {},
+        report_definition=definition,
+    )
+
+    rows = list(load_workbook(destination, read_only=True)["工资明细"].iter_rows(values_only=True))
+    assert rows[0] == (
+        "export_batch_id",
+        "form_id",
+        "record_version",
+        "员工编号",
+        "金额",
+    )
+    assert [row[3:] for row in rows[1:]] == [("E001", 10), ("E002", 20)]
+    assert "ignored" not in rows[0]
+
+
+def test_summary_report_definition_groups_and_aggregates_without_formulas(
+    tmp_path: Path,
+) -> None:
+    definition = ReportDefinition(
+        "SUMMARY:1",
+        "SUMMARY",
+        1,
+        "员工汇总",
+        ReportKind.SUMMARY,
+        ReportDefinitionStatus.PUBLISHED,
+        columns=(ReportColumn("employee_id", "员工编号"),),
+        group_by=("employee_id",),
+        aggregates=(
+            ReportAggregate("amount", AggregateOperation.SUM, "工资合计"),
+            ReportAggregate("amount", AggregateOperation.COUNT, "记录数"),
+            ReportAggregate("quantity", AggregateOperation.AVERAGE, "平均数量"),
+        ),
+        sort_by=("employee_id",),
+        worksheet="员工汇总",
+    )
+    destination = tmp_path / "summary.xlsx"
+
+    XlsxExporter().write(
+        destination,
+        "BATCH-SUMMARY",
+        "SUMMARY",
+        [
+            _search_result(
+                {
+                    "worker_number": "E002",
+                    "calculated_wage": 5,
+                    "qualified_quantity_1": 2,
+                }
+            ),
+            _search_result(
+                {
+                    "worker_number": "E001",
+                    "calculated_wage": 10,
+                    "qualified_quantity_1": 4,
+                }
+            ),
+            _search_result(
+                {
+                    "worker_number": "E001",
+                    "calculated_wage": 15,
+                    "qualified_quantity_1": 6,
+                }
+            ),
+        ],
+        {},
+        report_definition=definition,
+    )
+
+    rows = list(load_workbook(destination, read_only=True)["员工汇总"].iter_rows(values_only=True))
+    assert rows == [
+        ("export_batch_id", "员工编号", "工资合计", "记录数", "平均数量"),
+        ("BATCH-SUMMARY", "E001", 25, 2, 5),
+        ("BATCH-SUMMARY", "E002", 5, 1, 2),
+    ]
+
+
+def test_two_builtin_summary_definitions_generate_distinct_business_outputs(
+    tmp_path: Path,
+) -> None:
+    definitions = {item.report_key: item for item in BUILTIN_REPORT_DEFINITIONS}
+    rows = [
+        _search_result(
+            {
+                "worker_number": "E001",
+                "worker_name": "张三",
+                "work_order_number": "1001",
+                "calculated_wage": 10,
+                "qualified_quantity_1": 4,
+            }
+        ),
+        _search_result(
+            {
+                "worker_number": "E001",
+                "worker_name": "张三",
+                "work_order_number": "1001",
+                "calculated_wage": 15,
+                "qualified_quantity_1": 6,
+            }
+        ),
+    ]
+    employee_path = tmp_path / "employee-summary.xlsx"
+    work_order_path = tmp_path / "work-order-summary.xlsx"
+
+    XlsxExporter().write(
+        employee_path,
+        "BATCH-EMPLOYEE",
+        "EMPLOYEE_PAYROLL_SUMMARY",
+        rows,
+        {},
+        report_definition=definitions["EMPLOYEE_PAYROLL_SUMMARY"],
+    )
+    XlsxExporter().write(
+        work_order_path,
+        "BATCH-WORK-ORDER",
+        "WORK_ORDER_OUTPUT_SUMMARY",
+        rows,
+        {},
+        report_definition=definitions["WORK_ORDER_OUTPUT_SUMMARY"],
+    )
+
+    employee_rows = list(
+        load_workbook(employee_path, read_only=True)["员工工资汇总"].iter_rows(values_only=True)
+    )
+    work_order_rows = list(
+        load_workbook(work_order_path, read_only=True)["工单产量汇总"].iter_rows(values_only=True)
+    )
+    assert employee_rows[1][1:] == ("E001", "张三", 25)
+    assert work_order_rows[1][1:] == ("1001", 10)
+
+
+def test_export_resolves_published_definition_and_snapshots_exact_version(
+    tmp_path: Path,
+) -> None:
+    engine = create_engine(f"sqlite:///{tmp_path / 'report-export.db'}")
+    Base.metadata.create_all(engine)
+    repository = SqlAlchemyFormRepository(engine)
+    templates = SqlAlchemyTemplateRepository(engine)
+    reports = SqlAlchemyReportDefinitionRepository(engine)
+    template = TemplateVersion.draft("TPL-T1-V1", "T1", 1, PageSpec.a4_portrait())
+    for index, field_name in enumerate(("employee_id", "amount")):
+        template.add_field(
+            FieldDefinition(
+                field_name,
+                field_name,
+                "text" if field_name == "employee_id" else "decimal",
+                "text_box" if field_name == "employee_id" else "number_box",
+                Rect(0.1, 0.1 + index * 0.1, 0.2, 0.05),
+                template.page,
+                export_target=ExportTarget("legacy.xlsx", "data", field_name),
+            )
+        )
+    templates.add_version(template)
+    definition = ReportDefinition(
+        "EMPLOYEE_TOTAL:2",
+        "EMPLOYEE_TOTAL",
+        2,
+        "员工合计",
+        ReportKind.SUMMARY,
+        ReportDefinitionStatus.PUBLISHED,
+        columns=(ReportColumn("employee_id", "员工编号"),),
+        group_by=("employee_id",),
+        aggregates=(ReportAggregate("amount", AggregateOperation.SUM, "金额合计"),),
+        worksheet="员工合计",
+    )
+    reports.add(definition)
+    imports = ImportForms(
+        repository, repository, repository, LocalEvidenceStorage(tmp_path / "report-evidence")
+    )
+    reviews = ReviewForms(repository, repository)
+    for form_id, employee_id, amount in (
+        ("FORM-1", "E001", 10),
+        ("FORM-2", "E001", 15),
+    ):
+        image = tmp_path / f"{form_id}.png"
+        image.write_bytes(form_id.encode())
+        evidence = imports.import_image(image, form_id, "T1", "1", "operator")
+        reviews.confirm(
+            form_id,
+            0,
+            {"employee_id": employee_id, "amount": amount},
+            "reviewer",
+            "confirmed",
+            (evidence.file_id,),
+        )
+    service = ExportForms(
+        repository,
+        XlsxExporter(),
+        QueryForms(repository),
+        template_repository=templates,
+        report_definition_repository=reports,
+    )
+
+    batch = service.export(
+        "EMPLOYEE_TOTAL",
+        FormFilters(),
+        tmp_path / "exports",
+        "finance",
+        report_definition_id="EMPLOYEE_TOTAL:2",
+    )
+
+    worksheet = load_workbook(batch.file_path, read_only=True)["员工合计"]
+    rows = list(worksheet.iter_rows(values_only=True))
+    assert rows[1][1:] == ("E001", 25)
+    snapshot = batch.template_snapshot["report_definition"]
+    assert snapshot["definition_id"] == "EMPLOYEE_TOTAL:2"
+    assert snapshot["version"] == 2
+    assert snapshot["aggregates"][0]["operation"] == "SUM"
+
+
+def test_export_rejects_unknown_or_unpublished_report_definition(tmp_path: Path) -> None:
+    _, _, repository = setup_confirmed_form(tmp_path)
+    reports = SqlAlchemyReportDefinitionRepository(
+        create_engine(f"sqlite:///{tmp_path / 'demo.db'}")
+    )
+    reports.add(
+        ReportDefinition(
+            "DRAFT_REPORT:1",
+            "DRAFT_REPORT",
+            1,
+            "草稿报表",
+            ReportKind.DETAIL,
+            ReportDefinitionStatus.DRAFT,
+            columns=(ReportColumn("employee_id", "员工编号"),),
+        )
+    )
+    controlled = ExportForms(
+        repository,
+        XlsxExporter(),
+        QueryForms(repository),
+        report_definition_repository=reports,
+    )
+
+    with pytest.raises(KeyError, match="Unknown report definition"):
+        controlled.export(
+            "UNKNOWN",
+            FormFilters(),
+            tmp_path / "unknown",
+            "finance",
+            report_definition_id="UNKNOWN:1",
+        )
+    with pytest.raises(ValueError, match="published"):
+        controlled.export(
+            "DRAFT_REPORT",
+            FormFilters(),
+            tmp_path / "draft",
+            "finance",
+            report_definition_id="DRAFT_REPORT:1",
+        )
 
 
 def _search_result(values: dict[str, object]) -> SearchResult:

@@ -2,6 +2,9 @@
 
 from pathlib import Path
 
+from app.adapters.database.report_definition_repository_ds import (
+    SqlAlchemyReportDefinitionRepository,
+)
 from app.adapters.database.repositories import SqlAlchemyFormRepository
 from app.adapters.database.template_repository_ds import SqlAlchemyTemplateRepository
 from app.adapters.export.xlsx import XlsxExporter
@@ -20,6 +23,7 @@ class ReportingFacade:
         queries: QueryForms,
         exporter: XlsxExporter | None = None,
         template_repository: SqlAlchemyTemplateRepository | None = None,
+        report_definition_repository: SqlAlchemyReportDefinitionRepository | None = None,
     ) -> None:
         self._repository = repository
         self._exporter = exporter or XlsxExporter()
@@ -28,11 +32,10 @@ class ReportingFacade:
             exporter=self._exporter,
             queries=queries,
             template_repository=template_repository,
+            report_definition_repository=report_definition_repository,
         )
 
-    def preview(
-        self, filters: FormFilters, actor_id: str | None = None
-    ) -> ExportPreview:
+    def preview(self, filters: FormFilters, actor_id: str | None = None) -> ExportPreview:
         """Return a read-only export eligibility and mapping preview."""
         return self._service.preview(filters, actor_id)
 

@@ -59,6 +59,30 @@ export interface CreateExportInput {
   export_type: string;
   filters: ExportFilters;
   supersedes_batch_id?: string;
+  report_definition_id?: string;
+}
+
+export type ReportKind = "DETAIL" | "SUMMARY" | "FIXED";
+export type ReportDefinitionStatus = "DRAFT" | "PUBLISHED" | "RETIRED";
+export type AggregateOperation = "SUM" | "COUNT" | "MIN" | "MAX" | "AVERAGE";
+
+export interface ReportDefinition {
+  definition_id: string;
+  report_key: string;
+  version: number;
+  display_name: string;
+  kind: ReportKind;
+  status: ReportDefinitionStatus;
+  columns: Array<{ source_field: string; header: string }>;
+  filters: string[];
+  group_by: string[];
+  aggregates: Array<{
+    source_field: string;
+    operation: AggregateOperation;
+    header: string;
+  }>;
+  sort_by: string[];
+  worksheet: string;
 }
 
 export interface CreateExportResponse {
@@ -164,6 +188,9 @@ export class ExportApi {
         ...(input.supersedes_batch_id
           ? { supersedes_batch_id: input.supersedes_batch_id }
           : {}),
+        ...(input.report_definition_id
+          ? { report_definition_id: input.report_definition_id }
+          : {}),
       },
     });
   }
@@ -188,6 +215,10 @@ export class ExportApi {
 
   listBatches(): Promise<ExportBatch[]> {
     return this.request("/exports/batches", { method: "GET" });
+  }
+
+  listReportDefinitions(): Promise<ReportDefinition[]> {
+    return this.request("/exports/report-definitions", { method: "GET" });
   }
 
   getBatch(batchId: string): Promise<ExportBatch> {
