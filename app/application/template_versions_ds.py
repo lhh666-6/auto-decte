@@ -191,6 +191,21 @@ class TemplateVersions:
         self._repository.replace_version(version)
         return version
 
+    def replace_static_element(
+        self, version_id: str, element_id: str, element: StaticElement
+    ) -> TemplateVersion:
+        version = self.get(version_id)
+        current = next(
+            (item for item in version.static_elements if item.element_id == element_id), None
+        )
+        if current is None:
+            raise KeyError(f"Unknown static element: {element_id}")
+        if current.kind is not ElementKind.TABLE_GRID or element.kind is not ElementKind.TABLE_GRID:
+            raise ValueError("only table grids may be changed through controlled grid settings")
+        version.replace_static_element(element_id, element)
+        self._repository.replace_version(version)
+        return version
+
     def set_print_imposition(
         self, version_id: str, imposition: PrintImposition | None
     ) -> TemplateVersion:

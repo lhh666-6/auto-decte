@@ -14,6 +14,7 @@ from app.api.dependencies_ds import get_current_actor, get_services
 from app.application.template_versions_ds import PreflightReport
 from app.domain.templates_ds import (
     CoreLayoutKind,
+    ElementKind,
     ExportTarget,
     FieldDefinition,
     FieldRules,
@@ -23,6 +24,7 @@ from app.domain.templates_ds import (
     PayrollJobProfileVersion,
     RecognitionMode,
     Rect,
+    StaticElement,
     TemplateArtifact,
     TemplateStatus,
     TemplateVersion,
@@ -100,6 +102,16 @@ class FieldRequest(BaseModel):
     signature_role: str | None = None
     rules: FieldRulesRequest = PydanticField(default_factory=FieldRulesRequest)
     export_target: ExportTargetRequest = PydanticField(default_factory=ExportTargetRequest)
+
+
+class StaticElementRequest(BaseModel):
+    element_id: str
+    kind: ElementKind
+    text: str = ""
+    region: RegionRequest
+    rows: int = 1
+    columns: int = 1
+    column_weights: list[float] = PydanticField(default_factory=list)
 
 
 class CreateJobProfileRequest(BaseModel):
@@ -565,6 +577,53 @@ def delete_field(
     )
 
 
+@router.patch("/template-versions/{version_id}/static-elements/{element_id}")
+def replace_static_element(
+    version_id: str,
+    element_id: str,
+    body: StaticElementRequest,
+    request: Request,
+    services: Services = Depends(get_services),  # noqa: B008
+) -> dict[str, object]:
+    _require(_actor(request, services), Permission.TEMPLATE_CREATE_VERSION)
+    try:
+        updated = services.templates.replace_static_element(
+            version_id,
+            element_id,
+            StaticElement(
+                element_id=body.element_id,
+                kind=body.kind,
+                text=body.text,
+                region=Rect(
+                    x=body.region.x,
+                    y=body.region.y,
+                    width=body.region.width,
+                    height=body.region.height,
+                ),
+                rows=body.rows,
+                columns=body.columns,
+                column_weights=tuple(body.column_weights),
+            ),
+        )
+    except KeyError as error:
+        if "Unknown template version" in str(error):
+            raise _version_not_found(error) from error
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "STATIC_ELEMENT_NOT_FOUND", "detail": str(error)},
+        ) from error
+    except ValueError as error:
+        if "cannot be mutated" in str(error):
+            raise _invalid_lifecycle(error) from error
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "INVALID_STATIC_ELEMENT", "detail": str(error)},
+        ) from error
+    return _version_payload(
+        updated, (), services.templates.get_metadata(updated.template_key)
+    )
+
+
 @router.get("/template-artifacts/{artifact_id}/content")
 def download_artifact(
     artifact_id: str,
@@ -745,6 +804,9 @@ def _version_payload(
                 "element_id": element.element_id,
                 "kind": element.kind.value,
                 "text": element.text,
+                "rows": element.rows,
+                "columns": element.columns,
+                "column_weights": list(element.column_weights),
                 "region": {
                     "x": element.region.x,
                     "y": element.region.y,

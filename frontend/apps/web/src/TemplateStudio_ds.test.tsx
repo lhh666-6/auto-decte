@@ -25,12 +25,50 @@ const VERSION = {
   artifacts: [],
 } satisfies TemplateVersion;
 
+const GRID_VERSION = {
+  ...VERSION,
+  fields: [],
+  static_elements: [{
+    element_id: "detail_grid",
+    kind: "TABLE_GRID",
+    text: "Production detail",
+    rows: 3,
+    columns: 3,
+    column_weights: [2, 1, 1],
+    region: { x: 0.1, y: 0.3, width: 0.8, height: 0.4 },
+  }],
+} satisfies TemplateVersion;
+
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
 });
 
 describe("TemplateStudio field creation", () => {
+  it("selects an existing controlled grid and persists its settings", async () => {
+    const user = userEvent.setup();
+    const fetcher = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === "PATCH") {
+        const body = JSON.parse(String(init.body)) as typeof GRID_VERSION.static_elements[number];
+        return jsonResponse({ ...GRID_VERSION, static_elements: [body] });
+      }
+      return jsonResponse(GRID_VERSION);
+    });
+    vi.stubGlobal("fetch", fetcher);
+    render(<TemplateStudio initialScreen={{ kind: "editor", versionId: "VERSION-1" }} />);
+
+    await user.click(await screen.findByRole("button", { name: /Production detail/ }));
+    await user.clear(screen.getByLabelText("表格行数"));
+    await user.type(screen.getByLabelText("表格行数"), "4");
+    await user.click(screen.getByRole("button", { name: "保存表格设置" }));
+
+    await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(2));
+    expect(fetcher.mock.calls[1]?.[0]).toBe("/api/v1/template-versions/VERSION-1/static-elements/detail_grid");
+    expect(JSON.parse(String(fetcher.mock.calls[1]?.[1]?.body))).toEqual(
+      expect.objectContaining({ rows: 4, columns: 3, column_weights: [2, 1, 1] }),
+    );
+  });
+
   it("uses an independent draft and rejects duplicate keys before the API call", async () => {
     const user = userEvent.setup();
     const fetcher = vi.fn(async () => jsonResponse(VERSION));

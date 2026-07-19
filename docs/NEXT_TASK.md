@@ -2,26 +2,26 @@
 
 最后更新：2026-07-19
 
-状态：六个核心版面、岗位配置和受控字段编辑闭环已完成；当前只贯通受控明细表网格配置。
+状态：六个核心版面、岗位配置、受控字段和受控明细表网格闭环已完成；当前只补齐纸质模板发布前业务检查。
 
 目标分支：`modular-architecture`
 
-## 当前唯一任务：受控明细表网格 API 与设计器贯通
+## 当前唯一任务：纸质模板发布前业务检查与中文原因
 
-规格来源：[工业纸质工资表系统：低 Token 实施与统一 UI 规范](superpowers/specs/2026-07-19-industrial-payroll-low-token-ui-v2.md) 第 3、4 章。
+规格来源：[工业纸质工资表系统：低 Token 实施与统一 UI 规范](superpowers/specs/2026-07-19-industrial-payroll-low-token-ui-v2.md) 第 4.11 节。
 
-执行计划：新建 `2026-07-20-controlled-grid-api-ui.md`，只处理 `TABLE_GRID` 的行、列和比例列宽。
+执行计划：新建 `2026-07-20-paper-template-business-preflight.md`，逐条映射 V2 第 4.11 节，不扩展到导入、审核、导出页面或 AI。
 
-目标：模板读取/编辑接口和前端静态组件模型完整携带明细表行数、列数和比例列宽；设计器只提供受控表格设置，不开放任意 HTML 或脚本。
+目标：在已有物理尺寸、保护区和字段行为检查上，补齐标题、二维码/实例码/定位标记、受控字段元数据、系统计算金额、正式打印层、Excel 映射、岗位配置和双版本二维码要求；发布失败逐项返回中文业务原因。
 
 只读取和修改：
 
-- `app/api/routers/templates_ds.py`
-- `frontend/packages/api-client/src/templates_ds.ts`
-- 模板设计器中静态组件/模块设置相关代码
-- 对应 API、模型和组件测试
+- `app/application/template_versions_ds.py`
+- 模板发布/预检接口的错误展示相关代码
+- 岗位配置绑定与二维码校验的现有服务入口
+- 对应应用、API 和前端预检展示测试
 
-只运行模板 API、静态组件模型/组件测试、TypeScript、Ruff 与相关 mypy；不重复运行字段设置、种子安装、纸面闭环、审核、导出或完整套件。
+只运行模板预检应用/API、预检原因展示、Ruff 与相关 mypy；不重复运行受控字段/网格、种子安装、纸面闭环、审核、导出或完整套件。
 
 ## 当前执行状态
 

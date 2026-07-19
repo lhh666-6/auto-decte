@@ -30,6 +30,8 @@ IFD2 识别与岗位身份持久化已完成：Form 和数据库可空保存岗�
 
 [受控字段 API 与设计器贯通](superpowers/plans/2026-07-20-controlled-fields-api-ui.md)已完成：模板 API、TypeScript 契约、新字段草稿和字段属性面板完整保存数字位数、固定选项/最大选择数、系统带入来源、条件必填和签字角色；切换纸面组件或识别方式会清除不适用的旧约束。API 定向验证 `13 passed`，前端字段/模型验证 `13 passed`，TypeScript、Ruff 和 mypy 通过。下一任务是贯通受控明细表网格的 API 和设计器配置。
 
+[受控明细表网格 API 与设计器贯通](superpowers/plans/2026-07-20-controlled-grid-api-ui.md)已完成：模板接口和 TypeScript 契约完整携带行数、列数和比例列宽；草稿设计器可从明细表模块列表选择固定网格并受控修改这些参数，画布显示真实行列轮廓。接口只允许修改既有 `TABLE_GRID`，不开放任意静态内容、HTML 或脚本，发布版继续拒绝修改。模板 API `14 passed`，前端相关组件/API `17 passed`，TypeScript、Ruff 和 mypy 通过。下一任务是按 V2 第 4.11 节补齐纸质模板发布前业务检查及中文原因。
+
 ## 本轮结论
 
 工业表单前端重建实施计划的任务 1—16 已按顺序完成。协作同步基线为 `ff03a39 fix(review): preserve confirmed values across reload and export`，并已在其上完成新主线 Task 1—10；集成分支为 `modular-architecture`。

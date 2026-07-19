@@ -192,6 +192,33 @@ describe("TemplateApi", () => {
     });
   });
 
+  it("replaces a controlled table grid through its versioned endpoint", async () => {
+    const fetcher = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ version_id: "TPL-1" }), { status: 200 }),
+    );
+    const api = new TemplateApi("/api/v1", fetcher);
+    const grid: TemplateStaticElement = {
+      element_id: "detail_grid",
+      kind: "TABLE_GRID",
+      text: "",
+      rows: 4,
+      columns: 3,
+      column_weights: [2, 1, 1],
+      region: { x: 0.1, y: 0.3, width: 0.8, height: 0.4 },
+    };
+
+    await api.replaceStaticElement("TPL-1", "detail/grid", grid);
+
+    expect(fetcher).toHaveBeenCalledWith(
+      "/api/v1/template-versions/TPL-1/static-elements/detail%2Fgrid",
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(grid),
+      },
+    );
+  });
+
   it("surfaces structured API errors from every request method", async () => {
     const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ code: "NOT_FOUND", detail: "Missing template" }), { status: 404 }));
 

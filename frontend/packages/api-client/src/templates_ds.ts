@@ -113,6 +113,9 @@ export interface TemplateStaticElement {
   element_id: string;
   kind: TemplateElementKind;
   text: string;
+  rows: number;
+  columns: number;
+  column_weights: number[];
   region: TemplateRect;
 }
 
@@ -279,6 +282,17 @@ export class TemplateApi {
     return this.request(
       `/template-versions/${encodeURIComponent(versionId)}/fields/${encodeURIComponent(fieldKey)}`,
       { method: "DELETE" },
+    );
+  }
+
+  replaceStaticElement(
+    versionId: string,
+    elementId: string,
+    element: TemplateStaticElement,
+  ): Promise<TemplateVersion> {
+    return this.request(
+      `/template-versions/${encodeURIComponent(versionId)}/static-elements/${encodeURIComponent(elementId)}`,
+      { method: "PATCH", body: element },
     );
   }
 

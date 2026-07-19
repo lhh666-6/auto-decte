@@ -251,6 +251,13 @@ export function TemplateCanvasEditor({
         <span className="marker bottom-right">12</span>
         <ProtectedZone label="模板 QR" region={QR_SAFE_ZONE} className="qr-zone" />
         <ProtectedZone label="纸张实例码" region={SHEET_CODE_SAFE_ZONE} className="sheet-zone" />
+        {version.static_elements.filter((element) => element.kind === "TABLE_GRID").map((grid) => (
+          <div key={grid.element_id} className="template-grid-overlay" style={rectStyle(grid.region)} aria-label={`${grid.text || "明细表"}，${grid.rows} 行 ${grid.columns} 列`}>
+            {Array.from({ length: Math.max(0, grid.rows - 1) }, (_, index) => <i key={`row-${index}`} className="grid-row-line" style={{ top: `${((index + 1) / grid.rows) * 100}%` }} />)}
+            {gridColumnOffsets(grid).map((offset, index) => <i key={`column-${index}`} className="grid-column-line" style={{ left: `${offset * 100}%` }} />)}
+            <span>{grid.text || "明细表"}</span>
+          </div>
+        ))}
         {version.fields.map((field) => {
           const region = previewRegions[field.field_key] ?? field.region;
           return (
@@ -290,6 +297,18 @@ export function TemplateCanvasEditor({
       </div>
     </section>
   );
+}
+
+function gridColumnOffsets(grid: TemplateVersion["static_elements"][number]): number[] {
+  const weights = grid.column_weights.length === grid.columns
+    ? grid.column_weights
+    : Array(grid.columns).fill(1) as number[];
+  const total = weights.reduce((sum, weight) => sum + weight, 0);
+  let consumed = 0;
+  return weights.slice(0, -1).map((weight) => {
+    consumed += weight;
+    return consumed / total;
+  });
 }
 
 function ProtectedZone({

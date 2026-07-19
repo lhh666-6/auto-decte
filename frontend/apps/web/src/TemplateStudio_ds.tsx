@@ -3,11 +3,13 @@ import {
   type PreflightReport,
   type TemplateField,
   type TemplateRect,
+  type TemplateStaticElement,
   type TemplateVersion,
 } from "@form-detection/api-client";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { FieldInspector } from "./FieldInspector_ds";
+import { GridInspector } from "./GridInspector_ds";
 import { TemplateCanvasEditor } from "./TemplateCanvasEditor_ds";
 import { TemplateLibrary } from "./TemplateLibrary_ds";
 import { TemplatePreview } from "./TemplatePreview_ds";
@@ -116,6 +118,7 @@ function TemplateEditor({
   const [report, setReport] = useState<PreflightReport | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selectedFieldKey, setSelectedFieldKey] = useState<string | null>(null);
+  const [selectedGridId, setSelectedGridId] = useState<string | null>(null);
   const [addDialog, setAddDialog] = useState<AddFieldDialogState | null>(null);
   const [structuralPast, setStructuralPast] = useState<StructuralChange[]>([]);
   const [structuralFuture, setStructuralFuture] = useState<StructuralChange[]>([]);
@@ -141,6 +144,8 @@ function TemplateEditor({
   }, [api, versionId]);
 
   const selectedField = version?.fields.find((field) => field.field_key === selectedFieldKey) ?? null;
+  const tableGrids = version?.static_elements.filter((element) => element.kind === "TABLE_GRID") ?? [];
+  const selectedGrid = tableGrids.find((element) => element.element_id === selectedGridId) ?? null;
   const editable = version !== null && canEdit(version.status);
 
   function acceptMutation(updated: TemplateVersion, selection: string | null = selectedFieldKey) {
@@ -232,6 +237,20 @@ function TemplateEditor({
     setWorking(true);
     try {
       acceptMutation(await api.replaceField(version.version_id, field.field_key, field));
+    } catch (cause) {
+      setError(message(cause));
+      throw cause;
+    } finally {
+      setWorking(false);
+    }
+  }
+
+  async function saveGrid(grid: TemplateStaticElement) {
+    if (!version) return;
+    setWorking(true);
+    try {
+      acceptMutation(await api.replaceStaticElement(version.version_id, grid.element_id, grid));
+      setSelectedGridId(grid.element_id);
     } catch (cause) {
       setError(message(cause));
       throw cause;
@@ -406,6 +425,11 @@ function TemplateEditor({
               {version.fields.map((field) => <div className="layer-row" key={field.field_key}><button type="button" className={field.field_key === selectedFieldKey ? "selected" : ""} onClick={() => setSelectedFieldKey(field.field_key)}><strong>{field.display_name}</strong><span>{field.field_key}</span></button><button type="button" className="layer-copy" aria-label={`复制字段 ${field.display_name}`} disabled={!editable || working} onClick={() => void duplicateField(field)}>复制</button></div>)}
               {version.fields.length === 0 && <p className="muted">尚未添加字段。</p>}
             </section>
+            <section className="layer-list" aria-label="明细表模块">
+              <h3>明细表</h3>
+              {tableGrids.map((grid) => <button type="button" className={grid.element_id === selectedGridId ? "selected" : ""} key={grid.element_id} onClick={() => { setSelectedGridId(grid.element_id); setSelectedFieldKey(null); }}><strong>{grid.text || "固定明细表"}</strong><span>{grid.rows} 行 × {grid.columns} 列</span></button>)}
+              {tableGrids.length === 0 && <p className="muted">此模板没有明细表模块。</p>}
+            </section>
           </aside>
           <TemplateCanvasEditor
             version={version}
@@ -416,7 +440,9 @@ function TemplateEditor({
             onReject={setError}
           />
           <div className="studio-properties">
-            <FieldInspector field={selectedField} page={version.page} editable={editable && !working} onSave={saveField} onDelete={deleteField} />
+            {selectedGrid
+              ? <GridInspector grid={selectedGrid} editable={editable && !working} onSave={saveGrid} />
+              : <FieldInspector field={selectedField} page={version.page} editable={editable && !working} onSave={saveField} onDelete={deleteField} />}
             <aside className="studio-card template-metadata-editor">
               <h2>模板设置</h2>
               <label>模板名称<input value={metadataName} maxLength={100} disabled={!editable || working} onChange={(event) => setMetadataName(event.target.value)} /></label>

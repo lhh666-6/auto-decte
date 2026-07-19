@@ -5,6 +5,7 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from app.api.main import create_app
+from app.domain.templates_ds import ElementKind, Rect, StaticElement
 from app.services.container import build_services
 from config.settings import Settings
 
@@ -56,6 +57,75 @@ def _field(display_name: str = "Worker name") -> dict[str, object]:
         },
         "region": {"x": 0.1, "y": 0.2, "width": 0.2, "height": 0.05},
     }
+
+
+def _table_grid(rows: int = 3, columns: int = 4) -> dict[str, object]:
+    return {
+        "element_id": "detail_grid",
+        "kind": "TABLE_GRID",
+        "text": "",
+        "rows": rows,
+        "columns": columns,
+        "column_weights": [2, 1, 1, 1][:columns],
+        "region": {"x": 0.1, "y": 0.3, "width": 0.8, "height": 0.4},
+    }
+
+
+def test_admin_can_replace_controlled_table_grid_configuration(tmp_path: Path) -> None:
+    services = build_services(Settings(data_root=tmp_path, allow_header_identity=True))
+    client = TestClient(create_app(services), raise_server_exceptions=False)
+    created = client.post(
+        "/api/v1/templates",
+        headers=_headers(),
+        json={"template_key": "PAYROLL_GRID", "page_size": "A4"},
+    )
+    version_id = created.json()["version_id"]
+
+    services.templates.add_static_element(
+        version_id,
+        StaticElement(
+            element_id="detail_grid",
+            kind=ElementKind.TABLE_GRID,
+            region=Rect(x=0.1, y=0.3, width=0.8, height=0.4),
+            rows=2,
+            columns=2,
+            column_weights=(1, 1),
+        ),
+    )
+
+    detail = client.get(
+        f"/api/v1/template-versions/{version_id}", headers=_headers()
+    )
+    replaced = client.patch(
+        f"/api/v1/template-versions/{version_id}/static-elements/detail_grid",
+        headers=_headers(),
+        json=_table_grid(),
+    )
+    invalid = client.patch(
+        f"/api/v1/template-versions/{version_id}/static-elements/detail_grid",
+        headers=_headers(),
+        json=_table_grid(rows=0),
+    )
+    client.post(f"/api/v1/template-versions/{version_id}/preflight", headers=_headers())
+    published = client.post(
+        f"/api/v1/template-versions/{version_id}/publish", headers=_headers()
+    )
+    immutable = client.patch(
+        f"/api/v1/template-versions/{version_id}/static-elements/detail_grid",
+        headers=_headers(),
+        json=_table_grid(rows=4),
+    )
+
+    assert detail.json()["static_elements"][0] == {
+        **_table_grid(rows=2, columns=2),
+        "column_weights": [1, 1],
+    }
+    assert replaced.status_code == 200
+    assert replaced.json()["static_elements"] == [_table_grid()]
+    assert invalid.status_code == 422
+    assert replaced.json()["status"] == "DRAFT"
+    assert published.status_code == 200
+    assert immutable.status_code == 409
 
 
 def _published_template(client: TestClient) -> str:

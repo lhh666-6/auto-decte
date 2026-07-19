@@ -182,6 +182,11 @@ button { cursor: pointer; }
 .protected-zone { position: absolute; z-index: 2; display: grid; place-items: center; border: 1px dashed #f59e0b; color: #92400e; background: rgb(254 243 199 / 82%); pointer-events: none; font-size: 9px; text-align: center; }
 .sheet-zone { border-color: #f97316; color: #9a3412; background: rgb(255 237 213 / 86%); }
 .template-canvas-paper .marker { z-index: 3; }
+.template-grid-overlay { position: absolute; z-index: 3; overflow: hidden; border: 1px solid #64748b; color: #475569; background: rgb(248 250 252 / 54%); pointer-events: none; }
+.template-grid-overlay > i { position: absolute; display: block; background: #94a3b8; }
+.template-grid-overlay .grid-row-line { right: 0; left: 0; height: 1px; }
+.template-grid-overlay .grid-column-line { top: 0; bottom: 0; width: 1px; }
+.template-grid-overlay > span { position: absolute; top: 2px; left: 3px; font-size: 8px; font-weight: 700; }
 .template-field-overlay { position: absolute; z-index: 4; display: grid; align-content: center; min-width: 28px; min-height: 18px; border: 1px solid #2563eb; border-radius: 3px; padding: 2px 4px; overflow: visible; color: #1d4ed8; background: rgb(239 246 255 / 84%); cursor: grab; touch-action: none; text-align: left; }
 .template-field-overlay:hover, .template-field-overlay.selected { z-index: 5; border-width: 2px; border-color: #0f5bd7; background: rgb(219 234 254 / 92%); box-shadow: 0 0 0 2px rgb(37 99 235 / 18%); }
 .template-field-overlay:focus-visible { outline: 3px solid rgb(245 158 11 / 60%); outline-offset: 2px; }
@@ -198,6 +203,10 @@ button { cursor: pointer; }
 .advanced-field-settings { border-top: 1px solid #e2e8f0; padding-top: 8px; }
 .advanced-field-settings summary { margin-bottom: 8px; color: #334155; cursor: pointer; font-size: 12px; font-weight: 800; }
 .template-metadata-editor textarea { min-height: 72px; border: 1px solid #cbd5e1; border-radius: 6px; padding: 8px; resize: vertical; font: inherit; }
+.grid-settings-form { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.grid-settings-form label { display: grid; gap: 5px; color: #475569; font-size: 12px; font-weight: 700; }
+.grid-settings-form input { min-width: 0; border: 1px solid #cbd5e1; border-radius: 6px; padding: 8px; color: #172f4d; background: #fff; font: inherit; }
+.grid-weight-setting { grid-column: 1 / -1; }
 .add-field-dialog { display: grid; gap: 12px; width: min(100%, 520px); border-radius: 12px; padding: 22px; background: #fff; box-shadow: 0 22px 60px rgb(15 23 42 / 35%); }
 .add-field-dialog h2 { margin: 3px 0; color: #172f4d; }
 .add-field-dialog p { margin: 0; }
