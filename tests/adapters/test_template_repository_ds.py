@@ -7,11 +7,13 @@ import pytest
 from app.adapters.database.models import Base
 from app.adapters.database.template_repository_ds import SqlAlchemyTemplateRepository
 from app.domain.templates_ds import (
+    CoreLayoutKind,
     ElementKind,
     FieldDefinition,
     FillPolicy,
     PageSpec,
     PaperEntryMode,
+    PayrollJobProfileVersion,
     PrintImposition,
     RecognitionMode,
     Rect,
@@ -74,6 +76,68 @@ def test_repository_round_trips_fields_and_safe_artifact_metadata(tmp_path: Path
 
     assert repository.get_version(version.version_id).status.value == "READY_TO_PUBLISH"  # type: ignore[union-attr]
     assert repository.list_versions("PAYROLL_HOURLY")[0].version_id == version.version_id
+
+
+def test_repository_round_trips_versioned_job_profiles(tmp_path: Path) -> None:
+    engine = create_sqlite_engine(tmp_path / "job-profiles.db")
+    Base.metadata.create_all(engine)
+    repository = SqlAlchemyTemplateRepository(engine)
+    template = TemplateVersion.draft(
+        "TPL-TIMEKEEPING-V2", "CORE_TIMEKEEPING", 2, PageSpec.a5_landscape()
+    )
+    repository.add_version(template)
+    profile = PayrollJobProfileVersion.draft(
+        "PROFILE-TIMEKEEPING-V1",
+        "TIMEKEEPING_DAY",
+        1,
+        display_name="计时工白班",
+        core_layout=CoreLayoutKind.TIMEKEEPING,
+        template_version_id=template.version_id,
+        template_version=template.version,
+        unit="小时",
+        fixed_options={"shift": ["白班", "夜班"]},
+        pricing_rules={"hourly_rate": 18.5},
+        deduction_rules={"late_per_minute": 0.5},
+        export_mapping={"normal_hours": "正常工时"},
+    )
+
+    repository.add_job_profile(profile)
+
+    loaded = repository.get_job_profile(profile.profile_version_id)
+    assert loaded == profile
+    assert repository.get_job_profile_by_key_version("TIMEKEEPING_DAY", 1) == profile
+    assert repository.list_job_profiles("TIMEKEEPING_DAY") == [profile]
+
+
+def test_repository_preserves_published_job_profile_content(tmp_path: Path) -> None:
+    engine = create_sqlite_engine(tmp_path / "published-job-profile.db")
+    Base.metadata.create_all(engine)
+    repository = SqlAlchemyTemplateRepository(engine)
+    template = TemplateVersion.draft(
+        "TPL-EQUIPMENT-V1", "CORE_EQUIPMENT", 1, PageSpec.a5_landscape()
+    )
+    repository.add_version(template)
+    profile = PayrollJobProfileVersion.draft(
+        "PROFILE-FORKLIFT-V1",
+        "FORKLIFT_DAY",
+        1,
+        display_name="叉车工日班",
+        core_layout=CoreLayoutKind.EQUIPMENT_TIMEKEEPING,
+        template_version_id=template.version_id,
+        template_version=template.version,
+        fixed_options={"equipment": ["叉车"]},
+    )
+    repository.add_job_profile(profile)
+    profile.mark_ready_to_publish()
+    repository.replace_job_profile(profile)
+    profile.publish()
+    repository.replace_job_profile(profile)
+
+    forged = repository.get_job_profile(profile.profile_version_id)
+    assert forged is not None
+    forged.fixed_options["equipment"] = ["被篡改"]
+    with pytest.raises(ValueError, match="published"):
+        repository.replace_job_profile(forged)
 
 
 def test_repository_lists_distinct_template_keys_in_lexical_order(tmp_path: Path) -> None:

@@ -60,6 +60,49 @@ def test_alembic_upgrade_creates_template_version_tables(tmp_path: Path) -> None
     assert {"static_elements", "print_imposition"} <= version_columns
 
 
+def test_alembic_upgrade_creates_job_profile_versions_without_changing_templates(
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "job-profile-schema.db"
+    _upgrade_to_revision(database_path, "008")
+    engine = create_engine(f"sqlite:///{database_path}")
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO template_versions "
+                "(version_id, template_key, version, status, page, parent_version_id, "
+                "static_elements, print_imposition) VALUES "
+                "('TPL-KEEP', 'CORE_TIMEKEEPING', 1, 'DRAFT', :page, NULL, '[]', NULL)"
+            ),
+            {
+                "page": (
+                    '{"size":"A5","orientation":"landscape","width_mm":210,'
+                    '"height_mm":148,"canonical_dpi":300,"canonical_width_px":2480,'
+                    '"canonical_height_px":1748}'
+                )
+            },
+        )
+    engine.dispose()
+
+    upgrade_database(database_path)
+
+    upgraded = create_engine(f"sqlite:///{database_path}")
+    inspector = inspect(upgraded)
+    assert "job_profile_versions" in inspector.get_table_names()
+    unique_columns = {
+        tuple(item["column_names"])
+        for item in inspector.get_unique_constraints("job_profile_versions")
+    }
+    assert ("profile_key", "version") in unique_columns
+    assert SqlAlchemyTemplateRepository(upgraded).get_version("TPL-KEEP") is not None
+    with upgraded.connect() as connection:
+        revision = connection.execute(
+            text("SELECT version_num FROM alembic_version")
+        ).scalar_one()
+        assert revision == "009"
+    upgraded.dispose()
+
+
 def test_upgrade_007_preserves_legacy_template_and_adds_layout_storage(
     tmp_path: Path,
 ) -> None:
@@ -116,7 +159,7 @@ def test_upgrade_007_preserves_legacy_template_and_adds_layout_storage(
         revision = connection.execute(
             text("SELECT version_num FROM alembic_version")
         ).scalar_one()
-        assert revision == "008"
+        assert revision == "009"
     upgraded.dispose()
 
 
@@ -331,7 +374,7 @@ def test_upgrade_006_export_batch_preserves_data_and_adds_snapshot_columns(
         revision = connection.execute(
             text("SELECT version_num FROM alembic_version")
         ).scalar_one()
-        assert revision == "008"
+        assert revision == "009"
     upgraded.dispose()
 
     _downgrade_to_revision(database_path, "006")

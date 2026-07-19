@@ -7,19 +7,23 @@ from sqlalchemy import Engine, delete, select
 from sqlalchemy.orm import Session
 
 from app.adapters.database.models import (
+    JobProfileVersionRow,
     TemplateArtifactRow,
     TemplateFieldRow,
     TemplateMetadataRow,
     TemplateVersionRow,
 )
 from app.domain.templates_ds import (
+    CoreLayoutKind,
     ElementKind,
     ExportTarget,
     FieldDefinition,
     FieldRules,
     FillPolicy,
+    JobProfileStatus,
     PageSpec,
     PaperEntryMode,
+    PayrollJobProfileVersion,
     PrintImposition,
     RecognitionMode,
     Rect,
@@ -81,6 +85,61 @@ class SqlAlchemyTemplateRepository:
                         definition=_field_to_dict(definition),
                     )
                 )
+
+    def add_job_profile(self, profile: PayrollJobProfileVersion) -> None:
+        with self._transaction() as session:
+            if session.get(TemplateVersionRow, profile.template_version_id) is None:
+                raise KeyError(f"Unknown template version: {profile.template_version_id}")
+            session.add(_job_profile_to_row(profile))
+
+    def get_job_profile(
+        self, profile_version_id: str
+    ) -> PayrollJobProfileVersion | None:
+        with self._read_session() as session:
+            row = session.get(JobProfileVersionRow, profile_version_id)
+            return _job_profile_from_row(row) if row is not None else None
+
+    def get_job_profile_by_key_version(
+        self, profile_key: str, version: int
+    ) -> PayrollJobProfileVersion | None:
+        with self._read_session() as session:
+            row = session.scalar(
+                select(JobProfileVersionRow).where(
+                    JobProfileVersionRow.profile_key == profile_key,
+                    JobProfileVersionRow.version == version,
+                )
+            )
+            return _job_profile_from_row(row) if row is not None else None
+
+    def list_job_profiles(self, profile_key: str) -> list[PayrollJobProfileVersion]:
+        with self._read_session() as session:
+            rows = session.scalars(
+                select(JobProfileVersionRow)
+                .where(JobProfileVersionRow.profile_key == profile_key)
+                .order_by(JobProfileVersionRow.version, JobProfileVersionRow.profile_version_id)
+            ).all()
+            return [_job_profile_from_row(row) for row in rows]
+
+    def replace_job_profile(self, profile: PayrollJobProfileVersion) -> None:
+        with self._transaction() as session:
+            row = session.get(JobProfileVersionRow, profile.profile_version_id)
+            if row is None:
+                raise KeyError(f"Unknown job profile version: {profile.profile_version_id}")
+            persisted = _job_profile_from_row(row)
+            _validate_job_profile_transition(persisted, profile)
+            row.status = profile.status.value
+            if persisted.status in {JobProfileStatus.PUBLISHED, JobProfileStatus.RETIRED}:
+                return
+            row.display_name = profile.display_name
+            row.core_layout = profile.core_layout.value
+            row.template_version_id = profile.template_version_id
+            row.template_version = profile.template_version
+            row.parent_profile_version_id = profile.parent_profile_version_id
+            row.unit = profile.unit
+            row.fixed_options = profile.fixed_options
+            row.pricing_rules = profile.pricing_rules
+            row.deduction_rules = profile.deduction_rules
+            row.export_mapping = profile.export_mapping
 
     def get_version(self, version_id: str) -> TemplateVersion | None:
         with self._read_session() as session:
@@ -262,6 +321,101 @@ class SqlAlchemyTemplateRepository:
                 internal_uri=row.internal_uri,
                 sha256=row.sha256,
             )
+
+
+def _job_profile_to_row(profile: PayrollJobProfileVersion) -> JobProfileVersionRow:
+    return JobProfileVersionRow(
+        profile_version_id=profile.profile_version_id,
+        profile_key=profile.profile_key,
+        version=profile.version,
+        display_name=profile.display_name,
+        core_layout=profile.core_layout.value,
+        template_version_id=profile.template_version_id,
+        template_version=profile.template_version,
+        status=profile.status.value,
+        parent_profile_version_id=profile.parent_profile_version_id,
+        unit=profile.unit,
+        fixed_options=profile.fixed_options,
+        pricing_rules=profile.pricing_rules,
+        deduction_rules=profile.deduction_rules,
+        export_mapping=profile.export_mapping,
+    )
+
+
+def _job_profile_from_row(row: JobProfileVersionRow) -> PayrollJobProfileVersion:
+    return PayrollJobProfileVersion(
+        profile_version_id=row.profile_version_id,
+        profile_key=row.profile_key,
+        version=row.version,
+        display_name=row.display_name,
+        core_layout=CoreLayoutKind(row.core_layout),
+        template_version_id=row.template_version_id,
+        template_version=row.template_version,
+        status=JobProfileStatus(row.status),
+        parent_profile_version_id=row.parent_profile_version_id,
+        unit=row.unit,
+        fixed_options=dict(row.fixed_options),
+        pricing_rules=dict(row.pricing_rules),
+        deduction_rules=dict(row.deduction_rules),
+        export_mapping=dict(row.export_mapping),
+    )
+
+
+def _validate_job_profile_transition(
+    persisted: PayrollJobProfileVersion, replacement: PayrollJobProfileVersion
+) -> None:
+    allowed_statuses = {
+        JobProfileStatus.DRAFT: {
+            JobProfileStatus.DRAFT,
+            JobProfileStatus.READY_TO_PUBLISH,
+        },
+        JobProfileStatus.READY_TO_PUBLISH: {
+            JobProfileStatus.DRAFT,
+            JobProfileStatus.READY_TO_PUBLISH,
+            JobProfileStatus.PUBLISHED,
+        },
+        JobProfileStatus.PUBLISHED: {
+            JobProfileStatus.PUBLISHED,
+            JobProfileStatus.RETIRED,
+        },
+        JobProfileStatus.RETIRED: {JobProfileStatus.RETIRED},
+    }
+    if replacement.status not in allowed_statuses[persisted.status]:
+        raise ValueError("invalid job profile lifecycle transition")
+    if persisted.status not in {JobProfileStatus.PUBLISHED, JobProfileStatus.RETIRED}:
+        return
+    persisted_content = (
+        persisted.profile_version_id,
+        persisted.profile_key,
+        persisted.version,
+        persisted.display_name,
+        persisted.core_layout,
+        persisted.template_version_id,
+        persisted.template_version,
+        persisted.parent_profile_version_id,
+        persisted.unit,
+        persisted.fixed_options,
+        persisted.pricing_rules,
+        persisted.deduction_rules,
+        persisted.export_mapping,
+    )
+    replacement_content = (
+        replacement.profile_version_id,
+        replacement.profile_key,
+        replacement.version,
+        replacement.display_name,
+        replacement.core_layout,
+        replacement.template_version_id,
+        replacement.template_version,
+        replacement.parent_profile_version_id,
+        replacement.unit,
+        replacement.fixed_options,
+        replacement.pricing_rules,
+        replacement.deduction_rules,
+        replacement.export_mapping,
+    )
+    if persisted_content != replacement_content:
+        raise ValueError("published job profile versions cannot be replaced")
 
 
 def _version_from_row(session: Session, row: TemplateVersionRow) -> TemplateVersion:

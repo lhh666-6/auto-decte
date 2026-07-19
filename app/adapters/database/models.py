@@ -60,6 +60,28 @@ class TemplateVersionRow(Base):
     print_imposition: Mapped[dict[str, Any] | None] = mapped_column(JSON)
 
 
+class JobProfileVersionRow(Base):
+    __tablename__ = "job_profile_versions"
+    __table_args__ = (UniqueConstraint("profile_key", "version"),)
+
+    profile_version_id: Mapped[str] = mapped_column(String, primary_key=True)
+    profile_key: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    display_name: Mapped[str] = mapped_column(String, nullable=False)
+    core_layout: Mapped[str] = mapped_column(String, nullable=False)
+    template_version_id: Mapped[str] = mapped_column(
+        ForeignKey("template_versions.version_id"), nullable=False, index=True
+    )
+    template_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String, nullable=False)
+    parent_profile_version_id: Mapped[str | None] = mapped_column(String)
+    unit: Mapped[str] = mapped_column(String, nullable=False, default="")
+    fixed_options: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    pricing_rules: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    deduction_rules: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    export_mapping: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+
+
 class TemplateMetadataRow(Base):
     __tablename__ = "template_metadata"
 

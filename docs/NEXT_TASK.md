@@ -2,28 +2,24 @@
 
 最后更新：2026-07-19
 
-状态：V2 的打印/调试层分离与岗位配置领域模型已完成；当前只执行下面一个持久化任务。
+状态：V2 的打印/调试层分离、岗位配置领域模型和纯增量持久化已完成；当前只执行下面一个应用服务任务。
 
 目标分支：`modular-architecture`
 
-## 当前唯一任务：岗位配置版本持久化
+## 当前唯一任务：岗位配置应用服务
 
 规格来源：[工业纸质工资表系统：低 Token 实施与统一 UI 规范](superpowers/specs/2026-07-19-industrial-payroll-low-token-ui-v2.md) 第 3、4 章。
 
-执行计划：[Job Profile Persistence Implementation Plan](superpowers/plans/2026-07-20-job-profile-persistence.md)。
+执行计划：[Job Profile Application Service Plan](superpowers/plans/2026-07-20-job-profile-application-service.md)。
 
-目标：新增岗位配置版本表和仓储，并提供从 Alembic 008 到 009 的纯增量升级。不得读取、删除或改写用户实际数据库内容。
+目标：在领域对象和仓储之上建立创建、修改、发布、复制、停用用例，并验证岗位配置绑定的模板版本存在且一致。此任务不接 HTTP 和 UI。
 
 只读取和修改：
 
-- `app/adapters/database/models.py`
-- `app/adapters/database/template_repository_ds.py`
-- `tests/adapters/test_template_repository_ds.py`
-- `alembic/versions/009_job_profile_versions_ds.py`
-- `app/infrastructure/database/migrations.py`
-- `tests/integration/test_migrations_backup_integrity_ds.py`
+- `app/application/job_profiles_ds.py`
+- `tests/application/test_job_profiles_ds.py`
 
-只运行模板仓储、迁移完整性测试、Ruff 和相关 mypy，不重复运行前端、种子模板、审核工作台、导出或实体闭环验收。
+只运行新增应用服务测试、Ruff 和该文件的 mypy，不重复运行迁移、API、前端、种子模板、审核工作台、导出或实体闭环验收。
 
 ## 当前执行状态
 
