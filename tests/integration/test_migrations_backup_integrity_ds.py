@@ -39,6 +39,27 @@ def test_alembic_upgrade_creates_task_and_review_lease_tables(tmp_path: Path) ->
     assert {"tasks", "task_events", "review_leases"} <= tables
 
 
+def test_alembic_upgrade_creates_report_definition_versions(tmp_path: Path) -> None:
+    database_path = tmp_path / "report-definitions.db"
+
+    upgrade_database(database_path)
+
+    engine = create_engine(f"sqlite:///{database_path}")
+    inspector = inspect(engine)
+    assert "report_definition_versions" in inspector.get_table_names()
+    assert {column["name"] for column in inspector.get_columns("report_definition_versions")} == {
+        "definition_id",
+        "report_key",
+        "version",
+        "display_name",
+        "kind",
+        "status",
+        "configuration",
+    }
+    with engine.connect() as connection:
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "011"
+
+
 def test_alembic_upgrade_creates_template_version_tables(tmp_path: Path) -> None:
     database_path = tmp_path / "template-schema.db"
 
@@ -99,7 +120,7 @@ def test_alembic_upgrade_creates_job_profile_versions_without_changing_templates
         revision = connection.execute(
             text("SELECT version_num FROM alembic_version")
         ).scalar_one()
-        assert revision == "010"
+        assert revision == "011"
     upgraded.dispose()
 
 
@@ -188,7 +209,7 @@ def test_upgrade_007_preserves_legacy_template_and_adds_layout_storage(
         revision = connection.execute(
             text("SELECT version_num FROM alembic_version")
         ).scalar_one()
-        assert revision == "010"
+        assert revision == "011"
     upgraded.dispose()
 
 
@@ -406,7 +427,7 @@ def test_upgrade_006_export_batch_preserves_data_and_adds_snapshot_columns(
         revision = connection.execute(
             text("SELECT version_num FROM alembic_version")
         ).scalar_one()
-        assert revision == "010"
+        assert revision == "011"
     upgraded.dispose()
 
     _downgrade_to_revision(database_path, "006")

@@ -7,6 +7,10 @@ from sqlalchemy import Engine
 
 from app.adapters.ai.disabled import DisabledAIReview
 from app.adapters.database.models import Base
+from app.adapters.database.report_definition_repository_ds import (
+    SqlAlchemyReportDefinitionRepository,
+    install_builtin_report_definitions,
+)
 from app.adapters.database.repositories import SqlAlchemyFormRepository
 from app.adapters.database.template_repository_ds import SqlAlchemyTemplateRepository
 from app.adapters.export.xlsx import XlsxExporter
@@ -57,6 +61,7 @@ class Services:
     engine: Engine
     repository: SqlAlchemyFormRepository
     template_repository: SqlAlchemyTemplateRepository
+    report_definition_repository: SqlAlchemyReportDefinitionRepository
     templates: TemplateVersions
     job_profiles: JobProfiles
     template_renderer: TemplatePrintRenderer
@@ -95,6 +100,8 @@ def build_services(settings: Settings, *, install_seed_templates: bool = False) 
         verify_database_revision(engine)
     repository = SqlAlchemyFormRepository(engine)
     template_repository = SqlAlchemyTemplateRepository(engine)
+    report_definition_repository = SqlAlchemyReportDefinitionRepository(engine)
+    install_builtin_report_definitions(report_definition_repository)
     storage = LocalEvidenceStorage(settings.evidence_root)
     font_candidates = (settings.cjk_font_path,) if settings.cjk_font_path is not None else None
     template_renderer = TemplatePrintRenderer(
@@ -131,6 +138,7 @@ def build_services(settings: Settings, *, install_seed_templates: bool = False) 
         engine=engine,
         repository=repository,
         template_repository=template_repository,
+        report_definition_repository=report_definition_repository,
         templates=TemplateVersions(template_repository),
         job_profiles=JobProfiles(template_repository, template_repository),
         template_renderer=template_renderer,

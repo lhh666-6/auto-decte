@@ -576,3 +576,73 @@ def test_status_api_replaces_legacy_raw_export_error_with_safe_public_error(
     assert response.json()["error"] == "EXPORT_FAILED: Export could not be completed."
     assert str(secret_path) not in response.text
     assert "legacy-private.xlsx" not in response.text
+
+
+def test_report_definition_api_lists_six_builtins_and_reads_exact_version(
+    tmp_path: Path,
+) -> None:
+    client, _ = _build_client(tmp_path)
+
+    listed = client.get("/api/v1/exports/report-definitions", headers=FINANCE)
+    detail = client.get(
+        "/api/v1/exports/report-definitions/PAYROLL_DETAIL:1", headers=FINANCE
+    )
+
+    assert listed.status_code == 200
+    assert {item["report_key"] for item in listed.json()} == {
+        "PAYROLL_DETAIL",
+        "EMPLOYEE_PAYROLL_SUMMARY",
+        "WORK_ORDER_OUTPUT_SUMMARY",
+        "PRODUCT_PROCESS_STATISTICS",
+        "WORKSHOP_DAILY",
+        "FINANCE_ACCOUNTING",
+    }
+    assert detail.status_code == 200
+    assert detail.json()["kind"] == "DETAIL"
+    assert detail.json()["columns"][0] == {
+        "source_field": "employee_id",
+        "header": "员工编号",
+    }
+
+
+def test_report_definition_api_creates_version_and_rejects_overwrite_or_formula(
+    tmp_path: Path,
+) -> None:
+    client, _ = _build_client(tmp_path)
+    body = {
+        "definition_id": "CUSTOM_DETAIL:1",
+        "report_key": "CUSTOM_DETAIL",
+        "version": 1,
+        "display_name": "自定义明细",
+        "kind": "DETAIL",
+        "status": "DRAFT",
+        "columns": [{"source_field": "employee_id", "header": "员工编号"}],
+        "filters": ["employee_id"],
+        "sort_by": ["employee_id"],
+        "worksheet": "自定义明细",
+    }
+
+    created = client.post(
+        "/api/v1/exports/report-definitions", headers=FINANCE, json=body
+    )
+    repeated = client.post(
+        "/api/v1/exports/report-definitions",
+        headers=FINANCE,
+        json={**body, "definition_id": "CUSTOM_DETAIL:other", "display_name": "覆盖"},
+    )
+    unsafe = client.post(
+        "/api/v1/exports/report-definitions",
+        headers=FINANCE,
+        json={
+            **body,
+            "definition_id": "UNSAFE:1",
+            "report_key": "UNSAFE",
+            "columns": [{"source_field": "quantity * unit_price", "header": "公式"}],
+        },
+    )
+
+    assert created.status_code == 201
+    assert created.json()["definition_id"] == "CUSTOM_DETAIL:1"
+    assert repeated.status_code == 409
+    assert repeated.json()["code"] == "REPORT_DEFINITION_CONFLICT"
+    assert unsafe.status_code == 422

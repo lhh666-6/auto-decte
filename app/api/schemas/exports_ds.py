@@ -3,6 +3,11 @@
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.domain.models import ExportStatus, ReviewStatus
+from app.modules.reporting.models_ds import (
+    AggregateOperation,
+    ReportDefinitionStatus,
+    ReportKind,
+)
 
 
 class ExportReasonResponse(BaseModel):
@@ -76,3 +81,39 @@ class ExportBatchResponse(BaseModel):
     supersedes_batch_id: str | None
     download_url: str
     download_name: str
+
+
+class ReportColumnRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    source_field: str = Field(pattern=r"^[A-Za-z][A-Za-z0-9_]*$")
+    header: str = Field(min_length=1)
+
+
+class ReportAggregateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    source_field: str = Field(pattern=r"^[A-Za-z][A-Za-z0-9_]*$")
+    operation: AggregateOperation
+    header: str = Field(min_length=1)
+
+
+class ReportDefinitionCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    definition_id: str = Field(min_length=1, pattern=r"^[A-Za-z0-9_:-]+$")
+    report_key: str = Field(pattern=r"^[A-Za-z][A-Za-z0-9_]*$")
+    version: int = Field(ge=1)
+    display_name: str = Field(min_length=1)
+    kind: ReportKind
+    status: ReportDefinitionStatus
+    columns: list[ReportColumnRequest] = Field(default_factory=list)
+    filters: list[str] = Field(default_factory=list)
+    group_by: list[str] = Field(default_factory=list)
+    aggregates: list[ReportAggregateRequest] = Field(default_factory=list)
+    sort_by: list[str] = Field(default_factory=list)
+    worksheet: str = Field(default="报表", min_length=1, max_length=31)
+
+
+class ReportDefinitionResponse(ReportDefinitionCreateRequest):
+    pass

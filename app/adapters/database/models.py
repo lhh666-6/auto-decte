@@ -84,6 +84,19 @@ class JobProfileVersionRow(Base):
     export_mapping: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
 
 
+class ReportDefinitionVersionRow(Base):
+    __tablename__ = "report_definition_versions"
+    __table_args__ = (UniqueConstraint("report_key", "version"),)
+
+    definition_id: Mapped[str] = mapped_column(String, primary_key=True)
+    report_key: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    display_name: Mapped[str] = mapped_column(String, nullable=False)
+    kind: Mapped[str] = mapped_column(String, nullable=False)
+    status: Mapped[str] = mapped_column(String, nullable=False)
+    configuration: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+
+
 class TemplateMetadataRow(Base):
     __tablename__ = "template_metadata"
 
@@ -253,16 +266,12 @@ class TaskEventRow(Base):
 
 class ExportBatchRow(Base):
     __tablename__ = "export_batches"
-    __table_args__ = (
-        Index("ux_export_batches_task_id", "task_id", unique=True),
-    )
+    __table_args__ = (Index("ux_export_batches_task_id", "task_id", unique=True),)
 
     export_batch_id: Mapped[str] = mapped_column(String, primary_key=True)
     export_type: Mapped[str] = mapped_column(String, nullable=False)
     task_id: Mapped[str | None] = mapped_column(String)
-    template_snapshot: Mapped[dict[str, Any]] = mapped_column(
-        JSON, nullable=False, default=dict
-    )
+    template_snapshot: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
     mapping_snapshot: Mapped[list[dict[str, Any]]] = mapped_column(
         JSON, nullable=False, default=list
     )
