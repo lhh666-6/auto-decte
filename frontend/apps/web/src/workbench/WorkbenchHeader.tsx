@@ -11,7 +11,7 @@ interface WorkbenchHeaderProps {
   uploading: boolean;
   onFormIdInputChange: (value: string) => void;
   onLoad: () => void;
-  onImportImage: (file: File | null) => void;
+  onOpenBatchImport: () => void;
   onAcquireLease: () => void;
   onReleaseLease: () => void;
 }
@@ -24,7 +24,7 @@ export function WorkbenchHeader({
   uploading,
   onFormIdInputChange,
   onLoad,
-  onImportImage,
+  onOpenBatchImport,
   onAcquireLease,
   onReleaseLease,
 }: WorkbenchHeaderProps) {
@@ -47,20 +47,7 @@ export function WorkbenchHeader({
           placeholder="例如 FORM-1"
         />
         <button type="submit" className="button button-secondary" disabled={loading}>加载表单</button>
-        <label className="button button-primary import-image-button">
-          {uploading ? "正在导入…" : "导入图片"}
-          <input
-            id="image-import"
-            type="file"
-            accept="image/png,image/jpeg,image/tiff"
-            disabled={uploading}
-            onChange={(event) => {
-              const file = event.target.files?.[0] ?? null;
-              event.target.value = "";
-              onImportImage(file);
-            }}
-          />
-        </label>
+        <button type="button" className="button button-primary" disabled={uploading} onClick={onOpenBatchImport}>{uploading ? "正在导入…" : "导入图片"}</button>
       </form>
       <div className="form-summary">
         <strong>{detail?.form.form_id ?? "未加载表单"}</strong>

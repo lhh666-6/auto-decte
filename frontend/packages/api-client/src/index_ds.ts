@@ -73,6 +73,14 @@ export {
   TaskApi,
   type TaskStatusDetail,
 } from "./tasks_ds.js";
+export {
+  ImportApi,
+  type ImportBatchItem,
+  type ImportBatchSummary,
+  type ImportedImageSummary,
+  type ImportItemStatus,
+  type UploadImageResult,
+} from "./imports_ds.js";
 
 // When generated types exist, uncomment:
 // export type * from "./generated_ds.js";

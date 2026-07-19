@@ -2,27 +2,26 @@
 
 最后更新：2026-07-19
 
-状态：批量任务、重复状态、缩略图证据和读取接口已完成；当前只实现批量导入与图片总览前端。
+状态：浏览器批量导入、图片总览和导入批次已完成；当前只处理导出中心 V2 差异。
 
 目标分支：`modular-architecture`
 
-## 当前唯一任务：多图导入与审核工作台三视图
+## 当前唯一任务：快速导出、自定义导出与导出记录
 
-规格来源：[工业纸质工资表系统：低 Token 实施与统一 UI 规范](superpowers/specs/2026-07-19-industrial-payroll-low-token-ui-v2.md) 第 5 章。
+规格来源：[工业纸质工资表系统：低 Token 实施与统一 UI 规范](superpowers/specs/2026-07-19-industrial-payroll-low-token-ui-v2.md) 第 6 章 5.1—5.2。
 
-执行计划：继续执行 `2026-07-20-batch-import-image-overview.md` 第二步，只修改审核工作台上传入口、新增导入面板/图片总览/批次组件及对应 API 客户端。
+执行计划：新建 `2026-07-20-export-center-v2.md`；先只读取现有导出领域、API、导出中心和定向测试，复用已验证的版本化导出批次与 Excel 生成。
 
-目标：支持多选、拖拽和文件夹，固定 3 路并发；每图独立显示处理结果并可重试。审核工作台增加任务视图、图片总览和导入批次，点击缩略图进入现有左图右表审核页。
+目标：导出中心明确分为快速导出、自定义导出、导出记录；快速导出直接说明可导出数量和排除原因，自定义导出支持字段、筛选、分组、聚合、排序、表头和工作表设置，报表定义与纸质模板解耦。
 
 只读取和修改：
 
-- `frontend/apps/web/src/workbench/ReviewWorkbenchPage.tsx`
-- `frontend/apps/web/src/workbench/WorkbenchHeader.tsx`
-- 新增批量导入、图片总览和批次组件
-- `frontend/packages/api-client` 对应导入读取契约
-- 相关组件测试和样式
+- 现有导出领域/应用/API
+- `frontend/apps/web/src/ExportCenter_ds.tsx`
+- `frontend/packages/api-client/src/exports_ds.ts`
+- 对应导出和页面测试
 
-只运行新增多图导入、图片总览、批次视图和工作台入口测试及 TypeScript；不重复运行后端导入、模板、纸面闭环、审核确认、导出或完整套件。
+只运行导出定义/预览/批次与导出中心定向测试、TypeScript、Ruff 和相关 mypy；不重复运行导入、模板、纸面闭环、审核确认或完整套件。
 
 ## 当前执行状态
 

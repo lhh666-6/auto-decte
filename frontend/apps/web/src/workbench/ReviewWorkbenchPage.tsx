@@ -1,5 +1,6 @@
 import {
   ApiRequestError,
+  ImportApi,
   ReviewWorkbenchApi,
   TaskApi,
   type ClassificationOption,
@@ -27,6 +28,8 @@ import { FieldReviewTable } from "./FieldReviewTable";
 import { fieldUsesAutomaticRecognition, workerNumberIssue } from "./field-behavior";
 import { selectFirstIssueFieldId } from "./field-navigation";
 import { WorkbenchActionBar } from "./WorkbenchActionBar";
+import { BatchImportPanel } from "./BatchImportPanel";
+import { ImageOverview, ImportBatchOverview } from "./ImportOverview";
 import { WorkbenchEmptyState, WorkbenchErrorNotice } from "./WorkbenchEmptyState";
 import { WorkbenchHeader } from "./WorkbenchHeader";
 import { WorkbenchQueue } from "./WorkbenchQueue";
@@ -58,6 +61,7 @@ export function ReviewWorkbenchPage({
 }: ReviewWorkbenchPageProps) {
   const api = useMemo(() => new ReviewWorkbenchApi("/api/v1"), []);
   const taskApi = useMemo(() => new TaskApi("/api/v1"), []);
+  const importApi = useMemo(() => new ImportApi("/api/v1"), []);
   const [formIdInput, setFormIdInput] = useState("");
   const [detail, setDetail] = useState<WorkbenchDetail | null>(null);
   const [history, setHistory] = useState<ReviewHistory | null>(null);
@@ -76,6 +80,9 @@ export function ReviewWorkbenchPage({
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [duplicateImport, setDuplicateImport] = useState<DuplicateImportInfo | null>(null);
+  const [workspaceView, setWorkspaceView] = useState<"tasks" | "images" | "batches">("tasks");
+  const [importPanelOpen, setImportPanelOpen] = useState(false);
+  const [importRefresh, setImportRefresh] = useState(0);
   const [mobilePane, setMobilePane] = useState<MobilePane>("evidence");
   const [selectedQueue, setSelectedQueue] = useState<QueueKey>(routeQueue ?? "review");
   const [classificationOptions, setClassificationOptions] = useState<ClassificationOption[]>([]);
@@ -570,6 +577,17 @@ export function ReviewWorkbenchPage({
   return (
     <div className="review-workbench-shell">
       <main className="workbench">
+        <nav className="workbench-view-tabs" aria-label="工作台视图" role="tablist">
+          <button type="button" role="tab" aria-selected={workspaceView === "tasks"} className={workspaceView === "tasks" ? "active" : ""} onClick={() => setWorkspaceView("tasks")}>任务视图</button>
+          <button type="button" role="tab" aria-selected={workspaceView === "images"} className={workspaceView === "images" ? "active" : ""} onClick={() => setWorkspaceView("images")}>图片总览</button>
+          <button type="button" role="tab" aria-selected={workspaceView === "batches"} className={workspaceView === "batches" ? "active" : ""} onClick={() => setWorkspaceView("batches")}>导入批次</button>
+          <button type="button" className="button button-primary" onClick={() => setImportPanelOpen(true)}>批量导入</button>
+        </nav>
+        {workspaceView === "images" ? (
+          <ImageOverview key={`images-${importRefresh}`} api={importApi} onOpenForm={(formId) => { setWorkspaceView("tasks"); void loadWorkbenchById(formId); }} />
+        ) : workspaceView === "batches" ? (
+          <ImportBatchOverview key={`batches-${importRefresh}`} api={importApi} />
+        ) : <>
         <nav className="workbench-queue-tabs" aria-label="审核任务" role="tablist">
           {QUEUES.map((queue) => (
             <QueueTab
@@ -592,7 +610,7 @@ export function ReviewWorkbenchPage({
           onLoad={() => {
             if (canLeaveCurrentForm()) void loadWorkbench();
           }}
-          onImportImage={(file) => void importImage(file)}
+          onOpenBatchImport={() => setImportPanelOpen(true)}
           onAcquireLease={() => void acquireLease()}
           onReleaseLease={() => void releaseLease()}
         />
@@ -631,7 +649,7 @@ export function ReviewWorkbenchPage({
         {!detail ? (
           <WorkbenchEmptyState
             queue={selectedQueue}
-            onUpload={() => document.getElementById("image-import")?.click()}
+            onUpload={() => setImportPanelOpen(true)}
             onFind={() => document.querySelector<HTMLInputElement>('[aria-label="表单编号"]')?.focus()}
           />
         ) : detail.form.review_status === "NEEDS_CLASSIFICATION" ? (
@@ -744,7 +762,9 @@ export function ReviewWorkbenchPage({
             />
           </>
         )}
+        </>}
       </main>
+      {importPanelOpen && <BatchImportPanel api={importApi} onClose={() => setImportPanelOpen(false)} onChanged={() => { setImportRefresh((value) => value + 1); void refreshQueues(); }} />}
       {reviewAction && (
         <ReviewActionDialog
           action={reviewAction}
