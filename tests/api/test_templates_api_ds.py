@@ -469,6 +469,14 @@ def test_admin_manages_versioned_job_profiles_through_the_template_api(
         headers=_headers(),
         json={"template_key": "CORE_TIMEKEEPING", "page_size": "A5"},
     ).json()
+    client.post(
+        f"/api/v1/template-versions/{template['version_id']}/preflight",
+        headers=_headers(),
+    )
+    client.post(
+        f"/api/v1/template-versions/{template['version_id']}/publish",
+        headers=_headers(),
+    )
     created = client.post(
         "/api/v1/job-profile-versions",
         headers=_headers(),

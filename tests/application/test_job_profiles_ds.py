@@ -50,6 +50,8 @@ def _service(template_version: int = 2) -> JobProfiles:
     template = TemplateVersion.draft(
         "TPL-TIMEKEEPING-V2", "CORE_TIMEKEEPING", template_version, PageSpec.a5_landscape()
     )
+    template.mark_ready_to_publish()
+    template.publish()
     return JobProfiles(InMemoryJobProfileRepository(), InMemoryTemplateLookup(template))
 
 
@@ -99,6 +101,24 @@ def test_publish_requires_an_existing_matching_template_version() -> None:
     )
     with pytest.raises(ValueError, match="version does not match"):
         mismatched_service.publish(mismatched.profile_version_id)
+
+    draft_template = TemplateVersion.draft(
+        "TPL-DRAFT", "CORE_TIMEKEEPING", 1, PageSpec.a5_landscape()
+    )
+    draft_service = JobProfiles(
+        InMemoryJobProfileRepository(), InMemoryTemplateLookup(draft_template)
+    )
+    bound_to_draft = draft_service.create_draft(
+        "PROFILE-DRAFT-V1",
+        "TIMEKEEPING_DAY",
+        1,
+        display_name="计时工",
+        core_layout=CoreLayoutKind.TIMEKEEPING,
+        template_version_id="TPL-DRAFT",
+        template_version=1,
+    )
+    with pytest.raises(ValueError, match="published template"):
+        draft_service.publish(bound_to_draft.profile_version_id)
 
 
 def test_publish_clone_and_retire_job_profile_versions() -> None:

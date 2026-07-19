@@ -80,7 +80,7 @@ def test_all_seed_templates_keep_legacy_compatibility_and_add_reviewed_profiles(
     assert {template.version for template in templates if template.template_key in LEGACY_KEYS} == {
         1
     }
-    assert {template.version for template in templates if template.template_key in CORE_KEYS} == {1}
+    assert {template.version for template in templates if template.template_key in CORE_KEYS} == {2}
 
 
 def test_seed_install_is_idempotent_and_generates_print_artifacts(tmp_path: Path) -> None:

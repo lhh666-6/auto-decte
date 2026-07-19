@@ -32,6 +32,8 @@ IFD2 识别与岗位身份持久化已完成：Form 和数据库可空保存岗�
 
 [受控明细表网格 API 与设计器贯通](superpowers/plans/2026-07-20-controlled-grid-api-ui.md)已完成：模板接口和 TypeScript 契约完整携带行数、列数和比例列宽；草稿设计器可从明细表模块列表选择固定网格并受控修改这些参数，画布显示真实行列轮廓。接口只允许修改既有 `TABLE_GRID`，不开放任意静态内容、HTML 或脚本，发布版继续拒绝修改。模板 API `14 passed`，前端相关组件/API `17 passed`，TypeScript、Ruff 和 mypy 通过。下一任务是按 V2 第 4.11 节补齐纸质模板发布前业务检查及中文原因。
 
+[纸质模板发布前业务检查与中文原因](superpowers/plans/2026-07-20-paper-template-business-preflight.md)已完成：六个核心版面现在逐一经过真实应用预检，检查固定标题/明细表、数字位数、勾选限制、异常条件、签字角色、系统计算金额、自由填写面积和 Excel 映射；原有尺寸、打印边距、双二维码和四角定位保护继续生效，工作人员只看到中文原因。预检发现原核心 V1 绕过检查且与二维码/定位区冲突，因此没有覆盖历史版本，而是发布修正后的模板 V2 与岗位配置 V2；原 V1 在旧数据库中保留。岗位配置只能绑定已发布且版本一致的模板，带岗位打印仍只接受已发布配置并生成双版本二维码。六张 V2 PNG 已重新生成并目视检查。相关应用/API/版面验证 `29 passed`，种子与布局验证 `29 passed`，岗位打印验证 `3 passed`，前端组件 `3 passed`，TypeScript、Ruff 和 mypy 通过。下一任务进入 V2 第 5 章的批量导入、图片资产与图片总览。
+
 ## 本轮结论
 
 工业表单前端重建实施计划的任务 1—16 已按顺序完成。协作同步基线为 `ff03a39 fix(review): preserve confirmed values across reload and export`，并已在其上完成新主线 Task 1—10；集成分支为 `modular-architecture`。

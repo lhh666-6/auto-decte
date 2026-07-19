@@ -1,5 +1,7 @@
 """Template draft, preflight and publication behavior."""
 
+from dataclasses import replace
+
 from app.application.template_versions_ds import TemplateVersions
 from app.domain.templates_ds import (
     ElementKind,
@@ -14,6 +16,7 @@ from app.domain.templates_ds import (
     TemplateStatus,
     TemplateVersion,
 )
+from app.modules.templates.core_payroll_layouts_ds import core_payroll_seed_templates
 
 
 class InMemoryTemplateRepository:
@@ -36,6 +39,46 @@ class InMemoryTemplateRepository:
 
     def list_template_keys(self) -> list[str]:
         return list({version.template_key for version in self.versions.values()})
+
+
+def test_all_six_core_layouts_pass_the_real_application_preflight() -> None:
+    for published in core_payroll_seed_templates():
+        repository = InMemoryTemplateRepository()
+        repository.add_version(published)
+        service = TemplateVersions(repository)
+        draft = service.clone(published.version_id)
+
+        report = service.preflight(draft.version_id)
+
+        assert report.ok, (published.template_key, report.issues)
+
+
+def test_core_layout_preflight_reports_missing_controlled_business_metadata_in_chinese() -> None:
+    published = core_payroll_seed_templates()[0]
+    repository = InMemoryTemplateRepository()
+    repository.add_version(published)
+    service = TemplateVersions(repository)
+    draft = service.clone(published.version_id)
+    draft.remove_static_element("title")
+    worker_number = next(field for field in draft.fields if field.field_key == "worker_number")
+    draft.replace_field("worker_number", replace(worker_number, digit_count=None))
+    shift = next(field for field in draft.fields if field.field_key == "shift")
+    draft.replace_field(
+        "shift",
+        replace(shift, choice_group=None, choice_options=(), max_selections=None),
+    )
+
+    report = service.preflight(draft.version_id)
+
+    assert {issue.code for issue in report.issues} >= {
+        "TITLE_REQUIRED",
+        "DIGIT_COUNT_REQUIRED",
+        "CHOICE_GROUP_REQUIRED",
+    }
+    assert all(
+        any("\u4e00" <= character <= "\u9fff" for character in issue.detail)
+        for issue in report.issues
+    )
 
 
 def test_preflight_blocks_field_overlapping_template_qr_safe_zone() -> None:

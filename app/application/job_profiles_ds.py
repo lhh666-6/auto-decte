@@ -7,6 +7,7 @@ from typing import Protocol
 from app.domain.templates_ds import (
     CoreLayoutKind,
     PayrollJobProfileVersion,
+    TemplateStatus,
     TemplateVersion,
 )
 
@@ -107,6 +108,8 @@ class JobProfiles:
             raise ValueError("bound template version does not exist")
         if template.version != profile.template_version:
             raise ValueError("bound template version does not match profile")
+        if template.status is not TemplateStatus.PUBLISHED:
+            raise ValueError("job profile must bind a published template version")
         profile.mark_ready_to_publish()
         self._repository.replace_job_profile(profile)
         profile.publish()

@@ -244,8 +244,7 @@ class TemplateVersions:
             PreflightIssue(
                 code="RECOGNITION_ENGINE_MISMATCH",
                 detail=(
-                    f"Field {field.field_key} uses {field.recognition_engine} with "
-                    f"{field.input_type}/{field.data_type}."
+                    f"字段“{field.display_name}”的纸面控件、数据类型和识别方式不兼容。"
                 ),
             )
             for field in version.fields
@@ -254,12 +253,12 @@ class TemplateVersions:
             issue
             for field in version.fields
             for issue in _field_behavior_issues(field)
-        )
+        ) + _core_paper_business_issues(version)
         if version.print_imposition is not None and not version.print_imposition.fits(version.page):
             issues += (
                 PreflightIssue(
                     code="IMPOSITION_DOES_NOT_FIT",
-                    detail="The template page does not fit in each configured imposition slot.",
+                    detail="当前单表尺寸无法放入设置的拼版位置，请调整纸张、边距或拼版行列。",
                 ),
             )
         if issues:
@@ -312,7 +311,9 @@ def _recognition_configuration_is_valid(field: FieldDefinition) -> bool:
     if field.recognition_mode is RecognitionMode.PRINTED_OCR:
         return field.paper_entry_mode is PaperEntryMode.PREPRINTED
     if field.recognition_mode is RecognitionMode.OMR:
-        return field.paper_entry_mode is PaperEntryMode.CHECKBOX and field.data_type == "boolean"
+        return field.paper_entry_mode is PaperEntryMode.CHECKBOX and (
+            field.data_type == "boolean" or bool(field.choice_options)
+        )
     if field.recognition_mode is RecognitionMode.QR:
         return field.paper_entry_mode in {PaperEntryMode.PREPRINTED, PaperEntryMode.NONE}
     if field.recognition_mode is RecognitionMode.CALCULATED:
@@ -352,7 +353,7 @@ def _field_behavior_issues(field: FieldDefinition) -> tuple[PreflightIssue, ...]
         issues.append(
             PreflightIssue(
                 code="FIELD_BEHAVIOR_MISMATCH",
-                detail=f"Field {field.field_key} uses an incompatible recognition and fill policy.",
+                detail=f"字段“{field.display_name}”的识别方式与审核填入方式不匹配。",
             )
         )
     if mode in {RecognitionMode.NONE, RecognitionMode.CALCULATED}:
@@ -360,7 +361,7 @@ def _field_behavior_issues(field: FieldDefinition) -> tuple[PreflightIssue, ...]
             issues.append(
                 PreflightIssue(
                     code="CONFIDENCE_THRESHOLD_NOT_ALLOWED",
-                    detail=f"Field {field.field_key} cannot configure a confidence threshold.",
+                    detail=f"字段“{field.display_name}”不使用自动识别，不能设置自动填入可靠度。",
                 )
             )
     elif policy is FillPolicy.PREFILL_WHEN_CONFIDENT and (
@@ -369,7 +370,7 @@ def _field_behavior_issues(field: FieldDefinition) -> tuple[PreflightIssue, ...]
         issues.append(
             PreflightIssue(
                 code="CONFIDENCE_THRESHOLD_REQUIRED",
-                detail=f"Field {field.field_key} requires a confidence threshold for prefill.",
+                detail=f"字段“{field.display_name}”允许自动填入时必须设置可靠度。",
             )
         )
     if mode is RecognitionMode.CALCULATED:
@@ -377,14 +378,14 @@ def _field_behavior_issues(field: FieldDefinition) -> tuple[PreflightIssue, ...]
             issues.append(
                 PreflightIssue(
                     code="CALCULATION_RULE_REQUIRED",
-                    detail=f"Field {field.field_key} requires a calculation expression.",
+                    detail=f"系统计算字段“{field.display_name}”缺少计算规则。",
                 )
             )
     elif field.calculation_expression is not None:
         issues.append(
             PreflightIssue(
                 code="CALCULATION_RULE_NOT_ALLOWED",
-                detail=f"Field {field.field_key} is not a calculated field.",
+                detail=f"字段“{field.display_name}”不是系统计算字段，不能保留计算规则。",
             )
         )
     if field.field_key in {"worker_name", "employee_name"} and (
@@ -394,7 +395,7 @@ def _field_behavior_issues(field: FieldDefinition) -> tuple[PreflightIssue, ...]
         issues.append(
             PreflightIssue(
                 code="NAME_REQUIRES_MANUAL_CONFIRMATION",
-                detail=f"Field {field.field_key} must always be confirmed from image evidence.",
+                detail=f"姓名字段“{field.display_name}”必须由工作人员对照原图确认。",
             )
         )
     return tuple(issues)
@@ -407,7 +408,7 @@ def _protected_zone_issues(
     item_label: str,
 ) -> tuple[PreflightIssue, ...]:
     return tuple(
-        PreflightIssue(code=code, detail=f"{item_label} overlaps the {label}.")
+        PreflightIssue(code=code, detail=f"{item_label}与{label}重叠，请移动到安全区域。")
         for code, label, zone in _protected_zones(page)
         if _overlaps(region, zone)
     )
@@ -425,38 +426,38 @@ def _protected_zones(page: PageSpec) -> tuple[tuple[str, str, Rect], ...]:
     return (
         (
             "QR_SAFE_ZONE_OVERLAP",
-            "template QR safe zone",
+            "模板二维码安全区",
             Rect(template_qr_x, edge_y, qr_width, qr_height),
         ),
         (
             "SHEET_SAFE_ZONE_OVERLAP",
-            "sheet-instance QR safe zone",
+            "表单实例二维码安全区",
             Rect(sheet_qr_x, edge_y, qr_width, qr_height),
         ),
         (
             "CORNER_MARKER_OVERLAP",
-            "top-left ArUco marker",
+            "左上角定位标记",
             Rect(0, 0, marker_width, marker_height),
         ),
         (
             "CORNER_MARKER_OVERLAP",
-            "top-right ArUco marker",
+            "右上角定位标记",
             Rect(1 - marker_width, 0, marker_width, marker_height),
         ),
         (
             "CORNER_MARKER_OVERLAP",
-            "bottom-left ArUco marker",
+            "左下角定位标记",
             Rect(0, 1 - marker_height, marker_width, marker_height),
         ),
         (
             "CORNER_MARKER_OVERLAP",
-            "bottom-right ArUco marker",
+            "右下角定位标记",
             Rect(1 - marker_width, 1 - marker_height, marker_width, marker_height),
         ),
-        ("PRINT_EDGE_OVERLAP", "top print edge", Rect(0, 0, 1, edge_y)),
-        ("PRINT_EDGE_OVERLAP", "bottom print edge", Rect(0, 1 - edge_y, 1, edge_y)),
-        ("PRINT_EDGE_OVERLAP", "left print edge", Rect(0, 0, edge_x, 1)),
-        ("PRINT_EDGE_OVERLAP", "right print edge", Rect(1 - edge_x, 0, edge_x, 1)),
+        ("PRINT_EDGE_OVERLAP", "顶部打印边距", Rect(0, 0, 1, edge_y)),
+        ("PRINT_EDGE_OVERLAP", "底部打印边距", Rect(0, 1 - edge_y, 1, edge_y)),
+        ("PRINT_EDGE_OVERLAP", "左侧打印边距", Rect(0, 0, edge_x, 1)),
+        ("PRINT_EDGE_OVERLAP", "右侧打印边距", Rect(1 - edge_x, 0, edge_x, 1)),
     )
 
 
@@ -472,8 +473,8 @@ def _physical_field_issues(field: FieldDefinition) -> tuple[PreflightIssue, ...]
         PreflightIssue(
             code="PHYSICAL_MINIMUM_SIZE",
             detail=(
-                f"Field {field.field_key} is {width_mm:.1f} x {height_mm:.1f} mm; "
-                f"{field.input_type} requires at least {minimum[0]:.1f} x {minimum[1]:.1f} mm."
+                f"字段“{field.display_name}”当前为 {width_mm:.1f} × {height_mm:.1f} mm，"
+                f"至少需要 {minimum[0]:.1f} × {minimum[1]:.1f} mm。"
             ),
         ),
     )
@@ -492,8 +493,89 @@ def _physical_static_element_issues(
         PreflightIssue(
             code="PHYSICAL_MINIMUM_SIZE",
             detail=(
-                f"Static element {element.element_id} is {width_mm:.1f} x {height_mm:.1f} mm; "
-                "checkboxes require at least 4.0 x 4.0 mm."
+                f"固定勾选框“{element.element_id}”当前为 {width_mm:.1f} × {height_mm:.1f} mm，"
+                "至少需要 4.0 × 4.0 mm。"
             ),
         ),
+    )
+
+
+def _core_paper_business_issues(version: TemplateVersion) -> tuple[PreflightIssue, ...]:
+    if not version.template_key.startswith("PAYROLL_CORE_"):
+        return ()
+    issues: list[PreflightIssue] = []
+    if not any(element.kind is ElementKind.TITLE for element in version.static_elements):
+        issues.append(PreflightIssue("TITLE_REQUIRED", "正式工资表必须有一个固定标题。"))
+    if not any(element.kind is ElementKind.TABLE_GRID for element in version.static_elements):
+        issues.append(PreflightIssue("TABLE_GRID_REQUIRED", "正式工资表必须有固定明细表。"))
+    for field in version.fields:
+        if field.paper_entry_mode is PaperEntryMode.DIGIT_BOXES and field.digit_count is None:
+            issues.append(
+                PreflightIssue(
+                    "DIGIT_COUNT_REQUIRED",
+                    f"数字格“{field.display_name}”必须明确填写位数。",
+                )
+            )
+        if field.paper_entry_mode is PaperEntryMode.CHECKBOX:
+            if not field.choice_group or not field.choice_options:
+                issues.append(
+                    PreflightIssue(
+                        "CHOICE_GROUP_REQUIRED",
+                        f"勾选项“{field.display_name}”必须设置固定选项组。",
+                    )
+                )
+            elif field.max_selections is None:
+                issues.append(
+                    PreflightIssue(
+                        "CHOICE_SELECTION_LIMIT_REQUIRED",
+                        f"勾选项“{field.display_name}”必须设置最多选择几项。",
+                    )
+                )
+        if field.field_key == "exception_reason" and not field.conditional_required_on:
+            issues.append(
+                PreflightIssue(
+                    "CONDITIONAL_REQUIRED_RULE_MISSING",
+                    "异常事实说明必须设置何时必填，不能成为无约束自由填写区。",
+                )
+            )
+        if field.paper_entry_mode is PaperEntryMode.SIGNATURE and not field.signature_role:
+            issues.append(
+                PreflightIssue(
+                    "SIGNATURE_ROLE_REQUIRED",
+                    f"签字线“{field.display_name}”必须指定签字角色。",
+                )
+            )
+        if _is_money_field(field) and field.recognition_mode is not RecognitionMode.CALCULATED:
+            issues.append(
+                PreflightIssue(
+                    "MONEY_MUST_BE_CALCULATED",
+                    f"金额字段“{field.display_name}”必须由系统计算，不能让工人填写。",
+                )
+            )
+        if (
+            field.paper_entry_mode is PaperEntryMode.HANDWRITTEN_TEXT
+            and field.region.width * field.page.width_mm
+            * field.region.height * field.page.height_mm
+            > 2500
+        ):
+            issues.append(
+                PreflightIssue(
+                    "FREE_TEXT_AREA_TOO_LARGE",
+                    f"手写区“{field.display_name}”面积过大，请改为固定选项或缩小范围。",
+                )
+            )
+        if field.export_target is None:
+            issues.append(
+                PreflightIssue(
+                    "EXPORT_MAPPING_REQUIRED",
+                    f"字段“{field.display_name}”缺少 Excel 导出映射。",
+                )
+            )
+    return tuple(issues)
+
+
+def _is_money_field(field: FieldDefinition) -> bool:
+    key = field.field_key.lower()
+    return any(token in key for token in ("wage", "reward", "deduction", "amount", "pay")) or any(
+        token in field.display_name for token in ("工资", "金额", "奖励", "扣减", "扣款")
     )

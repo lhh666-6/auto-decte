@@ -50,20 +50,20 @@ class _LayoutSpec:
 
 
 def core_payroll_seed_templates() -> tuple[TemplateVersion, ...]:
-    """Build the six immutable paper-layout V1 definitions in product order."""
+    """Build the six immutable paper-layout V2 definitions in product order."""
     return tuple(_build_layout(specification) for specification in _LAYOUTS)
 
 
 def reviewed_job_profile_seed_versions() -> tuple[PayrollJobProfileVersion, ...]:
-    """Build published V1 job configurations that reuse the six core layouts."""
+    """Build published V2 job configurations that reuse the six core layouts."""
     templates = {spec.core: _build_layout(spec) for spec in _LAYOUTS}
     profiles: list[PayrollJobProfileVersion] = []
     for profile_key, display_name, core, unit, fixed in _JOB_PROFILES:
         template = templates[core]
         profile = PayrollJobProfileVersion.draft(
-            f"PROFILE-SEED-{profile_key}-V1",
+            f"PROFILE-SEED-{profile_key}-V2",
             profile_key,
-            1,
+            2,
             display_name=display_name,
             core_layout=core,
             template_version_id=template.version_id,
@@ -107,7 +107,7 @@ class JobProfileSeedInstallResult:
 def install_reviewed_job_profile_seeds(
     repository: JobProfileSeedRepository,
 ) -> JobProfileSeedInstallResult:
-    """Install exact V1 profile bindings without rewriting existing versions."""
+    """Install exact V2 profile bindings without rewriting existing versions."""
     installed: list[str] = []
     existing: list[str] = []
     for expected in reviewed_job_profile_seed_versions():
@@ -144,9 +144,9 @@ def _profile_content(profile: PayrollJobProfileVersion) -> tuple[object, ...]:
 
 def _build_layout(specification: _LayoutSpec) -> TemplateVersion:
     version = TemplateVersion.draft(
-        f"TPL-SEED-{specification.template_key}-V1",
+        f"TPL-SEED-{specification.template_key}-V2",
         specification.template_key,
-        1,
+        2,
         specification.page,
     )
     for element in _static_elements(specification):
@@ -172,20 +172,20 @@ def _build_layout(specification: _LayoutSpec) -> TemplateVersion:
     version.add_field(
         _field(
             _FieldSpec("exception_reason", "异常事实", "text"),
-            Rect(0.04, 0.755, 0.92, 0.065),
+            Rect(0.04, 0.755, 0.58, 0.065),
             specification.page,
             conditional_required_on=specification.exception_condition,
         )
     )
     for specification_field, region in zip(
         specification.money_fields,
-        _horizontal_regions(0.835, 0.56, len(specification.money_fields), 0.05),
+        _horizontal_regions(0.825, 0.56, len(specification.money_fields), 0.04),
         strict=True,
     ):
         version.add_field(_field(specification_field, region, specification.page))
     for (field_key, label, role), region in zip(
         specification.signature_roles,
-        _horizontal_regions(0.905, 0.92, len(specification.signature_roles), 0.05),
+        _horizontal_regions(0.87, 0.84, len(specification.signature_roles), 0.04, start_x=0.08),
         strict=True,
     ):
         version.add_field(
@@ -201,12 +201,12 @@ def _build_layout(specification: _LayoutSpec) -> TemplateVersion:
 def _static_elements(specification: _LayoutSpec) -> tuple[StaticElement, ...]:
     elements: list[StaticElement] = [
         StaticElement(
-            "title", ElementKind.TITLE, Rect(0.08, 0.025, 0.64, 0.055), specification.title
+            "title", ElementKind.TITLE, Rect(0.08, 0.04, 0.54, 0.045), specification.title
         ),
         StaticElement(
             "identity_note",
             ElementKind.LABEL,
-            Rect(0.04, 0.09, 0.68, 0.035),
+            Rect(0.04, 0.095, 0.58, 0.025),
             "岗位、班组、单位和计价规则由岗位配置预印；右上角为表单二维码",
         ),
         StaticElement(
@@ -246,14 +246,14 @@ def _static_elements(specification: _LayoutSpec) -> tuple[StaticElement, ...]:
 def _common_fields(page: PageSpec) -> tuple[FieldDefinition, ...]:
     return (
         _field(
-            _FieldSpec("position_name", "岗位", "preprinted"), Rect(0.04, 0.125, 0.18, 0.055), page
+            _FieldSpec("position_name", "岗位", "preprinted"), Rect(0.04, 0.125, 0.14, 0.055), page
         ),
         _field(
-            _FieldSpec("work_date", "日期", "digit", digits=8), Rect(0.24, 0.125, 0.25, 0.075), page
+            _FieldSpec("work_date", "日期", "digit", digits=8), Rect(0.20, 0.125, 0.22, 0.075), page
         ),
         _field(
             _FieldSpec("shift", "班次", "choice", choices=("白班", "夜班"), max_selections=1),
-            Rect(0.51, 0.125, 0.20, 0.075),
+            Rect(0.44, 0.125, 0.19, 0.075),
             page,
         ),
         _field(
@@ -267,7 +267,7 @@ def _common_fields(page: PageSpec) -> tuple[FieldDefinition, ...]:
             page,
             derived_from="worker_number",
         ),
-        _field(_FieldSpec("team_name", "班组", "preprinted"), Rect(0.52, 0.215, 0.19, 0.075), page),
+        _field(_FieldSpec("team_name", "班组", "preprinted"), Rect(0.52, 0.24, 0.11, 0.05), page),
         _field(
             _FieldSpec("work_order_number", "工单号", "digit", digits=8),
             Rect(0.04, 0.305, 0.28, 0.065),

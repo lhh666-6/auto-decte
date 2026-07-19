@@ -456,7 +456,7 @@ function TemplateEditor({
         <h2>发布预检与打印件</h2>
         {report ? (report.ok
           ? <p className="inline-success">预检通过：可以发布。</p>
-          : report.issues.map((issue) => <p className="inline-warning" key={`${issue.code}-${issue.detail}`}>{issue.code}：{issue.detail}</p>))
+          : report.issues.map((issue) => <p className="inline-warning" key={`${issue.code}-${issue.detail}`}>{issue.detail}</p>))
           : <p className="muted">字段发生变化后需要重新运行预检。</p>}
         <div className="preview-artifacts">
           {version?.artifacts.map((artifact) => <a key={artifact.artifact_id} className="candidate-chip" href={artifact.download_url} target="_blank" rel="noreferrer">打开 {artifact.download_name}</a>)}
