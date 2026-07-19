@@ -1,6 +1,7 @@
 import type { ReviewField } from "@form-detection/api-client";
 
 import { reviewValueIssue } from "../review-model";
+import { fieldUsesAutomaticRecognition } from "./field-behavior";
 
 export interface FieldNavigationState {
   readonly selectedFieldId: string | null;
@@ -69,15 +70,17 @@ function fieldIssuePriority(
       : field.current_value;
   const issue = reviewValueIssue(
     value,
-    field.candidates[0]?.confidence,
+    fieldUsesAutomaticRecognition(field) ? field.candidates[0]?.confidence : undefined,
     editedById || editedByName || field.current_value_source === "HUMAN_CONFIRMED",
     field.data_type,
     field.rules,
+    field.requires_manual_confirmation,
   );
 
   if (issue === null) return 4;
   if (issue === "必填字段缺失") return 1;
   if (issue === "识别置信度较低，请人工确认") return 2;
+  if (issue === "必须对照字段裁片人工确认") return 3;
   if (issue === "请填写或确认字段值") return 3;
   return 0;
 }

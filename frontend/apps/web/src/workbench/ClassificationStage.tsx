@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 
-import type { ClassificationOption, TaskStatusDetail } from "@form-detection/api-client";
+import type { ClassificationOption, TaskStatusDetail, WorkbenchDetail } from "@form-detection/api-client";
 
+import { EvidenceViewer } from "./EvidenceViewer";
 import { RecognitionProgress, type TaskStatusReader } from "./RecognitionProgress";
 
 interface AssignmentResult {
@@ -10,6 +11,7 @@ interface AssignmentResult {
 
 interface ClassificationStageProps {
   formId: string;
+  detail: WorkbenchDetail;
   options: ClassificationOption[];
   assignTemplate(input: {
     templateKey: string;
@@ -23,6 +25,7 @@ interface ClassificationStageProps {
 
 export function ClassificationStage({
   formId,
+  detail,
   options,
   assignTemplate,
   taskApi,
@@ -66,72 +69,82 @@ export function ClassificationStage({
   }
 
   return (
-    <section className="classification-card">
-      <h2>二维码未能确定表单类型</h2>
-      <p>请选择准确的已发布版本，并说明判断依据后开始识别。</p>
-
-      <label>
-        已发布模板版本
-        <select
-          value={selectedValue}
-          onChange={(event) => setSelectedValue(event.target.value)}
-          disabled={Boolean(taskId)}
-        >
-          <option value="">请选择模板版本</option>
-          {options.map((option) => (
-            <option
-              key={`${option.template_key}@${option.version}`}
-              value={`${option.template_key}@${option.version}`}
-            >
-              {option.template_key} · V{option.version}
-            </option>
-          ))}
-        </select>
-      </label>
-
-      <label>
-        分类原因
-        <textarea
-          value={reason}
-          onChange={(event) => setReason(event.target.value)}
-          disabled={Boolean(taskId)}
-          placeholder="例如：版式、标题和字段位置与该版本一致"
+    <section className="review-grid classification-workbench-grid" data-testid="classification-workbench-grid">
+      <div className="evidence-shortcut-context" data-workbench-image-context>
+        <EvidenceViewer
+          evidence={detail.evidence}
+          fields={detail.fields}
+          selectedFieldId={detail.fields[0]?.field_id ?? null}
+          onSelectField={() => undefined}
         />
-      </label>
-
-      <div aria-label="模板摘要">
-        <strong>模板摘要</strong>
-        {selected ? (
-          <p>
-            {selected.template_key} · V{selected.version} · {selected.field_count} 个字段 · {selected.page_size} {selected.orientation}
-          </p>
-        ) : (
-          <ul>
-            {options.map((option) => (
-              <li key={`${option.template_key}-summary-${option.version}`}>
-                {option.template_key} · V{option.version} · {option.field_count} 个字段 · {option.page_size} {option.orientation}
-              </li>
-            ))}
-          </ul>
-        )}
       </div>
+      <section className="classification-card field-panel">
+        <h2>二维码未能确定表单类型</h2>
+        <p>请选择准确的已发布版本，并说明判断依据后开始识别。</p>
 
-      {!taskId ? (
-        <button
-          type="button"
-          onClick={() => void submit()}
-          disabled={!selected || !reason.trim() || submitting}
-        >
-          {submitting ? "正在创建识别任务" : "确认表单类型并开始识别"}
-        </button>
-      ) : (
-        <RecognitionProgress
-          taskId={taskId}
-          taskApi={taskApi}
-          onSucceeded={onRecognitionSucceeded}
-          onFailure={(task) => onError(task.error || `识别任务${task.status}`)}
-        />
-      )}
+        <label>
+          已发布模板版本
+          <select
+            value={selectedValue}
+            onChange={(event) => setSelectedValue(event.target.value)}
+            disabled={Boolean(taskId)}
+          >
+            <option value="">请选择模板版本</option>
+            {options.map((option) => (
+              <option
+                key={`${option.template_key}@${option.version}`}
+                value={`${option.template_key}@${option.version}`}
+              >
+                {option.template_key} · V{option.version}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label>
+          分类原因
+          <textarea
+            value={reason}
+            onChange={(event) => setReason(event.target.value)}
+            disabled={Boolean(taskId)}
+            placeholder="例如：版式、标题和字段位置与该版本一致"
+          />
+        </label>
+
+        <div aria-label="模板摘要">
+          <strong>模板摘要</strong>
+          {selected ? (
+            <p>
+              {selected.template_key} · V{selected.version} · {selected.field_count} 个字段 · {selected.page_size} {selected.orientation}
+            </p>
+          ) : (
+            <ul>
+              {options.map((option) => (
+                <li key={`${option.template_key}-summary-${option.version}`}>
+                  {option.template_key} · V{option.version} · {option.field_count} 个字段 · {option.page_size} {option.orientation}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        {!taskId ? (
+          <button
+            type="button"
+            onClick={() => void submit()}
+            disabled={!selected || !reason.trim() || submitting}
+          >
+            {submitting ? "正在创建识别任务" : "确认表单类型并开始识别"}
+          </button>
+        ) : (
+          <RecognitionProgress
+            taskId={taskId}
+            taskApi={taskApi}
+            onSucceeded={onRecognitionSucceeded}
+            onFailure={(task) => onError(task.error || `识别任务${task.status}`)}
+          />
+        )}
+      </section>
     </section>
   );
 }

@@ -1,5 +1,6 @@
 """Read endpoints used by the React human review workbench."""
 
+from enum import Enum
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -34,6 +35,10 @@ from app.modules.identity_access.policy_ds import PermissionPolicy
 from app.services.container import Services
 
 router = APIRouter(prefix="/api/v1/forms", tags=["review-workbench"])
+
+
+def _enum_value(value: Enum | None) -> str | None:
+    return str(value.value) if value is not None else None
 
 
 def _actor(request: Request, services: Services) -> Actor:
@@ -211,6 +216,26 @@ def build_workbench_response(
                     template_fields[field.field_name].recognition_engine
                     if field.field_name in template_fields
                     else None
+                ),
+                paper_entry_mode=_enum_value(
+                    template_fields[field.field_name].paper_entry_mode
+                    if field.field_name in template_fields
+                    else None
+                ),
+                recognition_mode=_enum_value(
+                    template_fields[field.field_name].recognition_mode
+                    if field.field_name in template_fields
+                    else None
+                ),
+                fill_policy=_enum_value(
+                    template_fields[field.field_name].fill_policy
+                    if field.field_name in template_fields
+                    else None
+                ),
+                requires_manual_confirmation=(
+                    template_fields[field.field_name].requires_manual_confirmation
+                    if field.field_name in template_fields
+                    else False
                 ),
                 rules=(
                     FieldRulesResponse(

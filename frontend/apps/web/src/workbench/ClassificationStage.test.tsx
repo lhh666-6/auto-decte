@@ -3,7 +3,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { ClassificationOption, TaskStatusDetail } from "@form-detection/api-client";
+import type { ClassificationOption, TaskStatusDetail, WorkbenchDetail } from "@form-detection/api-client";
 
 import { ClassificationStage } from "./ClassificationStage";
 import { RecognitionProgress } from "./RecognitionProgress";
@@ -15,6 +15,19 @@ const OPTIONS: ClassificationOption[] = [{
   page_size: "A4",
   orientation: "portrait",
 }];
+
+const DETAIL = {
+  form: { form_id: "FORM-1" },
+  fields: [],
+  evidence: [{
+    file_id: "ORIGINAL-1",
+    type: "ORIGINAL_IMAGE",
+    related_field_id: null,
+    download_url: "/original.png",
+  }],
+  current_record: null,
+  draft: null,
+} as unknown as WorkbenchDetail;
 
 function task(status: string, progress: number, step: string | null, error: string | null = null): TaskStatusDetail {
   return {
@@ -39,6 +52,7 @@ describe("ClassificationStage", () => {
     render(
       <ClassificationStage
         formId="FORM-1"
+        detail={DETAIL}
         options={OPTIONS}
         assignTemplate={assignTemplate}
         taskApi={{ getTask: vi.fn() }}
@@ -49,6 +63,8 @@ describe("ClassificationStage", () => {
 
     const submit = screen.getByRole("button", { name: "确认表单类型并开始识别" }) as HTMLButtonElement;
     expect(screen.getByText("二维码未能确定表单类型")).toBeTruthy();
+    expect(screen.getByTestId("classification-workbench-grid")).toBeTruthy();
+    expect(screen.getByRole("img", { name: "原始表单" })).toBeTruthy();
     expect(screen.getByText(/PAYROLL_HOURLY · V1 · 8 个字段/)).toBeTruthy();
     expect(submit.disabled).toBe(true);
     fireEvent.change(screen.getByLabelText("已发布模板版本"), { target: { value: "PAYROLL_HOURLY@1" } });
@@ -69,6 +85,7 @@ describe("ClassificationStage", () => {
     render(
       <ClassificationStage
         formId="FORM-1"
+        detail={DETAIL}
         options={OPTIONS}
         assignTemplate={assignTemplate}
         taskApi={{ getTask: vi.fn().mockReturnValue(new Promise(() => undefined)) }}

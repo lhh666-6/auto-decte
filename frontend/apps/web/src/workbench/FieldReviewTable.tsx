@@ -1,6 +1,7 @@
 import type { ReviewField } from "@form-detection/api-client";
 
 import { reviewValueIssue } from "../review-model";
+import { fieldUsesAutomaticRecognition } from "./field-behavior";
 
 interface FieldReviewTableProps {
   fields: readonly ReviewField[];
@@ -33,7 +34,8 @@ export function FieldReviewTable({
           <span>字段</span><span>系统识别值</span><span>识别可靠度</span><span>最终填写值</span><span>文字状态</span>
         </div>
         {fields.length === 0 ? <div className="table-empty">尚未加载字段</div> : fields.map((field) => {
-          const candidate = field.candidates[0];
+          const automaticRecognition = fieldUsesAutomaticRecognition(field);
+          const candidate = automaticRecognition ? field.candidates[0] : undefined;
           const displayValue = valueForField(field, edits, recordValues);
           const manuallyEdited = Object.hasOwn(edits, field.field_id) || Object.hasOwn(edits, field.field_name);
           const manuallyConfirmed = manuallyEdited || field.current_value_source === "HUMAN_CONFIRMED";
@@ -43,6 +45,7 @@ export function FieldReviewTable({
             manuallyConfirmed,
             field.data_type,
             field.rules,
+            field.requires_manual_confirmation,
           );
           const label = field.display_name ?? field.field_name;
           return (
@@ -67,7 +70,7 @@ export function FieldReviewTable({
               }}
             >
               <span className="field-name"><strong>{label}</strong>{field.display_name && <small>{field.field_name}</small>}</span>
-              <span className="candidate-value">{candidate ? stringValue(candidate.candidate_value) : field.recognition_engine === "manual" ? "人工录入" : "—"}</span>
+              <span className="candidate-value">{candidate ? stringValue(candidate.candidate_value) : "—"}</span>
               <span>{candidate ? `${Math.round(candidate.confidence * 100)}%` : "—"}</span>
               <label className="final-value-control" onClick={(event) => event.stopPropagation()}>
                 <span className="visually-hidden">{label} 确认值</span>

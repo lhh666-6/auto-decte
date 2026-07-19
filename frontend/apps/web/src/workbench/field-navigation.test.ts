@@ -25,6 +25,7 @@ function field(
   options: {
     confidence?: number;
     rules?: ReviewFieldRules | null;
+    requiresManualConfirmation?: boolean;
   } = {},
 ): ReviewField {
   return {
@@ -33,6 +34,10 @@ function field(
     display_name: fieldId,
     data_type: "text",
     recognition_engine: options.confidence === undefined ? "manual" : "ocr",
+    paper_entry_mode: "HANDWRITTEN_TEXT",
+    recognition_mode: options.confidence === undefined ? "NONE" : "HANDWRITING_OCR",
+    fill_policy: options.confidence === undefined ? "MANUAL_ONLY" : "SUGGEST_ONLY",
+    requires_manual_confirmation: options.requiresManualConfirmation ?? false,
     rules: options.rules ?? null,
     source_region: {},
     current_value: currentValue,
@@ -53,7 +58,10 @@ describe("selectFirstIssueFieldId", () => {
   it("orders invalid, required, low-confidence, manual-confirmation and normal fields", () => {
     const fields = [
       field("normal", "正常", { confidence: 0.99 }),
-      field("manual-confirmation", ""),
+      field("manual-confirmation", "候选姓名", {
+        confidence: 0.99,
+        requiresManualConfirmation: true,
+      }),
       field("low-confidence", "候选", { confidence: 0.4 }),
       field("required", "", { rules: { ...BASE_RULES, required: true } }),
       field("invalid", "错误", {

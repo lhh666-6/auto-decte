@@ -47,6 +47,10 @@ class FieldResponse(BaseModel):
     display_name: str | None
     data_type: str | None
     recognition_engine: str | None
+    paper_entry_mode: str | None
+    recognition_mode: str | None
+    fill_policy: str | None
+    requires_manual_confirmation: bool
     rules: FieldRulesResponse | None
     source_region: dict[str, int]
     current_value: Any

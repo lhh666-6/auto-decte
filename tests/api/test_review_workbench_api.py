@@ -65,6 +65,10 @@ def test_form_workbench_detail_exposes_fields_candidates_and_safe_evidence_url(
             "display_name": None,
             "data_type": None,
             "recognition_engine": None,
+            "paper_entry_mode": None,
+            "recognition_mode": None,
+            "fill_policy": None,
+            "requires_manual_confirmation": False,
             "rules": None,
             "source_region": {"x": 10, "y": 20, "width": 80, "height": 30},
             "current_value": 8,
@@ -134,6 +138,10 @@ def test_workbench_exposes_template_rules_for_frontend_validation(tmp_path: Path
 
     assert field["display_name"] == "总数量"
     assert field["data_type"] == "integer"
+    assert field["paper_entry_mode"] == "DIGIT_BOXES"
+    assert field["recognition_mode"] == "NONE"
+    assert field["fill_policy"] == "MANUAL_ONLY"
+    assert field["requires_manual_confirmation"] is False
     assert field["rules"] == {
         "required": True,
         "minimum_value": 0.0,

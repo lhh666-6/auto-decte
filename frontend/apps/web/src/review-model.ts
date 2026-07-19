@@ -27,6 +27,7 @@ export function reviewValueIssue(
   manuallyEdited: boolean,
   dataType: string | null,
   rules: ReviewFieldRules | null,
+  requiresManualConfirmation = false,
 ): string | null {
   const blank = value === null || value === undefined ||
     (typeof value === "string" && value.trim() === "");
@@ -55,6 +56,9 @@ export function reviewValueIssue(
     if (rules?.maximum_value !== null && rules?.maximum_value !== undefined && numeric > rules.maximum_value) {
       return `数值不能大于 ${rules.maximum_value}`;
     }
+  }
+  if (requiresManualConfirmation && !manuallyEdited) {
+    return "必须对照字段裁片人工确认";
   }
   if (!manuallyEdited && candidateConfidence !== undefined && candidateConfidence < 0.8) {
     return "识别置信度较低，请人工确认";

@@ -25,6 +25,10 @@ export interface ReviewField {
   display_name: string | null;
   data_type: string | null;
   recognition_engine: string | null;
+  paper_entry_mode: string | null;
+  recognition_mode: string | null;
+  fill_policy: string | null;
+  requires_manual_confirmation: boolean;
   rules: ReviewFieldRules | null;
   source_region: Record<string, number>;
   current_value: unknown;

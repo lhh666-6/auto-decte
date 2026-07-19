@@ -24,6 +24,7 @@ import { ClassificationStage } from "./ClassificationStage";
 import { RecaptureStage } from "./RecaptureStage";
 import { FieldDetailPanel } from "./FieldDetailPanel";
 import { FieldReviewTable } from "./FieldReviewTable";
+import { fieldUsesAutomaticRecognition } from "./field-behavior";
 import { selectFirstIssueFieldId } from "./field-navigation";
 import { WorkbenchActionBar } from "./WorkbenchActionBar";
 import { WorkbenchEmptyState, WorkbenchErrorNotice } from "./WorkbenchEmptyState";
@@ -90,13 +91,14 @@ export function ReviewWorkbenchPage({
     detail !== null &&
     JSON.stringify(edits) !== JSON.stringify(detail.draft?.values ?? {});
   const issueFieldIds = detail?.fields.filter((field) => {
-    const best = field.candidates[0];
+    const best = fieldUsesAutomaticRecognition(field) ? field.candidates[0] : undefined;
     const value = fieldValue(detail, field, edits);
     return Boolean(ruleFailures[field.field_name] ?? reviewValueIssue(
       value, best?.confidence,
       Object.hasOwn(edits, field.field_id) || Object.hasOwn(edits, field.field_name) ||
         field.current_value_source === "HUMAN_CONFIRMED",
       field.data_type, field.rules,
+      field.requires_manual_confirmation,
     ));
   }).map((field) => field.field_id) ?? [];
   const warningCount = issueFieldIds.length;
@@ -633,6 +635,7 @@ export function ReviewWorkbenchPage({
           <ClassificationStage
             key={detail.form.form_id}
             formId={detail.form.form_id}
+            detail={detail}
             options={classificationOptions}
             assignTemplate={async (input) => {
               const result = await api.assignTemplate(detail.form.form_id, input);
