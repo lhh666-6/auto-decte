@@ -33,6 +33,7 @@ class Settings(BaseSettings):
     )
     local_default_user_id: str = "local-operator"
     local_default_roles: tuple[str, ...] = ("OPERATOR",)
+    cjk_font_path: Path | None = None
 
     @property
     def database_path(self) -> Path:

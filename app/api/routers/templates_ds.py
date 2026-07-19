@@ -8,6 +8,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from pydantic import Field as PydanticField
 
+from app.adapters.templates.print_renderer_ds import ChineseFontUnavailable
 from app.api.dependencies_ds import get_current_actor, get_services
 from app.application.template_versions_ds import PreflightReport
 from app.domain.templates_ds import (
@@ -215,9 +216,16 @@ def publish(
 ) -> dict[str, object]:
     _require(_actor(request, services), Permission.TEMPLATE_CREATE_VERSION)
     try:
+        services.templates.get(version_id)
+        services.template_renderer.validate_print_support()
         version = services.templates.publish(version_id)
     except KeyError as error:
         raise _version_not_found(error) from error
+    except ChineseFontUnavailable as error:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "CHINESE_FONT_UNAVAILABLE", "detail": str(error)},
+        ) from error
     except ValueError as error:
         raise HTTPException(
             status_code=409,

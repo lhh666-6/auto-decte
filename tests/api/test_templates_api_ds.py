@@ -94,6 +94,49 @@ def test_admin_creates_preflights_publishes_and_downloads_template_artifact(tmp_
     assert "internal_uri" not in repr(published.json())
 
 
+def test_publish_is_blocked_before_state_change_when_chinese_font_is_missing(
+    tmp_path: Path,
+) -> None:
+    services = build_services(
+        Settings(
+            data_root=tmp_path,
+            allow_header_identity=True,
+            cjk_font_path=tmp_path / "missing-cjk-font.ttf",
+        )
+    )
+    client = TestClient(create_app(services), raise_server_exceptions=False)
+    created = client.post(
+        "/api/v1/templates",
+        headers=_headers(),
+        json={"template_key": "PAYROLL_FONT_CHECK", "page_size": "A4"},
+    )
+    version_id = created.json()["version_id"]
+    client.post(
+        f"/api/v1/template-versions/{version_id}/fields",
+        headers=_headers(),
+        json=_field("员工姓名"),
+    )
+    preflight = client.post(
+        f"/api/v1/template-versions/{version_id}/preflight",
+        headers=_headers(),
+    )
+
+    published = client.post(
+        f"/api/v1/template-versions/{version_id}/publish",
+        headers=_headers(),
+    )
+    detail = client.get(
+        f"/api/v1/template-versions/{version_id}",
+        headers=_headers(),
+    )
+
+    assert preflight.json()["ok"] is True
+    assert published.status_code == 409
+    assert published.json()["code"] == "CHINESE_FONT_UNAVAILABLE"
+    assert detail.json()["status"] == "READY_TO_PUBLISH"
+    assert detail.json()["artifacts"] == []
+
+
 def test_admin_can_list_read_clone_patch_and_delete_template_draft(tmp_path: Path) -> None:
     client = _client(tmp_path)
     version_id = _published_template(client)

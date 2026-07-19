@@ -3,9 +3,45 @@
 from pathlib import Path
 
 import cv2
+import numpy as np
+import pytest
+from PIL import Image
 
-from app.adapters.templates.print_renderer_ds import TemplatePrintRenderer
-from app.domain.templates_ds import PageSpec, TemplateVersion, build_template_payload
+from app.adapters.templates.print_renderer_ds import (
+    ChineseFontUnavailable,
+    TemplatePrintRenderer,
+)
+from app.domain.templates_ds import (
+    PageSpec,
+    TemplateArtifact,
+    TemplateVersion,
+    build_sheet_payload,
+    build_template_payload,
+)
+from app.modules.templates.payroll_profiles_ds import reviewed_payroll_seed_templates
+
+
+def _artifact(artifacts: tuple[TemplateArtifact, ...], kind: str) -> TemplateArtifact:
+    return next(item for item in artifacts if item.kind == kind)
+
+
+def _ink_in_region(image: Image.Image, region: object) -> int:
+    page_width, page_height = image.size
+    box = (
+        round(region.x * page_width),
+        round(region.y * page_height),
+        round((region.x + region.width) * page_width),
+        round((region.y + region.height) * page_height),
+    )
+    pixels = np.asarray(image.crop(box).convert("L"))
+    return int(np.count_nonzero(pixels < 128))
+
+
+def _decoded_payloads(image: Image.Image) -> set[str]:
+    gray = np.asarray(image.convert("L"))
+    detected, values, _, _ = cv2.QRCodeDetector().detectAndDecodeMulti(gray)
+    assert detected
+    return {value for value in values if value}
 
 
 def test_renderer_generates_png_pdf_and_paper_instance_identity(tmp_path: Path) -> None:
@@ -49,3 +85,57 @@ def test_renderer_prints_a_decodable_template_qr_without_marker_overlap(tmp_path
     payload, _, _ = cv2.QRCodeDetector().detectAndDecode(image)
 
     assert payload == build_template_payload("PAYROLL_HOURLY", 1)
+
+
+def test_renderer_draws_reviewed_chinese_structure_and_keeps_300_dpi(tmp_path: Path) -> None:
+    version = reviewed_payroll_seed_templates()[0]
+    artifacts = TemplatePrintRenderer(tmp_path).render(version)
+    image = Image.open(_artifact(artifacts, "PRINT_PNG").internal_uri)
+    elements = {element.element_id: element for element in version.static_elements}
+    fields = {field.field_key: field for field in version.fields}
+
+    assert image.info["dpi"] == pytest.approx((300, 300), abs=0.1)
+    assert _ink_in_region(image, elements["title"].region) > 100
+    assert _ink_in_region(image, elements["business_grid"].region) > 1_000
+    assert _ink_in_region(image, elements["quality_pass_box"].region) > 50
+    assert _ink_in_region(image, elements["worker_signature_line"].region) > 50
+    assert _ink_in_region(image, elements["business_section"].region) > 100
+    assert _ink_in_region(image, fields["regular_hours"].region) > 500
+    assert _ink_in_region(image, fields["assessment_passed"].region) > 100
+    assert _ink_in_region(image, fields["worker_signature"].region) > 100
+
+
+def test_two_up_pdf_contains_independent_decodable_form_and_sheet_qrs(tmp_path: Path) -> None:
+    version = reviewed_payroll_seed_templates()[0]
+    renderer = TemplatePrintRenderer(tmp_path)
+
+    artifacts = renderer.render(version, print_batch="PB20260719A", sequence=41)
+    imposed = _artifact(artifacts, "PRINT_IMPOSED_PDF")
+    preview = renderer.compose_imposition(
+        version,
+        print_batch="PB20260719A",
+        first_sequence=41,
+    )
+    midpoint = preview.width // 2
+    left_payloads = _decoded_payloads(preview.crop((0, 0, midpoint, preview.height)))
+    right_payloads = _decoded_payloads(preview.crop((midpoint, 0, preview.width, preview.height)))
+    expected_template = build_template_payload(version.template_key, version.version)
+
+    assert Path(imposed.internal_uri).read_bytes().startswith(b"%PDF")
+    assert expected_template in left_payloads
+    assert expected_template in right_payloads
+    assert build_sheet_payload("PB20260719A", 41) in left_payloads
+    assert build_sheet_payload("PB20260719A", 42) in right_payloads
+    centre_column = np.asarray(preview.convert("L"))[:, midpoint]
+    assert np.any(centre_column < 50)
+    assert np.any(centre_column > 240)
+
+
+def test_renderer_rejects_publication_support_when_no_cjk_font_exists(tmp_path: Path) -> None:
+    renderer = TemplatePrintRenderer(
+        tmp_path,
+        font_candidates=(tmp_path / "missing-cjk-font.ttf",),
+    )
+
+    with pytest.raises(ChineseFontUnavailable, match="中文字体"):
+        renderer.validate_print_support()

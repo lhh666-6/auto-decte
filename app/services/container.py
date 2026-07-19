@@ -91,7 +91,11 @@ def build_services(settings: Settings, *, install_seed_templates: bool = False) 
     repository = SqlAlchemyFormRepository(engine)
     template_repository = SqlAlchemyTemplateRepository(engine)
     storage = LocalEvidenceStorage(settings.evidence_root)
-    template_renderer = TemplatePrintRenderer(settings.evidence_root)
+    font_candidates = (settings.cjk_font_path,) if settings.cjk_font_path is not None else None
+    template_renderer = TemplatePrintRenderer(
+        settings.evidence_root,
+        font_candidates=font_candidates,
+    )
     queries = QueryForms(repository)
     pipeline = OpenCvImagePipeline()
     review_repository = SqlAlchemyReviewLeaseRepository(engine)

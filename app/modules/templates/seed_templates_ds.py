@@ -250,6 +250,8 @@ def _install_missing_artifacts(
 ) -> None:
     base_name = f"{version.template_key}-v{version.version}"
     expected_names = {f"{base_name}.png", f"{base_name}.pdf"}
+    if version.print_imposition is not None:
+        expected_names.add(f"{base_name}-imposed.pdf")
     base_artifacts = [
         artifact
         for artifact in repository.list_artifacts(version.version_id)

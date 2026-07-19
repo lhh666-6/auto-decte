@@ -90,14 +90,16 @@ def test_seed_install_is_idempotent_and_generates_print_artifacts(tmp_path: Path
     assert set(second.existing) == EXPECTED_KEYS
     assert repository.list_template_keys() == sorted(EXPECTED_KEYS)
     assert all(len(repository.list_versions(key)) == 1 for key in EXPECTED_KEYS)
-    assert len(first_artifact_ids) == 28
+    assert len(first_artifact_ids) == 36
     assert second_artifact_ids == first_artifact_ids
     for key in EXPECTED_KEYS:
         version = repository.list_versions(key)[0]
-        assert {item.kind for item in repository.list_artifacts(version.version_id)} == {
-            "PRINT_PDF",
-            "PRINT_PNG",
-        }
+        expected_kinds = {"PRINT_PDF", "PRINT_PNG"}
+        if version.print_imposition is not None:
+            expected_kinds.add("PRINT_IMPOSED_PDF")
+        assert {
+            item.kind for item in repository.list_artifacts(version.version_id)
+        } == expected_kinds
 
 
 def test_seed_install_rejects_same_key_and_version_with_different_content(tmp_path: Path) -> None:
