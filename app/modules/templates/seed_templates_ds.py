@@ -18,6 +18,10 @@ from app.domain.templates_ds import (
     TemplateArtifact,
     TemplateVersion,
 )
+from app.modules.templates.core_payroll_layouts_ds import (
+    core_payroll_metadata,
+    core_payroll_seed_templates,
+)
 from app.modules.templates.payroll_profiles_ds import (
     reviewed_payroll_export_seed_templates,
     reviewed_payroll_metadata,
@@ -31,6 +35,7 @@ _SEED_METADATA = {
     "PAYROLL_FIXED_PRODUCTION_GRID": ("固定生产明细单", "适用于固定生产明细岗位"),
     "PAYROLL_EQUIPMENT_PROCESS": ("设备工序单", "适用于设备与工序计件岗位"),
     **reviewed_payroll_metadata(),
+    **core_payroll_metadata(),
 }
 _COMMON_FIELDS = (
     ("work_date", "日期", "text", "text_box", True),
@@ -139,11 +144,12 @@ def legacy_payroll_seed_templates() -> tuple[TemplateVersion, ...]:
 
 
 def all_payroll_seed_templates() -> tuple[TemplateVersion, ...]:
-    """Return legacy V1 plus reviewed V1 history and stable-export V2 profiles."""
+    """Return historical templates plus the six controlled V2 core layouts."""
     return (
         legacy_payroll_seed_templates()
         + reviewed_payroll_seed_templates()
         + reviewed_payroll_export_seed_templates()
+        + core_payroll_seed_templates()
     )
 
 

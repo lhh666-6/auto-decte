@@ -39,6 +39,9 @@ from app.modules.review.facade_ds import ReviewFacade
 from app.modules.review.lease_service_ds import ReviewLeaseService
 from app.modules.review.repository_ds import SqlAlchemyReviewLeaseRepository
 from app.modules.tasks.service_ds import TaskService
+from app.modules.templates.core_payroll_layouts_ds import (
+    install_reviewed_job_profile_seeds,
+)
 from app.modules.templates.seed_templates_ds import (
     SeedTemplateConflict,
     install_legacy_payroll_seed_templates,
@@ -172,6 +175,7 @@ def build_services(settings: Settings, *, install_seed_templates: bool = False) 
     if install_seed_templates:
         try:
             install_legacy_payroll_seed_templates(template_repository, template_renderer)
+            install_reviewed_job_profile_seeds(template_repository)
         except SeedTemplateConflict as error:
             logger.warning("Built-in template installation skipped: %s", error)
     return services

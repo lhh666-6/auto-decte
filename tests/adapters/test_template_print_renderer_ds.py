@@ -15,8 +15,11 @@ from app.domain.templates_ds import (
     CoreLayoutKind,
     ElementKind,
     FieldDefinition,
+    FillPolicy,
     PageSpec,
+    PaperEntryMode,
     PayrollJobProfileVersion,
+    RecognitionMode,
     Rect,
     StaticElement,
     TemplateArtifact,
@@ -97,6 +100,70 @@ def test_renderer_respects_configured_digit_count(tmp_path: Path) -> None:
     groups = 1 + int(np.count_nonzero(np.diff(line_columns) > 1))
 
     assert groups == 9
+
+
+def test_renderer_prints_job_profile_values_and_each_controlled_choice(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    page = PageSpec.a5_landscape()
+    version = TemplateVersion.draft("TPL-PROFILE", "PAYROLL_PROFILE", 1, page)
+    version.add_field(
+        FieldDefinition(
+            "position_name",
+            "岗位",
+            "text",
+            "preprinted",
+            Rect(0.1, 0.2, 0.3, 0.08),
+            page,
+            paper_entry_mode=PaperEntryMode.PREPRINTED,
+        )
+    )
+    version.add_field(
+        FieldDefinition(
+            "shift",
+            "班次",
+            "text",
+            "checkbox",
+            Rect(0.1, 0.35, 0.5, 0.08),
+            page,
+            paper_entry_mode=PaperEntryMode.CHECKBOX,
+            recognition_mode=RecognitionMode.OMR,
+            fill_policy=FillPolicy.SUGGEST_ONLY,
+            choice_group="shift",
+            choice_options=("白班", "夜班"),
+            max_selections=1,
+        )
+    )
+    version.mark_ready_to_publish()
+    version.publish()
+    profile = PayrollJobProfileVersion.draft(
+        "PROFILE-FORKLIFT-V1",
+        "FORKLIFT",
+        1,
+        display_name="叉车工",
+        core_layout=CoreLayoutKind.EQUIPMENT_TIMEKEEPING,
+        template_version_id=version.version_id,
+        template_version=version.version,
+        fixed_options={"position_name": "叉车工"},
+    )
+    profile.mark_ready_to_publish()
+    profile.publish()
+    rendered_text: list[str] = []
+    original = TemplatePrintRenderer._draw_fitted_text
+
+    def capture_text(
+        self: TemplatePrintRenderer, draw: object, box: object, value: str, **kwargs: object
+    ) -> None:
+        rendered_text.append(value)
+        original(self, draw, box, value, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(TemplatePrintRenderer, "_draw_fitted_text", capture_text)
+
+    TemplatePrintRenderer(tmp_path).render(version, job_profile=profile)
+
+    assert "岗位：叉车工" in rendered_text
+    assert "白班" in rendered_text
+    assert "夜班" in rendered_text
 
 
 def test_renderer_prints_four_detectable_directional_aruco_markers(tmp_path: Path) -> None:
@@ -220,9 +287,7 @@ def test_renderer_draws_internal_rows_and_weighted_columns_for_table_grid(
     version.publish()
 
     artifact = next(
-        item
-        for item in TemplatePrintRenderer(tmp_path).render(version)
-        if item.kind == "PRINT_PNG"
+        item for item in TemplatePrintRenderer(tmp_path).render(version) if item.kind == "PRINT_PNG"
     )
     image = np.asarray(Image.open(artifact.internal_uri).convert("L"))
     left = round(0.1 * page.canonical_width_px)

@@ -37,7 +37,15 @@ REVIEWED_KEYS = {
     "PAYROLL_HOT_PRESS_DAILY",
     "PAYROLL_SHEET_CUTTING_DAILY",
 }
-EXPECTED_KEYS = LEGACY_KEYS | REVIEWED_KEYS
+CORE_KEYS = {
+    "PAYROLL_CORE_TIMEKEEPING",
+    "PAYROLL_CORE_EQUIPMENT_TIMEKEEPING",
+    "PAYROLL_CORE_RACK_DRYING_PIECEWORK",
+    "PAYROLL_CORE_FURNACE_WORK",
+    "PAYROLL_CORE_HOT_PRESS",
+    "PAYROLL_CORE_SHEET_CUTTING",
+}
+EXPECTED_KEYS = LEGACY_KEYS | REVIEWED_KEYS | CORE_KEYS
 
 
 def _repository(tmp_path: Path) -> SqlAlchemyTemplateRepository:
@@ -63,7 +71,7 @@ def test_seed_templates_are_published_complete_business_definitions() -> None:
 def test_all_seed_templates_keep_legacy_compatibility_and_add_reviewed_profiles() -> None:
     templates = all_payroll_seed_templates()
 
-    assert len(templates) == 24
+    assert len(templates) == 30
     assert {template.template_key for template in templates} == EXPECTED_KEYS
     assert all(template.status is TemplateStatus.PUBLISHED for template in templates)
     assert {
@@ -72,6 +80,7 @@ def test_all_seed_templates_keep_legacy_compatibility_and_add_reviewed_profiles(
     assert {template.version for template in templates if template.template_key in LEGACY_KEYS} == {
         1
     }
+    assert {template.version for template in templates if template.template_key in CORE_KEYS} == {1}
 
 
 def test_seed_install_is_idempotent_and_generates_print_artifacts(tmp_path: Path) -> None:
@@ -100,7 +109,7 @@ def test_seed_install_is_idempotent_and_generates_print_artifacts(tmp_path: Path
     assert repository.list_template_keys() == sorted(EXPECTED_KEYS)
     assert all(len(repository.list_versions(key)) == 1 for key in LEGACY_KEYS)
     assert all(len(repository.list_versions(key)) == 2 for key in REVIEWED_KEYS)
-    assert len(first_artifact_ids) == 64
+    assert len(first_artifact_ids) == 80
     assert second_artifact_ids == first_artifact_ids
     for key in EXPECTED_KEYS:
         for version in repository.list_versions(key):
@@ -124,8 +133,8 @@ def test_seed_install_adds_reviewed_v2_without_rewriting_existing_v1(tmp_path: P
 
     result = install_legacy_payroll_seed_templates(repository, renderer)
 
-    assert set(result.installed) == REVIEWED_KEYS
-    assert set(result.existing) == EXPECTED_KEYS
+    assert set(result.installed) == REVIEWED_KEYS | CORE_KEYS
+    assert set(result.existing) == EXPECTED_KEYS - CORE_KEYS
     for (template_key, version), version_id in historical_ids.items():
         restored = repository.get_version_by_key_version(template_key, version)
         assert restored is not None
@@ -187,7 +196,10 @@ def test_application_composition_can_install_seeds_into_a_new_database(tmp_path:
 
     assert set(first.template_repository.list_template_keys()) == EXPECTED_KEYS
     assert set(second.template_repository.list_template_keys()) == EXPECTED_KEYS
-    assert sum(len(second.template_repository.list_versions(key)) for key in EXPECTED_KEYS) == 24
+    assert sum(len(second.template_repository.list_versions(key)) for key in EXPECTED_KEYS) == 30
+    assert (
+        sum(len(second.template_repository.list_job_profiles(key)) for key in REVIEWED_KEYS) == 10
+    )
 
 
 def test_application_startup_preserves_conflicting_legacy_template(tmp_path: Path) -> None:

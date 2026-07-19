@@ -98,14 +98,12 @@ class TemplatePrintRenderer:
             if print_batch is not None and sequence is not None
             else None
         )
-        image = self._render_canvas(version, payload, sheet_payload)
+        image = self._render_canvas(version, payload, sheet_payload, job_profile)
         output_dir = self._artifact_root / "template-artifacts" / version.template_key
         output_dir.mkdir(parents=True, exist_ok=True)
         suffix = _instance_suffix(print_batch, sequence)
         profile_suffix = (
-            f"-{job_profile.profile_key}-v{job_profile.version}"
-            if job_profile is not None
-            else ""
+            f"-{job_profile.profile_key}-v{job_profile.version}" if job_profile is not None else ""
         )
         base_name = f"{version.template_key}-v{version.version}{profile_suffix}{suffix}"
         png_path = output_dir / f"{base_name}.png"
@@ -167,7 +165,7 @@ class TemplatePrintRenderer:
             sheet_payload = None
             if print_batch is not None and first_sequence is not None:
                 sheet_payload = self.sheet_payload(print_batch, first_sequence + slot)
-            form = self._render_canvas(version, template_payload, sheet_payload)
+            form = self._render_canvas(version, template_payload, sheet_payload, job_profile)
             if form.size != (form_width, form_height):
                 form = form.resize((form_width, form_height), Image.Resampling.LANCZOS)
             cell_left = margin_x + column * (cell_width + gap_x)
@@ -206,6 +204,7 @@ class TemplatePrintRenderer:
         version: TemplateVersion,
         template_payload: str,
         sheet_payload: str | None,
+        job_profile: PayrollJobProfileVersion | None = None,
     ) -> Image.Image:
         page = version.page
         image = Image.new(
@@ -225,7 +224,7 @@ class TemplatePrintRenderer:
             if element.kind is ElementKind.CHECKBOX
         )
         for field in version.fields:
-            self._draw_field(draw, field, page, printed_checkboxes)
+            self._draw_field(draw, field, page, printed_checkboxes, job_profile)
         self._paste_identity_qrs(image, page, template_payload, sheet_payload)
         self._draw_corner_markers(image, page)
         return image
@@ -282,11 +281,33 @@ class TemplatePrintRenderer:
         field: FieldDefinition,
         page: PageSpec,
         printed_checkboxes: tuple[Rect, ...],
+        job_profile: PayrollJobProfileVersion | None = None,
     ) -> None:
         box = _pixel_rect(field.region, page)
         stroke = _stroke(page)
         mode = field.paper_entry_mode
         if mode is PaperEntryMode.CHECKBOX:
+            if field.choice_options:
+                option_width = max(1, (box[2] - box[0]) // len(field.choice_options))
+                for index, option in enumerate(field.choice_options):
+                    left = box[0] + index * option_width
+                    right = (
+                        box[2] if index == len(field.choice_options) - 1 else left + option_width
+                    )
+                    side = min(box[3] - box[1], _mm_to_px(4.0, page))
+                    draw.rectangle(
+                        (left, box[1], left + side, box[1] + side),
+                        outline="black",
+                        width=stroke,
+                    )
+                    self._draw_fitted_text(
+                        draw,
+                        (left + side + stroke, box[1], right, box[3]),
+                        option,
+                        maximum_px=_mm_to_px(2.8, page),
+                        align="left",
+                    )
+                return
             printed = next(
                 (region for region in printed_checkboxes if _overlaps(region, field.region)),
                 None,
@@ -302,6 +323,18 @@ class TemplatePrintRenderer:
                 draw,
                 label_box,
                 field.display_name,
+                maximum_px=_mm_to_px(3.0, page),
+                align="left",
+            )
+            return
+        if mode is PaperEntryMode.PREPRINTED:
+            value = _job_profile_value(job_profile, field.field_key)
+            text = f"{field.display_name}：{value or '系统预印'}"
+            draw.rectangle(box, outline="black", width=stroke)
+            self._draw_fitted_text(
+                draw,
+                box,
+                text,
                 maximum_px=_mm_to_px(3.0, page),
                 align="left",
             )
@@ -551,6 +584,19 @@ def _instance_suffix(print_batch: str | None, sequence: int | None) -> str:
     if print_batch is None or sequence is None:
         return ""
     return f"-{print_batch}-{sequence:06d}"
+
+
+def _job_profile_value(job_profile: PayrollJobProfileVersion | None, field_key: str) -> str | None:
+    if job_profile is None:
+        return None
+    if field_key == "position_name":
+        return job_profile.display_name
+    if field_key == "unit":
+        return job_profile.unit or None
+    value = job_profile.fixed_options.get(field_key)
+    if value is None or isinstance(value, (dict, list)):
+        return None
+    return str(value)
 
 
 def _pixel_rect(region: Rect, page: PageSpec) -> tuple[int, int, int, int]:

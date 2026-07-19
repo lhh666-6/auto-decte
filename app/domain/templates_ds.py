@@ -80,9 +80,7 @@ class PayrollJobProfileVersion:
             raise ValueError("template_version must be a positive integer")
         self.fixed_options = _copy_profile_mapping("fixed_options", self.fixed_options)
         self.pricing_rules = _copy_profile_mapping("pricing_rules", self.pricing_rules)
-        self.deduction_rules = _copy_profile_mapping(
-            "deduction_rules", self.deduction_rules
-        )
+        self.deduction_rules = _copy_profile_mapping("deduction_rules", self.deduction_rules)
         self.export_mapping = _copy_profile_mapping("export_mapping", self.export_mapping)
 
     @classmethod
@@ -141,9 +139,7 @@ class PayrollJobProfileVersion:
         if pricing_rules is not None:
             self.pricing_rules = _copy_profile_mapping("pricing_rules", pricing_rules)
         if deduction_rules is not None:
-            self.deduction_rules = _copy_profile_mapping(
-                "deduction_rules", deduction_rules
-            )
+            self.deduction_rules = _copy_profile_mapping("deduction_rules", deduction_rules)
         if export_mapping is not None:
             self.export_mapping = _copy_profile_mapping("export_mapping", export_mapping)
         self.status = JobProfileStatus.DRAFT
@@ -162,9 +158,7 @@ class PayrollJobProfileVersion:
             raise ValueError("only published job profile versions can be retired")
         self.status = JobProfileStatus.RETIRED
 
-    def clone_as_draft(
-        self, profile_version_id: str, version: int
-    ) -> PayrollJobProfileVersion:
+    def clone_as_draft(self, profile_version_id: str, version: int) -> PayrollJobProfileVersion:
         if self.status is not JobProfileStatus.PUBLISHED:
             raise ValueError("only published job profile versions can be cloned")
         return PayrollJobProfileVersion.draft(
@@ -350,9 +344,7 @@ class StaticElement:
                 len(self.column_weights) != self.columns
                 or any(weight <= 0 for weight in self.column_weights)
             ):
-                raise ValueError(
-                    "column_weights must contain one positive weight per table column"
-                )
+                raise ValueError("column_weights must contain one positive weight per table column")
         elif (self.rows, self.columns, self.column_weights) != (1, 1, ()):
             raise ValueError("only table grids may declare rows, columns or column_weights")
 
@@ -391,17 +383,13 @@ class PrintImposition:
     @property
     def cell_width_mm(self) -> float:
         return (
-            self.carrier.width_mm
-            - 2 * self.margin_mm
-            - (self.columns - 1) * self.horizontal_gap_mm
+            self.carrier.width_mm - 2 * self.margin_mm - (self.columns - 1) * self.horizontal_gap_mm
         ) / self.columns
 
     @property
     def cell_height_mm(self) -> float:
         return (
-            self.carrier.height_mm
-            - 2 * self.margin_mm
-            - (self.rows - 1) * self.vertical_gap_mm
+            self.carrier.height_mm - 2 * self.margin_mm - (self.rows - 1) * self.vertical_gap_mm
         ) / self.rows
 
     def fits(self, page: PageSpec) -> bool:
@@ -553,14 +541,12 @@ class FieldDefinition:
             if paper_mode not in {PaperEntryMode.NONE, PaperEntryMode.PREPRINTED}:
                 raise ValueError("derived fields cannot be handwritten")
         if self.conditional_required_on is not None and not re.fullmatch(
-            r"[a-z][a-z0-9_]*(?:==|!=)[A-Za-z0-9_-]+",
+            r"[a-z][a-z0-9_]*(?:==|!=)[\w-]+",
             self.conditional_required_on,
         ):
             raise ValueError("conditional_required_on must use field==value or field!=value")
         if self.signature_role is not None:
-            if not self.signature_role or not re.fullmatch(
-                r"[a-z][a-z0-9_]*", self.signature_role
-            ):
+            if not self.signature_role or not re.fullmatch(r"[a-z][a-z0-9_]*", self.signature_role):
                 raise ValueError("signature_role must be lower snake case")
             if paper_mode is not PaperEntryMode.SIGNATURE:
                 raise ValueError("signature_role requires signature paper entry")
@@ -796,9 +782,7 @@ def parse_template_profile_payload(payload: str) -> tuple[str, int, str, int] | 
     parts = payload.split("|")
     if len(parts) != 6 or parts[0] != "IFD2":
         return None
-    _, template_key, raw_template_version, profile_key, raw_profile_version, checksum = (
-        parts
-    )
+    _, template_key, raw_template_version, profile_key, raw_profile_version, checksum = parts
     try:
         _validate_template_key(template_key)
         _validate_profile_key(profile_key)
