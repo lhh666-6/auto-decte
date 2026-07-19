@@ -19,8 +19,10 @@ from app.domain.templates_ds import (
     TemplateVersion,
     build_sheet_payload,
     build_template_payload,
+    build_template_profile_payload,
     parse_sheet_payload,
     parse_template_payload,
+    parse_template_profile_payload,
 )
 
 
@@ -180,6 +182,28 @@ def test_template_payload_parser_rejects_tampering_and_returns_exact_identity() 
     assert parse_template_payload("IFD|PAYROLL_HOURLY|3|2312") == ("PAYROLL_HOURLY", 3)
     assert parse_template_payload("IFD|PAYROLL_HOURLY|3|FFFF") is None
     assert parse_template_payload("PAYROLL_HOURLY:3") is None
+
+
+def test_dual_version_payload_binds_template_and_job_profile_identity() -> None:
+    payload = build_template_profile_payload(
+        "CORE_TIMEKEEPING", 2, "TIMEKEEPING_DAY", 4
+    )
+
+    assert parse_template_profile_payload(payload) == (
+        "CORE_TIMEKEEPING",
+        2,
+        "TIMEKEEPING_DAY",
+        4,
+    )
+    assert parse_template_profile_payload(payload[:-1] + "0") is None
+    assert parse_template_payload(payload) is None
+
+
+def test_dual_version_payload_rejects_invalid_keys_and_versions() -> None:
+    with pytest.raises(ValueError, match="profile_key"):
+        build_template_profile_payload("CORE_TIMEKEEPING", 2, "bad-profile", 1)
+    with pytest.raises(ValueError, match="profile_version"):
+        build_template_profile_payload("CORE_TIMEKEEPING", 2, "TIMEKEEPING_DAY", 0)
 
 
 def test_sheet_payload_has_zero_padded_sequence_and_checksum() -> None:

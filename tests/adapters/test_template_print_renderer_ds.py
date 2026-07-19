@@ -12,11 +12,14 @@ from app.adapters.templates.print_renderer_ds import (
     TemplatePrintRenderer,
 )
 from app.domain.templates_ds import (
+    CoreLayoutKind,
     PageSpec,
+    PayrollJobProfileVersion,
     TemplateArtifact,
     TemplateVersion,
     build_sheet_payload,
     build_template_payload,
+    build_template_profile_payload,
 )
 from app.modules.templates.payroll_profiles_ds import reviewed_payroll_seed_templates
 
@@ -85,6 +88,61 @@ def test_renderer_prints_a_decodable_template_qr_without_marker_overlap(tmp_path
     payload, _, _ = cv2.QRCodeDetector().detectAndDecode(image)
 
     assert payload == build_template_payload("PAYROLL_HOURLY", 1)
+
+
+def test_renderer_prints_dual_version_qr_for_a_published_job_profile(
+    tmp_path: Path,
+) -> None:
+    version = TemplateVersion.draft(
+        "TPL-TIMEKEEPING-V2", "CORE_TIMEKEEPING", 2, PageSpec.a5_landscape()
+    )
+    version.mark_ready_to_publish()
+    version.publish()
+    profile = PayrollJobProfileVersion.draft(
+        "PROFILE-DAY-V4",
+        "TIMEKEEPING_DAY",
+        4,
+        display_name="计时工白班",
+        core_layout=CoreLayoutKind.TIMEKEEPING,
+        template_version_id=version.version_id,
+        template_version=version.version,
+    )
+    profile.mark_ready_to_publish()
+    profile.publish()
+
+    artifact = next(
+        item
+        for item in TemplatePrintRenderer(tmp_path).render(version, job_profile=profile)
+        if item.kind == "PRINT_PNG"
+    )
+    payload, _, _ = cv2.QRCodeDetector().detectAndDecode(cv2.imread(artifact.internal_uri))
+
+    assert payload == build_template_profile_payload(
+        version.template_key, version.version, profile.profile_key, profile.version
+    )
+    assert "TIMEKEEPING_DAY-v4" in artifact.download_name
+
+
+def test_renderer_rejects_a_job_profile_bound_to_another_template(tmp_path: Path) -> None:
+    version = TemplateVersion.draft(
+        "TPL-TIMEKEEPING-V2", "CORE_TIMEKEEPING", 2, PageSpec.a5_landscape()
+    )
+    version.mark_ready_to_publish()
+    version.publish()
+    profile = PayrollJobProfileVersion.draft(
+        "PROFILE-DAY-V1",
+        "TIMEKEEPING_DAY",
+        1,
+        display_name="计时工",
+        core_layout=CoreLayoutKind.TIMEKEEPING,
+        template_version_id="TPL-OTHER",
+        template_version=2,
+    )
+    profile.mark_ready_to_publish()
+    profile.publish()
+
+    with pytest.raises(ValueError, match="does not bind"):
+        TemplatePrintRenderer(tmp_path).render(version, job_profile=profile)
 
 
 def test_renderer_draws_reviewed_chinese_structure_and_keeps_300_dpi(tmp_path: Path) -> None:

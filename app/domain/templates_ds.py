@@ -715,6 +715,51 @@ def parse_template_payload(payload: str) -> tuple[str, int] | None:
     return template_key, version
 
 
+def build_template_profile_payload(
+    template_key: str,
+    template_version: int,
+    profile_key: str,
+    profile_version: int,
+) -> str:
+    """Bind a new paper instance to exact layout and job-configuration versions."""
+    _validate_template_key(template_key)
+    _validate_profile_key(profile_key)
+    if template_version < 1:
+        raise ValueError("template_version must be a positive integer")
+    if profile_version < 1:
+        raise ValueError("profile_version must be a positive integer")
+    identity = f"{template_key}|{template_version}|{profile_key}|{profile_version}"
+    return f"IFD2|{identity}|{_checksum(identity)}"
+
+
+def parse_template_profile_payload(payload: str) -> tuple[str, int, str, int] | None:
+    """Validate an IFD2 QR without treating it as a legacy template-only identity."""
+    parts = payload.split("|")
+    if len(parts) != 6 or parts[0] != "IFD2":
+        return None
+    _, template_key, raw_template_version, profile_key, raw_profile_version, checksum = (
+        parts
+    )
+    try:
+        _validate_template_key(template_key)
+        _validate_profile_key(profile_key)
+        template_version = int(raw_template_version)
+        profile_version = int(raw_profile_version)
+    except ValueError:
+        return None
+    if (
+        template_version < 1
+        or profile_version < 1
+        or raw_template_version != str(template_version)
+        or raw_profile_version != str(profile_version)
+    ):
+        return None
+    identity = f"{template_key}|{template_version}|{profile_key}|{profile_version}"
+    if checksum != _checksum(identity):
+        return None
+    return template_key, template_version, profile_key, profile_version
+
+
 def build_sheet_payload(print_batch: str, sequence: int) -> str:
     """Build the optional non-business paper-instance QR payload."""
     if not _BATCH_KEY.fullmatch(print_batch):

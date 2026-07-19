@@ -18,12 +18,14 @@ from app.domain.templates_ds import (
     FieldDefinition,
     PageSpec,
     PaperEntryMode,
+    PayrollJobProfileVersion,
     Rect,
     StaticElement,
     TemplateArtifact,
     TemplateVersion,
     build_sheet_payload,
     build_template_payload,
+    build_template_profile_payload,
 )
 
 _OUTER_MARGIN_MM = 5.0
@@ -80,6 +82,7 @@ class TemplatePrintRenderer:
         self,
         version: TemplateVersion,
         *,
+        job_profile: PayrollJobProfileVersion | None = None,
         print_batch: str | None = None,
         sequence: int | None = None,
     ) -> tuple[TemplateArtifact, ...]:
@@ -89,7 +92,7 @@ class TemplatePrintRenderer:
             raise ValueError("print_batch and sequence must be supplied together")
         self.validate_print_support()
 
-        payload = build_template_payload(version.template_key, version.version)
+        payload = self._identity_payload(version, job_profile)
         sheet_payload = (
             self.sheet_payload(print_batch, sequence)
             if print_batch is not None and sequence is not None
@@ -99,7 +102,12 @@ class TemplatePrintRenderer:
         output_dir = self._artifact_root / "template-artifacts" / version.template_key
         output_dir.mkdir(parents=True, exist_ok=True)
         suffix = _instance_suffix(print_batch, sequence)
-        base_name = f"{version.template_key}-v{version.version}{suffix}"
+        profile_suffix = (
+            f"-{job_profile.profile_key}-v{job_profile.version}"
+            if job_profile is not None
+            else ""
+        )
+        base_name = f"{version.template_key}-v{version.version}{profile_suffix}{suffix}"
         png_path = output_dir / f"{base_name}.png"
         pdf_path = output_dir / f"{base_name}.pdf"
         image.save(png_path, format="PNG", dpi=(version.page.canonical_dpi,) * 2)
@@ -112,6 +120,7 @@ class TemplatePrintRenderer:
         if version.print_imposition is not None:
             imposed = self.compose_imposition(
                 version,
+                job_profile=job_profile,
                 print_batch=print_batch,
                 first_sequence=sequence,
             )
@@ -124,6 +133,7 @@ class TemplatePrintRenderer:
         self,
         version: TemplateVersion,
         *,
+        job_profile: PayrollJobProfileVersion | None = None,
         print_batch: str | None = None,
         first_sequence: int | None = None,
     ) -> Image.Image:
@@ -140,7 +150,7 @@ class TemplatePrintRenderer:
             (carrier.canonical_width_px, carrier.canonical_height_px),
             "white",
         )
-        template_payload = build_template_payload(version.template_key, version.version)
+        template_payload = self._identity_payload(version, job_profile)
         scale_x = carrier.canonical_width_px / carrier.width_mm
         scale_y = carrier.canonical_height_px / carrier.height_mm
         cell_width = round(imposition.cell_width_mm * scale_x)
@@ -169,6 +179,27 @@ class TemplatePrintRenderer:
         if imposition.include_cut_lines:
             self._draw_imposition_cut_lines(canvas, version)
         return canvas
+
+    @staticmethod
+    def _identity_payload(
+        version: TemplateVersion,
+        job_profile: PayrollJobProfileVersion | None,
+    ) -> str:
+        if job_profile is None:
+            return build_template_payload(version.template_key, version.version)
+        if job_profile.status.value != "PUBLISHED":
+            raise ValueError("only published job profile versions can be rendered")
+        if (
+            job_profile.template_version_id != version.version_id
+            or job_profile.template_version != version.version
+        ):
+            raise ValueError("job profile does not bind this template version")
+        return build_template_profile_payload(
+            version.template_key,
+            version.version,
+            job_profile.profile_key,
+            job_profile.version,
+        )
 
     def _render_canvas(
         self,
