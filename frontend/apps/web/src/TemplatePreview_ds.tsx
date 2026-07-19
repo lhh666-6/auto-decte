@@ -8,6 +8,8 @@ type Props = {
   onTune: (versionId: string) => Promise<void>;
 };
 
+type PreviewMode = "business" | "recognition";
+
 export function TemplatePreview({ api, versionId, onBack, onTune }: Props) {
   const [version, setVersion] = useState<TemplateVersion | null>(null);
   const [loading, setLoading] = useState(true);
@@ -17,6 +19,7 @@ export function TemplatePreview({ api, versionId, onBack, onTune }: Props) {
   const [scale, setScale] = useState(1);
   const [fieldQuery, setFieldQuery] = useState("");
   const [selectedFieldKey, setSelectedFieldKey] = useState<string | null>(null);
+  const [previewMode, setPreviewMode] = useState<PreviewMode>("business");
 
   useEffect(() => {
     let active = true;
@@ -28,6 +31,7 @@ export function TemplatePreview({ api, versionId, onBack, onTune }: Props) {
         if (!active) return;
         setVersion(loaded);
         setSelectedFieldKey(loaded.fields[0]?.field_key ?? null);
+        setPreviewMode("business");
       })
       .catch((cause: unknown) => {
         if (active) setError(cause instanceof Error ? cause.message : "无法读取模板版本。");
@@ -44,6 +48,11 @@ export function TemplatePreview({ api, versionId, onBack, onTune }: Props) {
       || field.display_name.toLowerCase().includes(normalized)
       || field.field_key.toLowerCase().includes(normalized)) ?? [];
   }, [fieldQuery, version]);
+
+  const pngArtifact = useMemo(
+    () => version?.artifacts.find((artifact) => artifact.kind.toUpperCase().includes("PNG")) ?? null,
+    [version],
+  );
 
   async function tune() {
     setTuning(true);
@@ -74,27 +83,34 @@ export function TemplatePreview({ api, versionId, onBack, onTune }: Props) {
               <button type="button" onClick={() => setScale(1.2)}>适合宽度</button>
               <button type="button" onClick={() => setScale(1)}>复位</button>
               <span>{Math.round(scale * 100)}%</span>
+              {pngArtifact ? (
+                <span className="preview-mode-switch" aria-label="预览图层">
+                  <button type="button" className={previewMode === "business" ? "active" : ""} aria-pressed={previewMode === "business"} onClick={() => setPreviewMode("business")}>业务版面</button>
+                  <button type="button" className={previewMode === "recognition" ? "active" : ""} aria-pressed={previewMode === "recognition"} onClick={() => setPreviewMode("recognition")}>显示识别区域</button>
+                </span>
+              ) : null}
             </div>
-            <div
-              className="paper-preview preview-paper"
-              data-testid="template-preview-paper"
-              style={{ aspectRatio: paperRatio(version), transform: `scale(${scale})`, transformOrigin: "top center" }}
-            >
-              <strong>{version.display_name} · V{version.version}</strong>
-              <span className="marker top-left">10</span><span className="marker top-right">11</span><span className="marker bottom-left">13</span><span className="marker bottom-right">12</span>
-              <div className="safe-zone">模板 QR 安全区</div>
-              {version.fields.map((field) => (
-                <button
-                  type="button"
-                  className={`preview-field ${field.field_key === selectedFieldKey ? "selected" : ""}`}
-                  key={field.field_key}
-                  style={fieldStyle(field)}
-                  aria-label={`预览字段 ${field.display_name}`}
-                  aria-pressed={field.field_key === selectedFieldKey}
-                  onClick={() => setSelectedFieldKey(field.field_key)}
-                ><span>{field.display_name}</span></button>
-              ))}
-            </div>
+            {pngArtifact ? (
+              <div
+                className="paper-preview preview-paper preview-artifact-paper"
+                data-testid="template-preview-paper"
+                style={{ aspectRatio: paperRatio(version), transform: `scale(${scale})`, transformOrigin: "top center" }}
+              >
+                <img src={pngArtifact.download_url} alt={`${version.display_name}业务版面`} />
+                {previewMode === "recognition" ? version.fields.map((field) => (
+                  <button
+                    type="button"
+                    className={`preview-field ${field.field_key === selectedFieldKey ? "selected" : ""}`}
+                    data-testid={`recognition-overlay-${field.field_key}`}
+                    key={field.field_key}
+                    style={fieldStyle(field)}
+                    aria-label={`预览字段 ${field.display_name}`}
+                    aria-pressed={field.field_key === selectedFieldKey}
+                    onClick={() => setSelectedFieldKey(field.field_key)}
+                  ><span>{field.display_name}</span></button>
+                )) : null}
+              </div>
+            ) : <p className="preview-artifact-missing">尚未生成 PNG 预览，请先完成发布前检查或重新生成打印产物</p>}
           </section>
           <aside className="preview-inspector">
             <div><span className="eyebrow">页面与字段</span><h2>{version.page.size} · {version.page.orientation === "portrait" ? "纵向" : version.page.orientation}</h2><p className="muted">{version.fields.length} 个字段</p></div>

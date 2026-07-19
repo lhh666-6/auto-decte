@@ -53,6 +53,34 @@ const VERSION = {
 afterEach(cleanup);
 
 describe("TemplatePreview", () => {
+  it("shows the real print PNG by default and only overlays recognition regions on request", async () => {
+    const user = userEvent.setup();
+    const version = { ...VERSION, display_name: "Hourly payroll" } satisfies TemplateVersion;
+    const api = { getVersion: vi.fn().mockResolvedValue(version) } as unknown as TemplateApi;
+    render(<TemplatePreview api={api} versionId="VERSION-1" onBack={vi.fn()} onTune={vi.fn()} />);
+
+    const image = await screen.findByRole("img", { name: "Hourly payroll业务版面" });
+    expect(image.getAttribute("src")).toBe("/template.png");
+    expect(screen.queryByTestId("recognition-overlay-hours")).toBeNull();
+
+    await user.click(screen.getByRole("button", { name: "显示识别区域" }));
+    expect(screen.getByTestId("recognition-overlay-hours")).toBeTruthy();
+    await user.click(screen.getByTestId("recognition-overlay-hours"));
+    expect(screen.getByTestId("recognition-overlay-hours").getAttribute("aria-pressed")).toBe("true");
+
+    await user.click(screen.getByRole("button", { name: "业务版面" }));
+    expect(screen.queryByTestId("recognition-overlay-hours")).toBeNull();
+  });
+
+  it("explains how to generate a preview when the version has no PNG artifact", async () => {
+    const version = { ...VERSION, artifacts: VERSION.artifacts.filter((artifact) => artifact.kind !== "PNG") } satisfies TemplateVersion;
+    const api = { getVersion: vi.fn().mockResolvedValue(version) } as unknown as TemplateApi;
+    render(<TemplatePreview api={api} versionId="VERSION-1" onBack={vi.fn()} onTune={vi.fn()} />);
+
+    expect(await screen.findByText("尚未生成 PNG 预览，请先完成发布前检查或重新生成打印产物")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "显示识别区域" })).toBeNull();
+  });
+
   it("provides viewport controls, field search and bidirectional selection", async () => {
     const user = userEvent.setup();
     const api = { getVersion: vi.fn().mockResolvedValue(VERSION) } as unknown as TemplateApi;
@@ -64,6 +92,7 @@ describe("TemplatePreview", () => {
     }
     await user.click(screen.getByRole("button", { name: "放大" }));
     expect(paper.getAttribute("style")).toContain("scale(1.1)");
+    await user.click(screen.getByRole("button", { name: "显示识别区域" }));
     await user.type(screen.getByLabelText("搜索字段"), "工时");
     expect(screen.getByRole("button", { name: "选择字段 工时" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "选择字段 员工" })).toBeNull();

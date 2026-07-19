@@ -2,6 +2,14 @@
 
 最后更新：2026-07-19
 
+## V2 开发主线
+
+用户已确认以 [工业纸质工资表系统：低 Token 实施与统一 UI 规范](superpowers/specs/2026-07-19-industrial-payroll-low-token-ui-v2.md) 为新的最终产品要求。该规范把现有 10 张车间模板进一步收敛为 6 个核心纸质版面与可版本化岗位配置，并新增正式打印/识别调试分层、批量图片、图片总览、多报表和只读 AI。此前 Task 1—16 的通过结果继续作为基线，不重复验收；它们不能替代 V2 新增要求。
+
+第一个差异任务 [模板预览正式打印层与识别调试层分离](superpowers/plans/2026-07-19-template-preview-layer-separation.md) 已完成：网页默认显示真实 PNG 打印产物，主动选择“显示识别区域”后才叠加字段框。局部验证为组件测试 `4 passed`、前端 TypeScript 类型检查通过；浏览器以真实“计时工日工资表”确认默认 1 张业务图片、0 个识别框，切换后仍为 1 张图片并出现 22 个识别框。未重复运行既有 Python 全套测试。
+
+下一差异任务是 [6 个核心版面与岗位配置的领域模型](superpowers/plans/2026-07-19-core-layout-job-profile-domain.md)。只建立领域边界，不迁移数据、不改 API、不重写六张版面。
+
 ## 本轮结论
 
 工业表单前端重建实施计划的任务 1—16 已按顺序完成。协作同步基线为 `ff03a39 fix(review): preserve confirmed values across reload and export`，并已在其上完成新主线 Task 1—10；集成分支为 `modular-architecture`。

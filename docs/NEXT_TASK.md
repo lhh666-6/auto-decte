@@ -2,9 +2,24 @@
 
 最后更新：2026-07-19
 
-状态：旧前端重建任务 1—16 已完成；新主线 Task 1—15 已完成，Task 16 的完整自动回归和数字模拟纸面闭环已完成，但计划规定的三类母版实体闭环尚未有真实打印机/手机证据。
+状态：V2 第一个差异任务“正式打印层与识别调试层分离”已通过局部自动测试和真实页面烟雾检查；当前只执行下面一个领域任务。
 
 目标分支：`modular-architecture`
+
+## 当前唯一任务：6 个核心版面与岗位配置的领域模型
+
+规格来源：[工业纸质工资表系统：低 Token 实施与统一 UI 规范](superpowers/specs/2026-07-19-industrial-payroll-low-token-ui-v2.md) 第 3、4 章。
+
+执行计划：[Core Layout and Job Profile Domain Implementation Plan](superpowers/plans/2026-07-19-core-layout-job-profile-domain.md)。
+
+目标：用领域模型明确“纸面版面版本”和“岗位配置版本”是两类对象，并固定 V2 只有 6 个核心版面。此任务不迁移现有 10 个模板、不改 QR、不改运行数据库。
+
+只读取和修改：
+
+- `app/domain/templates_ds.py`
+- `tests/unit/test_templates_domain_ds.py`
+
+只运行该领域测试、Ruff 和该文件的 mypy，不重复运行前端、API、种子模板、审核工作台、导出或实体闭环验收。完成后更新本文件为“岗位配置持久化”。
 
 ## 当前执行状态
 
