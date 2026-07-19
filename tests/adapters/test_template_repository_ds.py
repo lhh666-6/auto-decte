@@ -24,6 +24,45 @@ from app.domain.templates_ds import (
 from app.infrastructure.database.sqlite_ds import create_sqlite_engine
 
 
+def test_repository_round_trips_controlled_field_metadata(tmp_path: Path) -> None:
+    engine = create_sqlite_engine(tmp_path / "controlled-fields.db")
+    Base.metadata.create_all(engine)
+    repository = SqlAlchemyTemplateRepository(engine)
+    version = TemplateVersion.draft(
+        "TPL-CONTROLLED", "PAYROLL_CONTROLLED", 1, PageSpec.a5_landscape()
+    )
+    version.add_field(
+        FieldDefinition(
+            "exception_reason",
+            "异常事实",
+            "text",
+            "text_box",
+            Rect(0.1, 0.2, 0.5, 0.1),
+            version.page,
+            conditional_required_on="quality_result!=qualified",
+        )
+    )
+    version.add_field(
+        FieldDefinition(
+            "supervisor_signature",
+            "主管确认",
+            "text",
+            "signature_line",
+            Rect(0.1, 0.4, 0.3, 0.08),
+            version.page,
+            paper_entry_mode=PaperEntryMode.SIGNATURE,
+            signature_role="supervisor",
+        )
+    )
+
+    repository.add_version(version)
+    loaded = repository.get_version(version.version_id)
+
+    assert loaded is not None
+    assert loaded.fields[0].conditional_required_on == "quality_result!=qualified"
+    assert loaded.fields[1].signature_role == "supervisor"
+
+
 def test_repository_round_trips_fields_and_safe_artifact_metadata(tmp_path: Path) -> None:
     engine = create_sqlite_engine(tmp_path / "template.db")
     Base.metadata.create_all(engine)

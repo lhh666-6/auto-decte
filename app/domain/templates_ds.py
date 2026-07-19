@@ -473,6 +473,13 @@ class FieldDefinition:
     confidence_threshold: float | None = None
     requires_manual_confirmation: bool = False
     calculation_expression: str | None = None
+    digit_count: int | None = None
+    choice_group: str | None = None
+    choice_options: tuple[str, ...] = ()
+    max_selections: int | None = None
+    derived_from_field_key: str | None = None
+    conditional_required_on: str | None = None
+    signature_role: str | None = None
 
     def __post_init__(self) -> None:
         explicit_paper_mode = self.paper_entry_mode is not None
@@ -520,6 +527,43 @@ class FieldDefinition:
         object.__setattr__(self, "recognition_mode", recognition_mode)
         object.__setattr__(self, "fill_policy", fill_policy)
         object.__setattr__(self, "confidence_threshold", confidence_threshold)
+        if self.digit_count is not None:
+            if paper_mode is not PaperEntryMode.DIGIT_BOXES or not 1 <= self.digit_count <= 24:
+                raise ValueError("digit_count requires digit boxes and must be between 1 and 24")
+        if self.choice_group is not None:
+            if not re.fullmatch(r"[a-z][a-z0-9_]*", self.choice_group):
+                raise ValueError("choice_group must be lower snake case")
+            if paper_mode is not PaperEntryMode.CHECKBOX:
+                raise ValueError("choice_group requires checkbox paper entry")
+            if not self.choice_options:
+                raise ValueError("choice_options are required for a choice group")
+        elif self.choice_options or self.max_selections is not None:
+            raise ValueError("choice_options and max_selections require choice_group")
+        if any(not option.strip() for option in self.choice_options):
+            raise ValueError("choice_options must not contain blank values")
+        if len(set(self.choice_options)) != len(self.choice_options):
+            raise ValueError("choice_options must be unique")
+        if self.max_selections is not None and not 1 <= self.max_selections <= len(
+            self.choice_options
+        ):
+            raise ValueError("max_selections must be between 1 and the number of choices")
+        if self.derived_from_field_key is not None:
+            if not re.fullmatch(r"[a-z][a-z0-9_]*", self.derived_from_field_key):
+                raise ValueError("derived_from_field_key must be lower snake case")
+            if paper_mode not in {PaperEntryMode.NONE, PaperEntryMode.PREPRINTED}:
+                raise ValueError("derived fields cannot be handwritten")
+        if self.conditional_required_on is not None and not re.fullmatch(
+            r"[a-z][a-z0-9_]*(?:==|!=)[A-Za-z0-9_-]+",
+            self.conditional_required_on,
+        ):
+            raise ValueError("conditional_required_on must use field==value or field!=value")
+        if self.signature_role is not None:
+            if not self.signature_role or not re.fullmatch(
+                r"[a-z][a-z0-9_]*", self.signature_role
+            ):
+                raise ValueError("signature_role must be lower snake case")
+            if paper_mode is not PaperEntryMode.SIGNATURE:
+                raise ValueError("signature_role requires signature paper entry")
         if self.field_key in {"worker_name", "employee_name"}:
             object.__setattr__(self, "requires_manual_confirmation", True)
         if explicit_paper_mode:

@@ -327,7 +327,7 @@ class TemplatePrintRenderer:
                 align="left",
             )
             digit_top = label_box[3]
-            digit_count = 6
+            digit_count = field.digit_count or 6
             digit_width = max(1, (box[2] - box[0]) // digit_count)
             for index in range(digit_count):
                 left = box[0] + index * digit_width

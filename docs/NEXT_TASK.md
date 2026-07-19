@@ -2,26 +2,26 @@
 
 最后更新：2026-07-19
 
-状态：岗位配置双版本打印、识别和持久化闭环已完成；当前只执行下面一个纸表组件任务。
+状态：岗位配置双版本闭环、受控表格和受控字段元数据已完成；当前只执行六个核心版面与岗位配置种子。
 
 目标分支：`modular-architecture`
 
-## 当前唯一任务：受控明细表网格组件
+## 当前唯一任务：六个核心版面与岗位配置种子
 
 规格来源：[工业纸质工资表系统：低 Token 实施与统一 UI 规范](superpowers/specs/2026-07-19-industrial-payroll-low-token-ui-v2.md) 第 3、4 章。
 
-执行计划：[Controlled Table Grid Primitive Plan](superpowers/plans/2026-07-20-controlled-table-grid.md)。
+执行计划：先建立 `2026-07-20-six-core-layout-seeds.md`，再严格按 V2 第 4 章逐张实现。
 
-目标：让固定明细表拥有真实的行数、列数和受控列宽，打印时绘制内部线条；不再把 TABLE_GRID 当成空外框。
+目标：只新增计时、叉车/设备计时、装架/干燥计件、炉类作业、热压、开片六张核心版面；用已发布岗位配置把现有岗位映射到核心版面，保留历史模板和历史数据。
 
 只读取和修改：
 
-- `app/domain/templates_ds.py`
-- `app/adapters/templates/print_renderer_ds.py`
-- `app/adapters/database/template_repository_ds.py`
-- 相关领域、renderer、模板仓储测试
+- `docs/superpowers/specs/2026-07-19-industrial-payroll-low-token-ui-v2.md` 第 4 章
+- 新的核心版面种子模块
+- 已有种子安装入口中与模板安装直接相关的部分
+- 新增核心版面结构、岗位映射和安装幂等测试
 
-只运行领域、renderer、模板仓储测试、Ruff 与相关 mypy，不重复运行 API、前端、审核工作台、导出或完整套件。
+先结构化验证六张版面和岗位映射；接入安装器后只运行受影响的种子/renderer/仓储测试、Ruff 与相关 mypy。不重复运行前端、审核工作台、导出或完整套件。
 
 ## 当前执行状态
 

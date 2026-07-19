@@ -311,6 +311,95 @@ def test_field_behavior_separates_paper_recognition_and_fill_modes() -> None:
     assert field.requires_manual_confirmation is True
 
 
+def test_controlled_field_metadata_restricts_worker_input() -> None:
+    page = PageSpec.a5_landscape()
+    worker_number = FieldDefinition(
+        "worker_number",
+        "工号",
+        "integer",
+        "digit_boxes",
+        Rect(0.1, 0.2, 0.2, 0.08),
+        page,
+        digit_count=6,
+    )
+    quality_issue = FieldDefinition(
+        "quality_issue",
+        "质量问题",
+        "text",
+        "checkbox",
+        Rect(0.1, 0.35, 0.5, 0.08),
+        page,
+        paper_entry_mode=PaperEntryMode.CHECKBOX,
+        recognition_mode=RecognitionMode.OMR,
+        fill_policy=FillPolicy.SUGGEST_ONLY,
+        choice_group="quality_issue",
+        choice_options=("尺寸偏差", "边缘破损", "其他"),
+        max_selections=2,
+    )
+    worker_name = FieldDefinition(
+        "worker_name",
+        "姓名",
+        "text",
+        "preprinted",
+        Rect(0.65, 0.2, 0.2, 0.08),
+        page,
+        paper_entry_mode=PaperEntryMode.NONE,
+        recognition_mode=RecognitionMode.NONE,
+        fill_policy=FillPolicy.MANUAL_ONLY,
+        derived_from_field_key="worker_number",
+    )
+
+    assert worker_number.digit_count == 6
+    assert quality_issue.choice_options == ("尺寸偏差", "边缘破损", "其他")
+    assert quality_issue.max_selections == 2
+    assert worker_name.derived_from_field_key == "worker_number"
+    assert worker_name.requires_manual_confirmation is True
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "message"),
+    [
+        ({"digit_count": 0}, "digit_count"),
+        ({"digit_count": 6, "paper_entry_mode": PaperEntryMode.CHECKBOX}, "digit_count"),
+        (
+            {
+                "paper_entry_mode": PaperEntryMode.CHECKBOX,
+                "choice_group": "shift",
+                "choice_options": (),
+            },
+            "choice_options",
+        ),
+        (
+            {
+                "choice_group": "shift",
+                "choice_options": ("白班", "夜班"),
+                "max_selections": 3,
+                "paper_entry_mode": PaperEntryMode.CHECKBOX,
+            },
+            "max_selections",
+        ),
+        ({"conditional_required_on": "bad expression"}, "conditional_required_on"),
+        ({"signature_role": ""}, "signature_role"),
+    ],
+)
+def test_controlled_field_metadata_rejects_invalid_combinations(
+    kwargs: dict[str, object], message: str
+) -> None:
+    page = PageSpec.a5_landscape()
+    base: dict[str, object] = {
+        "field_key": "controlled_field",
+        "display_name": "受控字段",
+        "data_type": "text",
+        "input_type": "digit_boxes",
+        "region": Rect(0.1, 0.2, 0.3, 0.08),
+        "page": page,
+    }
+    base.update(kwargs)
+
+    with pytest.raises(ValueError, match=message):
+        FieldDefinition(**base)  # type: ignore[arg-type]
+
+
 def test_switching_recognition_mode_clears_stale_policy_configuration() -> None:
     page = PageSpec.a4_portrait()
     field = FieldDefinition(

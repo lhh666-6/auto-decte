@@ -22,6 +22,10 @@
 
 IFD2 识别与岗位身份持久化已完成：Form 和数据库可空保存岗位键/版本，Alembic 010 纯增量加列；分类同时验证已发布模板、已发布岗位配置及其绑定关系，未知/不匹配进入人工分类。仓储、识别、迁移合计 `32 passed`，Ruff 和 mypy 通过。下一任务是 [受控明细表网格组件](superpowers/plans/2026-07-20-controlled-table-grid.md)。
 
+受控明细表网格组件已完成：`TABLE_GRID` 可明确行数、列数和比例列宽，打印器绘制真实内部网格，仓储对新配置完整往返并兼容缺少新键的旧记录。领域、renderer、仓储定向验证 `37 passed`，Ruff 和 mypy 通过。
+
+[受控纸面字段元数据](superpowers/plans/2026-07-20-controlled-field-metadata.md)已完成：数字格位数、固定选项组、最大选择数、系统带入来源、条件必填和签字角色均成为受校验且可持久化的模板字段规则，打印器按实际位数绘制数字格。定向验证 `46 passed`，Ruff 和 mypy 通过。下一任务是严格按 V2 第 4 章建立六个核心版面及其岗位配置种子，不替换历史模板。
+
 ## 本轮结论
 
 工业表单前端重建实施计划的任务 1—16 已按顺序完成。协作同步基线为 `ff03a39 fix(review): preserve confirmed values across reload and export`，并已在其上完成新主线 Task 1—10；集成分支为 `modular-architecture`。

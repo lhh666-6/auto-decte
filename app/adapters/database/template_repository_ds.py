@@ -530,6 +530,13 @@ def _field_to_dict(field: FieldDefinition) -> dict[str, object]:
         "confidence_threshold": field.confidence_threshold,
         "requires_manual_confirmation": field.requires_manual_confirmation,
         "calculation_expression": field.calculation_expression,
+        "digit_count": field.digit_count,
+        "choice_group": field.choice_group,
+        "choice_options": list(field.choice_options),
+        "max_selections": field.max_selections,
+        "derived_from_field_key": field.derived_from_field_key,
+        "conditional_required_on": field.conditional_required_on,
+        "signature_role": field.signature_role,
         "rules": {
             "required": field.rules.required,
             "minimum_value": field.rules.minimum_value,
@@ -571,6 +578,11 @@ def _field_from_dict(field_key: str, value: dict[str, object], page: PageSpec) -
     raw_export_target = value.get("export_target")
     if raw_export_target is not None and not isinstance(raw_export_target, dict):
         raise ValueError("template field export_target must be an object")
+    raw_choice_options = value.get("choice_options", [])
+    if not isinstance(raw_choice_options, list) or not all(
+        isinstance(item, str) for item in raw_choice_options
+    ):
+        raise ValueError("template field choice_options must be a string array")
     return FieldDefinition(
         field_key=field_key,
         display_name=str(value["display_name"]),
@@ -603,6 +615,13 @@ def _field_from_dict(field_key: str, value: dict[str, object], page: PageSpec) -
         confidence_threshold=_as_optional_float(value.get("confidence_threshold")),
         requires_manual_confirmation=bool(value.get("requires_manual_confirmation", False)),
         calculation_expression=_as_optional_string(value.get("calculation_expression")),
+        digit_count=_as_optional_int(value.get("digit_count")),
+        choice_group=_as_optional_string(value.get("choice_group")),
+        choice_options=tuple(raw_choice_options),
+        max_selections=_as_optional_int(value.get("max_selections")),
+        derived_from_field_key=_as_optional_string(value.get("derived_from_field_key")),
+        conditional_required_on=_as_optional_string(value.get("conditional_required_on")),
+        signature_role=_as_optional_string(value.get("signature_role")),
         rules=FieldRules(
             required=bool(rules.get("required", False)),
             minimum_value=_as_optional_float(rules.get("minimum_value")),
@@ -730,6 +749,14 @@ def _as_optional_float(value: object) -> float | None:
     if value is None:
         return None
     return _as_float(value)
+
+
+def _as_optional_int(value: object) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, int) and not isinstance(value, bool):
+        return value
+    raise ValueError("template field integer setting must be an integer")
 
 
 def _as_optional_string(value: object) -> str | None:

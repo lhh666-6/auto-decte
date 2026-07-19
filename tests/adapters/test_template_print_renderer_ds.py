@@ -14,6 +14,7 @@ from app.adapters.templates.print_renderer_ds import (
 from app.domain.templates_ds import (
     CoreLayoutKind,
     ElementKind,
+    FieldDefinition,
     PageSpec,
     PayrollJobProfileVersion,
     Rect,
@@ -62,6 +63,40 @@ def test_renderer_generates_png_pdf_and_paper_instance_identity(tmp_path: Path) 
     assert all(Path(artifact.internal_uri).is_file() for artifact in artifacts)
     assert all(len(artifact.sha256) == 64 for artifact in artifacts)
     assert renderer.sheet_payload("PB20260713A", 128) == "SHEET|PB20260713A|000128|44D8"
+
+
+def test_renderer_respects_configured_digit_count(tmp_path: Path) -> None:
+    page = PageSpec.a5_landscape()
+    version = TemplateVersion.draft("TPL-DIGITS", "PAYROLL_DIGITS", 1, page)
+    field = FieldDefinition(
+        "worker_number",
+        "工号",
+        "integer",
+        "digit_boxes",
+        Rect(0.2, 0.3, 0.36, 0.12),
+        page,
+        digit_count=8,
+    )
+    version.add_field(field)
+    version.mark_ready_to_publish()
+    version.publish()
+
+    image = TemplatePrintRenderer(tmp_path)._render_canvas(
+        version, build_template_payload(version.template_key, version.version), None
+    )
+    box = (
+        round(field.region.x * page.canonical_width_px),
+        round(field.region.y * page.canonical_height_px),
+        round((field.region.x + field.region.width) * page.canonical_width_px),
+        round((field.region.y + field.region.height) * page.canonical_height_px),
+    )
+    crop = np.asarray(image.crop(box).convert("L"))
+    lower = crop[round(crop.shape[0] * 0.4) :, :]
+    dark_by_column = np.count_nonzero(lower < 128, axis=0)
+    line_columns = np.flatnonzero(dark_by_column > lower.shape[0] * 0.65)
+    groups = 1 + int(np.count_nonzero(np.diff(line_columns) > 1))
+
+    assert groups == 9
 
 
 def test_renderer_prints_four_detectable_directional_aruco_markers(tmp_path: Path) -> None:
