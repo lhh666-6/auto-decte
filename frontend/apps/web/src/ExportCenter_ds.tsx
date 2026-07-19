@@ -52,6 +52,8 @@ export function ExportCenter({ api }: ExportCenterProps) {
   const [task, setTask] = useState<ExportTask | null>(null);
   const [previewing, setPreviewing] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [needsRecheck, setNeedsRecheck] = useState(false);
+  const [lastSupersedesBatchId, setLastSupersedesBatchId] = useState<string | undefined>();
   const [busyBatchId, setBusyBatchId] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -89,21 +91,33 @@ export function ExportCenter({ api }: ExportCenterProps) {
     const nextValue = key === "export_status"
       ? value === "REEXPORT_REQUIRED" ? value : "NOT_EXPORTED"
       : value || undefined;
+    const checkInProgress = previewController.current !== null;
     previewController.current?.abort();
     previewController.current = null;
     previewGeneration.current += 1;
     setFilters((current) => ({ ...current, [key]: nextValue }));
+    setNeedsRecheck(
+      (currentNeedsRecheck) =>
+        currentNeedsRecheck || previewSnapshot !== null || checkInProgress,
+    );
     setPreviewSnapshot(null);
+    setTask(null);
     setPreviewing(false);
     setMessage(null);
   }
 
   function changeExportType(value: string) {
+    const checkInProgress = previewController.current !== null;
     previewController.current?.abort();
     previewController.current = null;
     previewGeneration.current += 1;
     setExportType(value);
+    setNeedsRecheck(
+      (currentNeedsRecheck) =>
+        currentNeedsRecheck || previewSnapshot !== null || checkInProgress,
+    );
     setPreviewSnapshot(null);
+    setTask(null);
     setPreviewing(false);
     setMessage(null);
   }
@@ -125,6 +139,7 @@ export function ExportCenter({ api }: ExportCenterProps) {
         generation === previewGeneration.current
       ) {
         setPreviewSnapshot({ result, filters: filterSnapshot, generation });
+        setNeedsRecheck(false);
       }
     } catch (cause) {
       if (!isAbortError(cause) && mounted.current && generation === previewGeneration.current) {
@@ -144,6 +159,7 @@ export function ExportCenter({ api }: ExportCenterProps) {
       !exportType.trim()
     ) return;
     if (activePreview.filters.export_status === "REEXPORT_REQUIRED" && !supersedesBatchId) return;
+    setLastSupersedesBatchId(supersedesBatchId);
     setCreating(true);
     setError(null);
     setMessage(null);
@@ -151,12 +167,14 @@ export function ExportCenter({ api }: ExportCenterProps) {
     pollingController.current?.abort();
     const controller = new AbortController();
     pollingController.current = controller;
+    let createdTaskId: string | null = null;
     try {
       const created = await client.create({
         export_type: exportType.trim(),
         filters: activePreview.filters,
         ...(supersedesBatchId ? { supersedes_batch_id: supersedesBatchId } : {}),
       }, makeIdempotencyKey());
+      createdTaskId = created.task_id;
       if (!mounted.current || controller.signal.aborted) return;
       setTask({
         task_id: created.task_id,
@@ -176,13 +194,26 @@ export function ExportCenter({ api }: ExportCenterProps) {
       if (!mounted.current || controller.signal.aborted) return;
       setTask(completed);
       if (completed.status === "SUCCEEDED") {
-        setMessage("导出任务已完成。");
+        setMessage("Excel 已生成，可在本步骤或下方导出记录中下载。");
         await refreshBatches();
-      } else {
-        setError(completed.error ?? `导出任务终止：${completed.status}`);
       }
     } catch (cause) {
-      if (!isAbortError(cause) && mounted.current) setError(toMessage(cause));
+      if (!isAbortError(cause) && mounted.current) {
+        const failureMessage = toMessage(cause);
+        if (createdTaskId) {
+          setTask({
+            task_id: createdTaskId,
+            operation: "XLSX_EXPORT",
+            resource_id: "EXPORTS",
+            status: "FAILED",
+            progress: 0,
+            step: "PENDING",
+            error: failureMessage,
+          });
+        } else {
+          setError(failureMessage);
+        }
+      }
     } finally {
       if (pollingController.current === controller) pollingController.current = null;
       if (mounted.current) setCreating(false);
@@ -221,19 +252,23 @@ export function ExportCenter({ api }: ExportCenterProps) {
   }
 
   const reexportMode = filters.export_status === "REEXPORT_REQUIRED";
+  const generatedBatch = task?.status === "SUCCEEDED"
+    ? batches.find((batch) => batch.task_id === task.task_id)
+    : undefined;
+  const failedTask = task && ["FAILED", "CANCELLED", "INTERRUPTED"].includes(task.status);
 
   return (
     <main className="export-center">
       <header className="export-center-header">
         <div>
           <span className="eyebrow">模板驱动 · 可追溯</span>
-          <h1>导出中心</h1>
-          <p>预览最终校验结果，创建异步 XLSX 任务并从授权接口下载。</p>
+          <h1>导出数据</h1>
+          <p>选择并检查最终数据，生成 Excel，再从受控入口下载文件。</p>
         </div>
         <div className="export-center-summary" aria-label="导出摘要">
           <span><strong>{preview?.included.length ?? "—"}</strong> 拟包含</span>
           <span><strong>{preview?.excluded.length ?? "—"}</strong> 已排除</span>
-          <span><strong>{batches.length}</strong> 历史批次</span>
+          <span><strong>{batches.length}</strong> 导出记录</span>
         </div>
       </header>
 
@@ -241,8 +276,7 @@ export function ExportCenter({ api }: ExportCenterProps) {
         <ol>
           <li><span>1</span><h2>选择数据</h2></li>
           <li><span>2</span><h2>检查数据</h2></li>
-          <li><span>3</span><h2>生成 Excel</h2></li>
-          <li><span>4</span><h2>下载文件</h2></li>
+          <li><span>3</span><h2>生成并下载</h2></li>
         </ol>
       </nav>
 
@@ -252,8 +286,8 @@ export function ExportCenter({ api }: ExportCenterProps) {
       <section className="export-filter-card" aria-labelledby="export-filter-title">
         <div className="export-section-heading">
           <div>
-            <span className="eyebrow">第一步</span>
-            <h2 id="export-filter-title">筛选条件</h2>
+            <span className="eyebrow">第一步 · 选择数据</span>
+            <h2 id="export-filter-title">选择导出范围</h2>
           </div>
           <button
             type="button"
@@ -265,30 +299,35 @@ export function ExportCenter({ api }: ExportCenterProps) {
           </button>
         </div>
         <div className="export-filter-grid">
-          <label>表单编号<input value={filters.form_id ?? ""} onChange={(event) => changeFilter("form_id", event.target.value)} /></label>
-          <label>员工编号<input value={filters.employee_id ?? ""} onChange={(event) => changeFilter("employee_id", event.target.value)} /></label>
-          <label>工单编号<input value={filters.work_order_id ?? ""} onChange={(event) => changeFilter("work_order_id", event.target.value)} /></label>
+          <label>表单编号<input disabled={creating} value={filters.form_id ?? ""} onChange={(event) => changeFilter("form_id", event.target.value)} /></label>
+          <label>员工编号<input disabled={creating} value={filters.employee_id ?? ""} onChange={(event) => changeFilter("employee_id", event.target.value)} /></label>
+          <label>工单编号<input disabled={creating} value={filters.work_order_id ?? ""} onChange={(event) => changeFilter("work_order_id", event.target.value)} /></label>
           <label>
             审核状态
-            <select value={filters.review_status ?? ""} onChange={(event) => changeFilter("review_status", event.target.value as ExportFilters["review_status"])}>
+            <select disabled={creating} value={filters.review_status ?? ""} onChange={(event) => changeFilter("review_status", event.target.value as ExportFilters["review_status"])}>
               <option value="">全部</option>
               <option value="CONFIRMED">已确认</option>
             </select>
           </label>
           <label>
             导出状态
-            <select value={filters.export_status === "REEXPORT_REQUIRED" ? "REEXPORT_REQUIRED" : "NOT_EXPORTED"} onChange={(event) => changeFilter("export_status", event.target.value as ExportFilters["export_status"])}>
+            <select disabled={creating} value={filters.export_status === "REEXPORT_REQUIRED" ? "REEXPORT_REQUIRED" : "NOT_EXPORTED"} onChange={(event) => changeFilter("export_status", event.target.value as ExportFilters["export_status"])}>
               <option value="NOT_EXPORTED">未导出（普通新导出）</option>
-              <option value="REEXPORT_REQUIRED">需要重导（选择来源批次）</option>
+              <option value="REEXPORT_REQUIRED">需要重导（选择来源记录）</option>
             </select>
           </label>
           <label>
             文件用途
-            <select value={exportType} onChange={(event) => changeExportType(event.target.value)}>
+            <select disabled={creating} value={exportType} onChange={(event) => changeExportType(event.target.value)}>
               <option value="PAYROLL">工资记录</option>
             </select>
           </label>
         </div>
+        {needsRecheck && (
+          <div className="export-recheck-notice" role="status">
+            筛选条件已变化，请重新检查数据后再生成 Excel。
+          </div>
+        )}
         {reexportMode && (
           <div className="reexport-alert" role="alert">
             <strong>生成修正版</strong>
@@ -315,7 +354,7 @@ export function ExportCenter({ api }: ExportCenterProps) {
               disabled={!preview.included.length || creating || !exportType.trim() || reexportMode}
               onClick={() => void createExport()}
             >生成 Excel</button>
-            {reexportMode && <small className="reexport-create-hint">重导必须从下方选择一个覆盖全部表单旧版本的来源批次。</small>}
+            {reexportMode && <small className="reexport-create-hint">重导必须从下方选择一个覆盖全部表单旧版本的来源记录。</small>}
           </div>
 
           <div className="export-preview-card" role="region" aria-label="无法导出的记录">
@@ -348,9 +387,8 @@ export function ExportCenter({ api }: ExportCenterProps) {
             <ul>
               {preview.mapping_snapshot.map((mapping) => (
                 <li key={`${mapping.template_id}-${mapping.template_version}-${mapping.field_key}`}>
-                  <strong>{mapping.field_key}</strong>
-                  <span>{mapping.workbook} / {mapping.worksheet} / {mapping.business_column}</span>
-                  <small>{mapping.template_id} · V{mapping.template_version}</small>
+                  <strong>{mapping.worksheet}</strong>
+                  <span>Excel 列：{mapping.business_column}</span>
                 </li>
               ))}
             </ul>
@@ -361,18 +399,38 @@ export function ExportCenter({ api }: ExportCenterProps) {
       {task && (
         <section className="export-task-card" aria-live="polite">
           <div className="export-section-heading compact">
-            <div><span className="eyebrow">第三步 · 生成进度</span><h2>{taskStatusLabel(task.status)}</h2></div>
+            <div><span className="eyebrow">第三步 · 生成并下载</span><h2>{taskStatusLabel(task.status)}</h2></div>
             <strong>{task.progress}%</strong>
           </div>
           <progress value={task.progress} max={100} aria-label="导出任务进度" aria-valuenow={task.progress} />
           <span>{taskStepLabel(task.step)}</span>
+          {failedTask && (
+            <div className="export-task-failure" role="alert" aria-label="Excel 生成失败">
+              <strong>本次 Excel 未生成</strong>
+              <span>{task.error ?? "生成过程已中断，请重新生成。"}</span>
+              <button
+                type="button"
+                className="button button-primary"
+                disabled={creating || !preview}
+                onClick={() => void createExport(lastSupersedesBatchId)}
+              >重新生成 Excel</button>
+            </div>
+          )}
+          {generatedBatch && (
+            <button
+              type="button"
+              className="button button-primary export-download-ready"
+              disabled={busyBatchId === generatedBatch.export_batch_id}
+              onClick={() => void download(generatedBatch)}
+            >下载刚生成的 Excel</button>
+          )}
         </section>
       )}
 
-      <section className="export-history-card" role="region" aria-label="导出批次历史">
+      <section className="export-history-card" role="region" aria-label="导出记录">
         <div className="export-section-heading">
-          <div><span className="eyebrow">第四步 · 下载文件</span><h2>导出历史</h2></div>
-          <button type="button" className="button button-secondary" onClick={() => void refreshBatches()}>刷新历史</button>
+          <div><span className="eyebrow">独立记录区</span><h2>导出记录</h2></div>
+          <button type="button" className="button button-secondary" onClick={() => void refreshBatches()}>刷新记录</button>
         </div>
         {batches.length ? (
           <div className="export-batch-list">
@@ -391,14 +449,14 @@ export function ExportCenter({ api }: ExportCenterProps) {
                     {canReexport && <button type="button" className="button button-primary" disabled={creating} onClick={() => void createExport(batch.export_batch_id)}>用此记录生成修正版</button>}
                     {reexportMode && !canReexport && <>
                       <button type="button" className="button button-secondary" disabled>此记录不可用于重导</button>
-                      <small className="reexport-source-warning">该批次未包含每个拟重导表单的旧版本，请缩小筛选范围。</small>
+                      <small className="reexport-source-warning">该记录未包含每个拟重导表单的旧版本，请缩小筛选范围。</small>
                     </>}
                   </div>
                 </article>
               );
             })}
           </div>
-        ) : <p className="muted">尚无成功导出批次。</p>}
+        ) : <p className="muted">尚无成功导出记录。</p>}
         {batchDetail && (
           <aside className="export-batch-detail" aria-label="追溯详情">
             <div className="export-section-heading compact">

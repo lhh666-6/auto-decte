@@ -103,14 +103,17 @@ function deferred<T>() {
 }
 
 describe("ExportCenter", () => {
-  it("presents export as four business steps and hides technical details until requested", async () => {
+  it("presents export as three business steps and keeps records outside the flow", async () => {
     const user = userEvent.setup();
     const api = makeApi();
     render(<ExportCenter api={api} />);
 
-    for (const name of ["选择数据", "检查数据", "生成 Excel", "下载文件"]) {
+    for (const name of ["选择数据", "检查数据", "生成并下载"]) {
       expect(screen.getByRole("heading", { name })).toBeTruthy();
     }
+    expect(screen.queryByRole("heading", { name: "下载文件" })).toBeNull();
+    expect(screen.getByRole("region", { name: "导出记录" })).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "将要导出的记录" })).toBeNull();
     expect(screen.queryByText("BATCH-OLD")).toBeNull();
     expect(screen.queryByText(/file-sha/)).toBeNull();
     expect(screen.queryByText("payroll-old.xlsx")).toBeNull();
@@ -178,7 +181,9 @@ describe("ExportCenter", () => {
     expect(within(excluded).getByText("填写内容不在模板允许范围内。")).toBeTruthy();
     expect(within(excluded).getByText("必填；允许值：A、B；范围：1–10")).toBeTruthy();
     expect(within(excluded).queryByText("RULE_BLOCKED")).toBeNull();
-    expect(screen.getByText("企业工资记录.xlsx / 计时考核单 / employee_id")).toBeTruthy();
+    expect(screen.getByText("Excel 列：employee_id")).toBeTruthy();
+    expect(screen.queryByText(/PAYROLL_HOURLY/)).toBeNull();
+    expect(screen.queryByText(/企业工资记录\.xlsx/)).toBeNull();
   });
 
   it("discards an aborted stale preview and creates only from the latest filter snapshot", async () => {
@@ -202,6 +207,7 @@ describe("ExportCenter", () => {
     await user.clear(formId);
     await user.type(formId, "FORM-B");
     expect(firstSignal?.aborted).toBe(true);
+    expect(screen.getByText("筛选条件已变化，请重新检查数据后再生成 Excel。")).toBeTruthy();
     await act(async () => first.resolve({
       ...preview,
       included: [{ form_id: "FORM-A", record_version: 1, reasons: [] }],
@@ -239,7 +245,16 @@ describe("ExportCenter", () => {
       options?.onUpdate?.({ ...succeededTask, status: "RUNNING", progress: 55, step: "WRITE_WORKBOOK" });
       return pendingTask;
     });
-    const api = makeApi({ waitForTask });
+    const newBatch: ExportBatch = {
+      ...oldBatch,
+      export_batch_id: "BATCH-NEW",
+      task_id: "TASK-NEW",
+      download_name: "payroll-new.xlsx",
+    };
+    const listBatches = vi.fn()
+      .mockResolvedValueOnce([oldBatch])
+      .mockResolvedValue([newBatch, oldBatch]);
+    const api = makeApi({ waitForTask, listBatches });
     const createObjectURL = vi.fn().mockReturnValue("blob:export");
     const revokeObjectURL = vi.fn();
     Object.defineProperty(URL, "createObjectURL", { configurable: true, value: createObjectURL });
@@ -253,12 +268,16 @@ describe("ExportCenter", () => {
     expect(await screen.findByText("正在写入工作表")).toBeTruthy();
     expect(screen.getByRole("progressbar").getAttribute("aria-valuenow")).toBe("55");
     await act(async () => { finishTask(succeededTask); });
-    expect(await screen.findByText("导出任务已完成。" )).toBeTruthy();
+    expect(await screen.findByText("Excel 已生成，可在本步骤或下方导出记录中下载。" )).toBeTruthy();
     expect(api.listBatches).toHaveBeenCalledTimes(2);
 
-    const history = screen.getByRole("region", { name: "导出批次历史" });
-    expect(within(history).getByText("导出记录 OLD")).toBeTruthy();
-    await user.click(within(history).getByRole("button", { name: "下载文件" }));
+    await user.click(await screen.findByRole("button", { name: "下载刚生成的 Excel" }));
+    await waitFor(() => expect(api.downloadBatch).toHaveBeenCalledWith("BATCH-NEW"));
+
+    const history = screen.getByRole("region", { name: "导出记录" });
+    const oldRecord = within(history).getByText("导出记录 OLD").closest("article");
+    expect(oldRecord).toBeTruthy();
+    await user.click(within(oldRecord as HTMLElement).getByRole("button", { name: "下载文件" }));
     await waitFor(() => expect(api.downloadBatch).toHaveBeenCalledWith("BATCH-OLD"));
     expect(createObjectURL).toHaveBeenCalledWith(expect.any(Blob));
   });
@@ -274,7 +293,7 @@ describe("ExportCenter", () => {
     expect((await screen.findByRole("alert")).textContent).toContain("记录在上次导出后发生修改");
     const ordinaryCreate = screen.getByRole("button", { name: "生成 Excel" });
     expect(ordinaryCreate.hasAttribute("disabled")).toBe(true);
-    expect(screen.getByText("重导必须从下方选择一个覆盖全部表单旧版本的来源批次。")).toBeTruthy();
+    expect(screen.getByText("重导必须从下方选择一个覆盖全部表单旧版本的来源记录。")).toBeTruthy();
     await user.click(ordinaryCreate);
     expect(api.create).not.toHaveBeenCalled();
     await user.click(screen.getByRole("button", { name: "用此记录生成修正版" }));
@@ -317,7 +336,7 @@ describe("ExportCenter", () => {
     expect(screen.queryByRole("button", { name: "用此记录生成修正版" })).toBeNull();
     const disabledSource = screen.getByRole("button", { name: "此记录不可用于重导" });
     expect(disabledSource.hasAttribute("disabled")).toBe(true);
-    expect(screen.getByText("该批次未包含每个拟重导表单的旧版本，请缩小筛选范围。")).toBeTruthy();
+    expect(screen.getByText("该记录未包含每个拟重导表单的旧版本，请缩小筛选范围。")).toBeTruthy();
     await user.click(disabledSource);
     expect(api.create).not.toHaveBeenCalled();
   });
@@ -349,6 +368,28 @@ describe("ExportCenter", () => {
     expect(pollingSignal?.aborted).toBe(true);
     await Promise.resolve();
     expect(api.listBatches).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows a failed generation reason and retries from the checked snapshot", async () => {
+    const user = userEvent.setup();
+    const failedTask: ExportTask = {
+      ...succeededTask,
+      status: "FAILED",
+      progress: 68,
+      step: "WRITE_WORKBOOK",
+      error: "写入工作表失败，请检查文件占用。",
+    };
+    const api = makeApi({ waitForTask: vi.fn().mockResolvedValue(failedTask) });
+    render(<ExportCenter api={api} />);
+
+    await user.click(screen.getByRole("button", { name: "检查可导出的数据" }));
+    await user.click(await screen.findByRole("button", { name: "生成 Excel" }));
+
+    const failure = await screen.findByRole("alert", { name: "Excel 生成失败" });
+    expect(failure.textContent).toContain("本次 Excel 未生成");
+    expect(failure.textContent).toContain("写入工作表失败，请检查文件占用。");
+    await user.click(within(failure).getByRole("button", { name: "重新生成 Excel" }));
+    await waitFor(() => expect(api.create).toHaveBeenCalledTimes(2));
   });
 
   it("keeps the newest batch refresh when an older list request resolves last", async () => {

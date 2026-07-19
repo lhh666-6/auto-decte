@@ -126,6 +126,12 @@
 - 原因：仅在前端显示警告可被旧客户端或直接 API 调用绕过；仅凭高可靠度候选也不能证明姓名经过人员核对。员工有效状态和显式确认声明进入提交边界后，才能阻止自动放行并保留责任人、时间和原因。
 - 证据：`app/modules/review/facade_ds.py`、`app/api/schemas/review_ds.py`、`frontend/apps/web/src/workbench/FieldReviewTable.tsx`、`ReviewWorkbenchPage.tsx` 及 Task 12 审核工作流、主数据和组件测试。
 
+### D-021：导出检查是生成前快照，导出记录不属于操作步骤
+
+- 决定：工作人员按“选择数据 → 检查数据 → 生成并下载”完成一次导出；检查结果只在主动检查后出现，任何筛选或导出类型变化都废弃旧结果并要求重新检查。生成任务的进度、失败和即时下载留在第三步，历史导出记录作为独立区域展示；技术标识只在主动展开的追溯详情中提供。
+- 原因：把历史记录编号为第四步会混淆当前操作和既有产物，筛选变化后保留旧预览又可能生成与界面条件不一致的 Excel。三步快照约束可以维持现有后端不可变批次语义，同时让失败恢复和下载入口更接近工作人员当前动作。
+- 证据：`frontend/apps/web/src/ExportCenter_ds.tsx`、`frontend/apps/web/src/export-center.test.tsx` 及 Task 13 导出 API/组件测试、TypeScript 和生产构建。
+
 ## 已否决方案及原因
 
 | 已否决方案 | 原因 |
