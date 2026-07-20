@@ -14,3 +14,4 @@ frontend/**/dist/
 .superpowers/
 data/
 *.xlsx
+!samples/enterprise_payroll/*.xlsx
