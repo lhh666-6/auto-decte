@@ -1,7 +1,6 @@
 """Repository interfaces for electronic forms persistence."""
 
 from abc import ABC, abstractmethod
-from typing import Iterable, Optional
 
 from app.modules.electronic_forms.models_ds import (
     ElectronicDraft,

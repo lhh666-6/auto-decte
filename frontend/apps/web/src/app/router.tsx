@@ -6,6 +6,19 @@ import { ExportCenter } from "../ExportCenter_ds";
 import { MasterDataCenter } from "../MasterDataCenter_ds";
 import { TemplateStudio } from "../TemplateStudio_ds";
 import { ReviewWorkbenchPage } from "../workbench/ReviewWorkbenchPage";
+import { MobileLayout } from "../mobile/MobileLayout";
+import { MobileLoginPage } from "../mobile/MobileLoginPage";
+import { MobileHomePage } from "../mobile/MobileHomePage";
+import { MobileRecordPage } from "../mobile/MobileRecordPage";
+import { MobileBambooProcessPage } from "../mobile/MobileBambooProcessPage";
+import { MobileSheetPiecePage } from "../mobile/MobileSheetPiecePage";
+import { MobileTeamSheetPiecePage } from "../mobile/MobileTeamSheetPiecePage";
+import { MobileDraftsPage } from "../mobile/MobileDraftsPage";
+import { MobileOutboxPage } from "../mobile/MobileOutboxPage";
+import { MobileSubmissionsPage } from "../mobile/MobileSubmissionsPage";
+import { MobileProfilePage } from "../mobile/MobileProfilePage";
+import { MobileSessionProvider } from "../mobile/session/MobileSessionProvider";
+import { RequireMobileSession } from "../mobile/session/RequireMobileSession";
 import { AppShell } from "./AppShell";
 
 function ReviewRoute() {
@@ -83,6 +96,7 @@ function NotFound() {
 export function AppRoutes() {
   return (
     <Routes>
+      {/* Desktop routes */}
       <Route element={<AppShell />}>
         <Route index element={<Navigate to="/workbench/review" replace />} />
         <Route path="workbench/type-confirmation" element={<ReviewRoute />} />
@@ -98,6 +112,23 @@ export function AppRoutes() {
         <Route path="master-data/processes" element={<MasterDataRoute />} />
         <Route path="exports" element={<ExportsRoute />} />
         <Route path="*" element={<NotFound />} />
+      </Route>
+
+      {/* Mobile routes — separate layout with bottom tab nav */}
+      <Route element={<MobileSessionProvider><MobileLayout /></MobileSessionProvider>}>
+        <Route path="mobile" element={<Navigate to="/mobile/home" replace />} />
+        <Route path="mobile/login" element={<MobileLoginPage />} />
+        <Route element={<RequireMobileSession />}>
+          <Route path="mobile/home" element={<MobileHomePage />} />
+          <Route path="mobile/record" element={<MobileRecordPage />} />
+          <Route path="mobile/record/bamboo-process" element={<MobileBambooProcessPage />} />
+          <Route path="mobile/record/sheet-piece" element={<MobileSheetPiecePage />} />
+          <Route path="mobile/record/team-sheet-piece" element={<MobileTeamSheetPiecePage />} />
+          <Route path="mobile/drafts" element={<MobileDraftsPage />} />
+          <Route path="mobile/outbox" element={<MobileOutboxPage />} />
+          <Route path="mobile/submissions" element={<MobileSubmissionsPage />} />
+          <Route path="mobile/profile" element={<MobileProfilePage />} />
+        </Route>
       </Route>
     </Routes>
   );

@@ -87,6 +87,26 @@ export {
   type ImportItemStatus,
   type UploadImageResult,
 } from "./imports_ds.js";
+export {
+  MobileApiClient,
+  MobileApiError,
+  mobileApiClient,
+  type MobileActiveResource,
+  type MobileAvailableForm,
+  type MobileContext,
+  type MobileFetcher,
+  type MobileFormField,
+  type MobileFormSchema,
+  type MobileLoginResponse,
+  type MobileOption,
+  type MobileProblem,
+  type MobileProductionContext,
+  type MobileSession,
+  type MobileSubmissionInput,
+  type MobileSubmissionListItem,
+  type MobileSubmissionReceipt,
+  type MobileTeamMember,
+} from "./mobile_ds.js";
 
 // When generated types exist, uncomment:
 // export type * from "./generated_ds.js";

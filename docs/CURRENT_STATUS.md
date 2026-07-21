@@ -1,6 +1,14 @@
 # 当前项目状态
 
-最后更新：2026-07-19
+最后更新：2026-07-21
+
+## PWA 移动生产接线（代码与自动化已完成）
+
+`codex/low-token-ui-v2` 已完成移动端 Phase 1 与后续生产接线：电子提交在一个数据库事务内创建 Form、Field、Audit、Receipt 和 FactRecord；移动 PIN、失败锁定和会话持久化；HttpOnly Cookie + CSRF；已发布 Definition、主数据生产上下文和班组成员查询；IndexedDB 草稿/outbox；幂等重放与 401/403/409/422/5xx 分流；PWA 安装、更新提示和私有数据 NetworkOnly 缓存策略。
+
+生产移动源代码已移除固定员工、固定 PIN、Bearer/localStorage token、进程内会话/草稿/提交字典和旧双实现。班组长代填由服务端校验目标员工属于同一班组。竹丝笼资源没有可靠生产数据源，接口明确返回 503，页面显示不可填写，没有使用演示笼号补位。
+
+自动检查基线：Python 全套 452 项；前端 46 个测试文件、237 项；Ruff、Mypy、TypeScript 和 Vite PWA 生产构建通过。详细范围与人工待验项见 [PWA_MOBILE_ACCEPTANCE.md](acceptance/PWA_MOBILE_ACCEPTANCE.md)。Android/iOS 安装、横竖屏、现场弱网、公共设备换人和 Service Worker 更新仍需真机人工验证，在取得证据前不得写“已投产”。
 
 ## V2 开发主线
 

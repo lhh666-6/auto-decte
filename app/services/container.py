@@ -11,6 +11,15 @@ from app.adapters.ai.report_assistant_ds import (
     DisabledReportAssistant,
     StructuredReportAssistantProvider,
 )
+from app.adapters.database.electronic_definition_repository_ds import (
+    SqlAlchemyElectronicDefinitionRepository,
+)
+from app.adapters.database.fact_record_repository_ds import (
+    SqlAlchemyFactRecordRepository,
+)
+from app.adapters.database.mobile_identity_repository_ds import (
+    SqlAlchemyMobileIdentityRepository,
+)
 from app.adapters.database.models import Base
 from app.adapters.database.report_definition_repository_ds import (
     SqlAlchemyReportDefinitionRepository,
@@ -24,14 +33,19 @@ from app.adapters.storage.local import LocalEvidenceStorage
 from app.adapters.templates.print_renderer_ds import TemplatePrintRenderer
 from app.adapters.vector.local import LocalVectorIndex
 from app.application.ai_review_forms import AIReviewForms
+from app.application.electronic_submissions_ds import ElectronicFormIntegration
 from app.application.export_forms import ExportForms
 from app.application.import_forms import ImportForms
 from app.application.job_profiles_ds import JobProfiles
+from app.application.mobile_identity_ds import MobileIdentityService
 from app.application.query_forms import QueryForms
 from app.application.recognize_forms import RecognizeForms
 from app.application.report_assistant_ds import ReportAssistant
 from app.application.review_forms import ReviewForms
 from app.application.template_versions_ds import TemplateVersions
+from app.infrastructure.database.electronic_submission_uow_ds import (
+    SqlAlchemyElectronicSubmissionUnitOfWork,
+)
 from app.infrastructure.database.migrations import (
     ensure_auto_created_schema_compatibility,
     is_alembic_managed,
@@ -41,6 +55,8 @@ from app.infrastructure.database.migrations import (
 from app.infrastructure.database.sqlite_ds import create_sqlite_engine
 from app.infrastructure.database.uow_ds import SqlAlchemyUnitOfWork
 from app.infrastructure.tasks.sqlite_store_ds import SqliteTaskStore
+from app.modules.electronic_forms.facade_ds import ElectronicDefinitionService
+from app.modules.fact_records.facade_ds import FactRecordFacade
 from app.modules.master_data.facade_ds import MasterDataFacade
 from app.modules.master_data.repository_ds import SqlAlchemyMasterDataRepository
 from app.modules.reporting.facade_ds import ReportingFacade
@@ -89,6 +105,13 @@ class Services:
     evidence_storage: LocalEvidenceStorage
     master_data_repository: SqlAlchemyMasterDataRepository
     master_data: MasterDataFacade
+    fact_record_repository: SqlAlchemyFactRecordRepository
+    fact_records: FactRecordFacade
+    electronic_integration: ElectronicFormIntegration
+    mobile_identity_repository: SqlAlchemyMobileIdentityRepository
+    mobile_identity: MobileIdentityService
+    electronic_definition_repository: SqlAlchemyElectronicDefinitionRepository
+    electronic_definitions: ElectronicDefinitionService
 
 
 def build_services(settings: Settings, *, install_seed_templates: bool = False) -> Services:
@@ -120,6 +143,15 @@ def build_services(settings: Settings, *, install_seed_templates: bool = False) 
     review_repository = SqlAlchemyReviewLeaseRepository(engine)
     master_data_repository = SqlAlchemyMasterDataRepository(engine)
     master_data = MasterDataFacade(master_data_repository)
+    fact_record_repository = SqlAlchemyFactRecordRepository(engine)
+    fact_records = FactRecordFacade(fact_record_repository)
+    electronic_integration = ElectronicFormIntegration(
+        uow_factory=lambda: SqlAlchemyElectronicSubmissionUnitOfWork(engine),
+    )
+    mobile_identity_repository = SqlAlchemyMobileIdentityRepository(engine)
+    mobile_identity = MobileIdentityService(repository=mobile_identity_repository)
+    electronic_definition_repository = SqlAlchemyElectronicDefinitionRepository(engine)
+    electronic_definitions = ElectronicDefinitionService(electronic_definition_repository)
     review_leases = ReviewLeaseService(
         review_repository,
         ttl_seconds=settings.review_lease_seconds,
@@ -201,6 +233,13 @@ def build_services(settings: Settings, *, install_seed_templates: bool = False) 
         evidence_storage=storage,
         master_data_repository=master_data_repository,
         master_data=master_data,
+        fact_record_repository=fact_record_repository,
+        fact_records=fact_records,
+        electronic_integration=electronic_integration,
+        mobile_identity_repository=mobile_identity_repository,
+        mobile_identity=mobile_identity,
+        electronic_definition_repository=electronic_definition_repository,
+        electronic_definitions=electronic_definitions,
     )
     tasks.recover_interrupted()
     services.export_handler.recover_prepared()

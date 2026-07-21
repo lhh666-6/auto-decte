@@ -12,8 +12,6 @@ from app.adapters.database.template_repository_ds import SqlAlchemyTemplateRepos
 from app.modules.electronic_forms.facade_ds import ElectronicDefinitionService
 from app.modules.electronic_forms.models_ds import (
     ElectronicFormDefinitionVersion,
-    PresentationConfig,
-    PresentationField,
 )
 
 
@@ -44,7 +42,7 @@ def validate_presentation_fields(
             f"Template version {definition.template_version_id} not found.",
         )
     valid_keys: set[str] = set()
-    for field_def in template.field_definitions or []:
+    for field_def in template.fields:
         valid_keys.add(field_def.field_key)
     config = definition.presentation_config
     if config is None:
@@ -98,10 +96,8 @@ def _validate_job_profile(
     template_repo: SqlAlchemyTemplateRepository,
 ) -> None:
     """Check that the job profile version exists and is published."""
-    # Scan all known profile keys; in production this would be a direct lookup.
-    # For now we check that the profile exists in the template_repo.
-    profiles = template_repo.list_job_profiles("")  # empty returns all?
-    # Actually list_job_profiles requires a profile_key. We iterate template keys.
+    # The repository currently exposes profiles by template key, so scan those
+    # groups until a direct version-id lookup is available.
     template_keys = template_repo.list_template_keys()
     for tk in template_keys:
         for profile in template_repo.list_job_profiles(tk):

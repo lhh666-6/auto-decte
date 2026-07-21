@@ -5,11 +5,9 @@ Replaces bare dict[str, Any] contracts in the current prototype.
 
 from __future__ import annotations
 
-from datetime import datetime
 from typing import Any
 
 from pydantic import BaseModel, Field
-
 
 # ── Auth ────────────────────────────────────────────────────────
 
@@ -20,7 +18,6 @@ class LoginRequest(BaseModel):
 
 
 class LoginResponse(BaseModel):
-    token: str
     employee_name: str
     employee_code: str
     team_name: str
@@ -45,6 +42,7 @@ class AvailableFormItem(BaseModel):
     form_type: str
     title: str
     modes: list[str]
+    definition_version_id: str
     allowed_processes: list[str] | None = None
 
 
@@ -69,6 +67,7 @@ class FormSchemaResponse(BaseModel):
     form_type: str
     title: str
     modes: list[str]
+    definition_version_id: str
     version: str = "1.0"
     fields: list[FormFieldDefSchema]
 

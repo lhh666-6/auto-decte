@@ -1,6 +1,7 @@
 """SQLAlchemy implementations of electronic forms repository interfaces."""
 
 from datetime import UTC, datetime
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -189,7 +190,9 @@ class SqlAlchemyElectronicSubmissionReceiptRepository(ElectronicSubmissionReceip
 
 # ── Row ↔ Domain mappers ────────────────────────────────────────
 
-def _definition_from_row(row: ElectronicFormDefinitionVersionRow) -> ElectronicFormDefinitionVersion:
+def _definition_from_row(
+    row: ElectronicFormDefinitionVersionRow,
+) -> ElectronicFormDefinitionVersion:
     return ElectronicFormDefinitionVersion(
         definition_version_id=row.definition_version_id,
         form_type=row.form_type,
@@ -235,7 +238,9 @@ def _receipt_from_row(row: ElectronicSubmissionReceiptRow) -> ElectronicSubmissi
     )
 
 
-def _presentation_config_to_dict(config: PresentationConfig | None) -> dict | None:
+def _presentation_config_to_dict(
+    config: PresentationConfig | None,
+) -> dict[str, Any] | None:
     if config is None:
         return None
     return {
@@ -253,7 +258,9 @@ def _presentation_config_to_dict(config: PresentationConfig | None) -> dict | No
     }
 
 
-def _presentation_config_from_dict(data: dict | None) -> PresentationConfig | None:
+def _presentation_config_from_dict(
+    data: dict[str, Any] | None,
+) -> PresentationConfig | None:
     if data is None:
         return None
     return PresentationConfig(

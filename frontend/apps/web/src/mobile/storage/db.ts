@@ -14,6 +14,7 @@ export interface IndustrialFormPWASchema extends DBSchema {
   drafts: {
     key: string; // "owner:device:local_draft_id"
     value: {
+      storageKey: string;
       localDraftId: string;
       owner: string;
       deviceId: string;
@@ -33,8 +34,11 @@ export interface IndustrialFormPWASchema extends DBSchema {
       attemptCount: number;
       nextRetryAt: string;
       lastError: string | null;
+      lastErrorCode: string | null;
+      lastRequestId: string | null;
       status: "PENDING" | "SUBMITTING" | "FAILED_RETRYABLE" | "FAILED_FINAL";
       createdAt: string;
+      draftRef?: { owner: string; deviceId: string; localDraftId: string };
     };
     indexes: { "by-status": string };
   };
@@ -64,13 +68,18 @@ let _dbPromise: Promise<IDBPDatabase<IndustrialFormPWASchema>> | null = null;
 
 export function getDB(): Promise<IDBPDatabase<IndustrialFormPWASchema>> {
   if (!_dbPromise) {
-    _dbPromise = openDB<IndustrialFormPWASchema>("industrial-form-pwa", 1, {
-      upgrade(db) {
-        if (!db.objectStoreNames.contains("drafts")) {
-          db.createObjectStore("drafts", { keyPath: "localDraftId" });
+    _dbPromise = openDB<IndustrialFormPWASchema>("industrial-form-pwa", 2, {
+      upgrade(db, oldVersion) {
+        if (oldVersion < 2 && db.objectStoreNames.contains("drafts")) {
+          db.deleteObjectStore("drafts");
         }
-        const outbox = db.createObjectStore("outbox", { keyPath: "outboxId" });
-        if (!outbox.indexNames.contains("by-status")) {
+        if (!db.objectStoreNames.contains("drafts")) {
+          db.createObjectStore("drafts", { keyPath: "storageKey" });
+        }
+        const outbox = db.objectStoreNames.contains("outbox")
+          ? null
+          : db.createObjectStore("outbox", { keyPath: "outboxId" });
+        if (outbox && !outbox.indexNames.contains("by-status")) {
           outbox.createIndex("by-status", "status");
         }
         if (!db.objectStoreNames.contains("referenceSnapshots")) {
@@ -88,7 +97,15 @@ export function getDB(): Promise<IDBPDatabase<IndustrialFormPWASchema>> {
 /** Close the DB connection (e.g., on logout). */
 export function closeDB(): void {
   if (_dbPromise) {
-    _dbPromise.then((db) => db.close()).catch(() => {});
+    void _dbPromise.then(
+      (db) => db.close(),
+      (error: unknown) => console.warn("[PWA] failed to close IndexedDB", error),
+    );
     _dbPromise = null;
   }
+}
+
+export async function clearSessionMetadata(): Promise<void> {
+  const db = await getDB();
+  await db.clear("sessionMetadata");
 }

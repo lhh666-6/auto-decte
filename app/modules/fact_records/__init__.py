@@ -1,0 +1,1 @@
+"""Fact record module — unified business facts from all submission sources."""

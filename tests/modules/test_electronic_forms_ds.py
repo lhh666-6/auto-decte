@@ -6,6 +6,12 @@ conflicts, receipt idempotency, and payload conflict detection.
 
 import pytest
 
+from app.modules.electronic_forms.facade_ds import (
+    ElectronicDefinitionService,
+    ElectronicDraftService,
+    ElectronicSubmissionService,
+    _payload_hash,
+)
 from app.modules.electronic_forms.models_ds import (
     DefinitionNotPublished,
     DefinitionStatus,
@@ -14,17 +20,9 @@ from app.modules.electronic_forms.models_ds import (
     ElectronicFormDefinitionVersion,
     ElectronicSubmissionReceipt,
     IdempotencyConflict,
-    PresentationConfig,
-    PresentationField,
     ReceiptOperation,
     SchemaVersionConflict,
     SubmissionReceiptStatus,
-)
-from app.modules.electronic_forms.facade_ds import (
-    ElectronicDefinitionService,
-    ElectronicDraftService,
-    ElectronicSubmissionService,
-    _payload_hash,
 )
 from app.modules.electronic_forms.ports_ds import (
     ElectronicDraftRepository,
@@ -32,8 +30,8 @@ from app.modules.electronic_forms.ports_ds import (
     ElectronicSubmissionReceiptRepository,
 )
 
-
 # ── In-memory fakes for unit-test isolation ─────────────────────
+
 
 class _FakeDefinitionRepo(ElectronicFormDefinitionRepository):
     def __init__(self) -> None:
@@ -66,8 +64,9 @@ class _FakeDraftRepo(ElectronicDraftRepository):
         return self._store.get(did)
 
     def list_by_owner(self, owner: str, device: str) -> list[ElectronicDraft]:
-        return [d for d in self._store.values()
-                if d.owner_actor_id == owner and d.device_id == device]
+        return [
+            d for d in self._store.values() if d.owner_actor_id == owner and d.device_id == device
+        ]
 
     def update(self, d: ElectronicDraft) -> None:
         if d.draft_id not in self._store:
@@ -89,12 +88,19 @@ class _FakeReceiptRepo(ElectronicSubmissionReceiptRepository):
         return self._store.get(rid)
 
     def find_idempotent(
-        self, actor_id: str, device_id: str, operation: str, client_submission_id: str,
+        self,
+        actor_id: str,
+        device_id: str,
+        operation: str,
+        client_submission_id: str,
     ) -> ElectronicSubmissionReceipt | None:
         for r in self._store.values():
-            if (r.actor_id == actor_id and r.device_id == device_id
-                    and r.operation.value == operation
-                    and r.client_submission_id == client_submission_id):
+            if (
+                r.actor_id == actor_id
+                and r.device_id == device_id
+                and r.operation.value == operation
+                and r.client_submission_id == client_submission_id
+            ):
                 return r
         return None
 
@@ -105,6 +111,7 @@ class _FakeReceiptRepo(ElectronicSubmissionReceiptRepository):
 
 
 # ── Fixtures ────────────────────────────────────────────────────
+
 
 @pytest.fixture
 def def_repo() -> _FakeDefinitionRepo:
@@ -132,7 +139,9 @@ def receipt_repo() -> _FakeReceiptRepo:
 
 
 @pytest.fixture
-def sub_svc(receipt_repo: _FakeReceiptRepo, def_svc: ElectronicDefinitionService) -> ElectronicSubmissionService:
+def sub_svc(
+    receipt_repo: _FakeReceiptRepo, def_svc: ElectronicDefinitionService
+) -> ElectronicSubmissionService:
     # Publish a definition first
     d = def_svc.create_draft(
         form_type="SHEET_PIECE_MEASUREMENT",
@@ -145,6 +154,7 @@ def sub_svc(receipt_repo: _FakeReceiptRepo, def_svc: ElectronicDefinitionService
 
 
 # ── Definition tests ───────────────────────────────────────────
+
 
 class TestDefinitionLifecycle:
     def test_create_draft_increments_version(self, def_svc: ElectronicDefinitionService) -> None:
@@ -160,19 +170,27 @@ class TestDefinitionLifecycle:
 
     def test_publish_sets_status_and_timestamp(self, def_svc: ElectronicDefinitionService) -> None:
         d = def_svc.create_draft(
-            "WITH_TPL", "有模板", template_version_id="tpl-v1", created_by="u1",
+            "WITH_TPL",
+            "有模板",
+            template_version_id="tpl-v1",
+            created_by="u1",
         )
         published = def_svc.publish(d.definition_version_id)
         assert published.status == DefinitionStatus.PUBLISHED
         assert published.published_at is not None
 
-    def test_get_published_raises_when_not_published(self, def_svc: ElectronicDefinitionService) -> None:
+    def test_get_published_raises_when_not_published(
+        self, def_svc: ElectronicDefinitionService
+    ) -> None:
         with pytest.raises(DefinitionNotPublished):
             def_svc.get_published("NONEXISTENT")
 
     def test_retire_changes_status(self, def_svc: ElectronicDefinitionService) -> None:
         d = def_svc.create_draft(
-            "RETIRE_TEST", "可废弃", template_version_id="tpl-v1", created_by="u1",
+            "RETIRE_TEST",
+            "可废弃",
+            template_version_id="tpl-v1",
+            created_by="u1",
         )
         def_svc.publish(d.definition_version_id)
         retired = def_svc.retire(d.definition_version_id)
@@ -180,6 +198,7 @@ class TestDefinitionLifecycle:
 
 
 # ── Draft tests ────────────────────────────────────────────────
+
 
 class TestDraftLifecycle:
     def test_save_new_draft(self, draft_svc: ElectronicDraftService) -> None:
@@ -194,28 +213,40 @@ class TestDraftLifecycle:
         assert d.values["block_count"] == 5
 
     def test_update_existing_draft_requires_revision_match(
-        self, draft_svc: ElectronicDraftService,
+        self,
+        draft_svc: ElectronicDraftService,
     ) -> None:
         d = draft_svc.save("actor-1", "E001", "dev-a", "efd-1", {"x": 1})
         # Update with correct revision
         d2 = draft_svc.save(
-            "actor-1", "E001", "dev-a", "efd-1",
-            {"x": 2}, draft_id=d.draft_id,
+            "actor-1",
+            "E001",
+            "dev-a",
+            "efd-1",
+            {"x": 2},
+            draft_id=d.draft_id,
         )
         assert d2.revision == 2
 
     def test_update_fails_when_owner_mismatch(
-        self, draft_svc: ElectronicDraftService, draft_repo: _FakeDraftRepo,
+        self,
+        draft_svc: ElectronicDraftService,
+        draft_repo: _FakeDraftRepo,
     ) -> None:
         d = draft_svc.save("actor-1", "E001", "dev-a", "efd-1", {"x": 1})
         with pytest.raises(ValueError, match="does not belong"):
             draft_svc.save(
-                "actor-2", "E001", "dev-a", "efd-1",
-                {"x": 2}, draft_id=d.draft_id,
+                "actor-2",
+                "E001",
+                "dev-a",
+                "efd-1",
+                {"x": 2},
+                draft_id=d.draft_id,
             )
 
     def test_list_drafts_filters_by_owner_and_device(
-        self, draft_svc: ElectronicDraftService,
+        self,
+        draft_svc: ElectronicDraftService,
     ) -> None:
         draft_svc.save("actor-1", "E001", "dev-a", "efd-1", {"x": 1})
         draft_svc.save("actor-1", "E001", "dev-b", "efd-1", {"x": 2})
@@ -233,9 +264,11 @@ class TestDraftLifecycle:
 
 # ── Submission / receipt tests ─────────────────────────────────
 
+
 class TestSubmissionIdempotency:
     def test_same_client_id_same_payload_returns_same_receipt(
-        self, sub_svc: ElectronicSubmissionService,
+        self,
+        sub_svc: ElectronicSubmissionService,
     ) -> None:
         r1 = sub_svc.submit(
             form_type="SHEET_PIECE_MEASUREMENT",
@@ -260,7 +293,8 @@ class TestSubmissionIdempotency:
         assert r2.receipt_id == r1.receipt_id
 
     def test_same_client_id_different_payload_raises_conflict(
-        self, sub_svc: ElectronicSubmissionService,
+        self,
+        sub_svc: ElectronicSubmissionService,
     ) -> None:
         sub_svc.submit(
             form_type="SHEET_PIECE_MEASUREMENT",
@@ -285,7 +319,8 @@ class TestSubmissionIdempotency:
             )
 
     def test_idempotency_is_scoped_to_actor_and_device(
-        self, sub_svc: ElectronicSubmissionService,
+        self,
+        sub_svc: ElectronicSubmissionService,
     ) -> None:
         sub_svc.submit(
             form_type="SHEET_PIECE_MEASUREMENT",
@@ -311,12 +346,16 @@ class TestSubmissionIdempotency:
         assert r2.actor_id == "actor-2"
 
     def test_schema_version_mismatch_raises_conflict(
-        self, sub_svc: ElectronicSubmissionService, def_svc: ElectronicDefinitionService,
+        self,
+        sub_svc: ElectronicSubmissionService,
+        def_svc: ElectronicDefinitionService,
     ) -> None:
         # Create a second draft (not published)
         def_svc.create_draft(
-            "SHEET_PIECE_MEASUREMENT", "配片 v2",
-            template_version_id="tpl-v1", created_by="test",
+            "SHEET_PIECE_MEASUREMENT",
+            "配片 v2",
+            template_version_id="tpl-v1",
+            created_by="test",
         )
         with pytest.raises(SchemaVersionConflict):
             sub_svc.submit(
@@ -366,6 +405,7 @@ class TestDraftRevisionConflict:
 
 
 # ── Helpers ─────────────────────────────────────────────────────
+
 
 def _pub_def_id(sub_svc: ElectronicSubmissionService) -> str:
     d = sub_svc._definitions.get_published("SHEET_PIECE_MEASUREMENT")

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 
 import { MobileLayout } from "./MobileLayout";
@@ -12,23 +12,39 @@ import { MobileDraftsPage } from "./MobileDraftsPage";
 import { MobileOutboxPage } from "./MobileOutboxPage";
 import { MobileSubmissionsPage } from "./MobileSubmissionsPage";
 import { MobileProfilePage } from "./MobileProfilePage";
+import { MobileSessionProvider, type MobileSessionClient } from "./session/MobileSessionProvider";
 
 afterEach(cleanup);
 
 function renderMobileRoute(path: string, initialEntries: string[] = [path]) {
+  const client = {
+    getSession: vi.fn().mockResolvedValue({
+      employee_name: "张三",
+      employee_code: "E001",
+      team_name: "甲班",
+      position: "操作工",
+      roles: ["WORKER"],
+      allowed_form_types: [],
+      allowed_processes: [],
+    }),
+    login: vi.fn(),
+    logout: vi.fn(),
+  } as unknown as MobileSessionClient;
   render(
     <MemoryRouter initialEntries={initialEntries}>
-      <Routes>
-        <Route element={<MobileLayout />}>
-          <Route path="mobile/login" element={<MobileLoginPage />} />
-          <Route path="mobile/home" element={<MobileHomePage />} />
-          <Route path="mobile/record" element={<MobileRecordPage />} />
-          <Route path="mobile/drafts" element={<MobileDraftsPage />} />
-          <Route path="mobile/outbox" element={<MobileOutboxPage />} />
-          <Route path="mobile/submissions" element={<MobileSubmissionsPage />} />
-          <Route path="mobile/profile" element={<MobileProfilePage />} />
-        </Route>
-      </Routes>
+      <MobileSessionProvider client={client}>
+        <Routes>
+          <Route element={<MobileLayout />}>
+            <Route path="mobile/login" element={<MobileLoginPage />} />
+            <Route path="mobile/home" element={<MobileHomePage />} />
+            <Route path="mobile/record" element={<MobileRecordPage />} />
+            <Route path="mobile/drafts" element={<MobileDraftsPage />} />
+            <Route path="mobile/outbox" element={<MobileOutboxPage />} />
+            <Route path="mobile/submissions" element={<MobileSubmissionsPage />} />
+            <Route path="mobile/profile" element={<MobileProfilePage />} />
+          </Route>
+        </Routes>
+      </MobileSessionProvider>
     </MemoryRouter>,
   );
 }
@@ -149,8 +165,8 @@ describe("MobileSubmissionsPage", () => {
 // ── Profile ───────────────────────────────────────────────────
 
 describe("MobileProfilePage", () => {
-  it("renders loading state initially", () => {
+  it("renders profile data from the shared session provider", async () => {
     renderMobileRoute("/mobile/profile");
-    expect(screen.getByText("加载中…")).toBeTruthy();
+    expect(await screen.findByText("张三")).toBeTruthy();
   });
 });

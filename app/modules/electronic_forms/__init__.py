@@ -1,5 +1,10 @@
 """Electronic forms module — mobile/PWA form definitions, drafts, and receipts."""
 
+from app.modules.electronic_forms.facade_ds import (
+    ElectronicDefinitionService,
+    ElectronicDraftService,
+    ElectronicSubmissionService,
+)
 from app.modules.electronic_forms.models_ds import (
     DefinitionStatus,
     DraftSyncStatus,
@@ -15,11 +20,6 @@ from app.modules.electronic_forms.ports_ds import (
     ElectronicDraftRepository,
     ElectronicFormDefinitionRepository,
     ElectronicSubmissionReceiptRepository,
-)
-from app.modules.electronic_forms.facade_ds import (
-    ElectronicDefinitionService,
-    ElectronicDraftService,
-    ElectronicSubmissionService,
 )
 
 __all__ = [

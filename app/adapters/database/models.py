@@ -8,6 +8,7 @@ from sqlalchemy import (
     Boolean,
     DateTime,
     ForeignKey,
+    ForeignKeyConstraint,
     Index,
     Integer,
     String,
@@ -400,3 +401,97 @@ class ElectronicSubmissionReceiptRow(Base):
     record_version: Mapped[int | None] = mapped_column(Integer)
     status: Mapped[str] = mapped_column(String, nullable=False)
     submitted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class FactRecordRow(Base):
+    __tablename__ = "fact_records"
+    __table_args__ = (
+        Index("ix_fact_records_employee_date", "subject_employee_code", "production_date"),
+        Index("ix_fact_records_review_status", "review_status"),
+        Index("ix_fact_records_export_status", "export_status"),
+        Index("ix_fact_records_source", "source_submission_id"),
+    )
+
+    fact_record_id: Mapped[str] = mapped_column(String, primary_key=True)
+    source_type: Mapped[str] = mapped_column(String, nullable=False)
+    source_submission_id: Mapped[str | None] = mapped_column(String)
+    source_form_id: Mapped[str | None] = mapped_column(String)
+    subject_employee_code: Mapped[str] = mapped_column(String, nullable=False)
+    subject_employee_name: Mapped[str] = mapped_column(String, nullable=False, default="")
+    workshop: Mapped[str] = mapped_column(String, nullable=False, default="")
+    work_order_id: Mapped[str] = mapped_column(String, nullable=False, default="")
+    product_id: Mapped[str] = mapped_column(String, nullable=False, default="")
+    process_id: Mapped[str] = mapped_column(String, nullable=False, default="")
+    production_date: Mapped[str] = mapped_column(String, nullable=False, default="")
+    shift: Mapped[str] = mapped_column(String, nullable=False, default="")
+    blocks_completed: Mapped[int | None] = mapped_column(Integer)
+    pieces_per_block: Mapped[int | None] = mapped_column(Integer)
+    total_pieces: Mapped[int | None] = mapped_column(Integer)
+    measurement_values: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    anomalies: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False, default=list)
+    corrections: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False, default=list)
+    review_status: Mapped[str] = mapped_column(String, nullable=False)
+    reviewed_by: Mapped[str] = mapped_column(String, nullable=False, default="")
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    export_status: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class MobileCredentialRow(Base):
+    __tablename__ = "mobile_credentials"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["employee_catalog", "employee_code"],
+            ["master_data_records.catalog", "master_data_records.code"],
+        ),
+    )
+
+    employee_catalog: Mapped[str] = mapped_column(String, primary_key=True)
+    employee_code: Mapped[str] = mapped_column(String, primary_key=True)
+    pin_salt: Mapped[str] = mapped_column(String, nullable=False)
+    pin_hash: Mapped[str] = mapped_column(String, nullable=False)
+    failed_attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class MobileAccessProfileRow(Base):
+    __tablename__ = "mobile_access_profiles"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["employee_catalog", "employee_code"],
+            ["master_data_records.catalog", "master_data_records.code"],
+        ),
+    )
+
+    employee_catalog: Mapped[str] = mapped_column(String, primary_key=True)
+    employee_code: Mapped[str] = mapped_column(String, primary_key=True)
+    team_id: Mapped[str] = mapped_column(String, nullable=False, default="")
+    team_name: Mapped[str] = mapped_column(String, nullable=False, default="")
+    position: Mapped[str] = mapped_column(String, nullable=False, default="")
+    roles: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    allowed_form_types: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    allowed_processes: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+
+
+class MobileSessionRow(Base):
+    __tablename__ = "mobile_sessions"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["employee_catalog", "employee_code"],
+            ["master_data_records.catalog", "master_data_records.code"],
+        ),
+        Index("ix_mobile_sessions_employee", "employee_catalog", "employee_code"),
+    )
+
+    session_id: Mapped[str] = mapped_column(String, primary_key=True)
+    employee_catalog: Mapped[str] = mapped_column(String, nullable=False)
+    employee_code: Mapped[str] = mapped_column(String, nullable=False)
+    device_id: Mapped[str] = mapped_column(String, nullable=False)
+    token_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

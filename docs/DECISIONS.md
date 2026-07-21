@@ -150,6 +150,30 @@
 - 原因：打印标记与校正目标不一致会使视觉上可用的照片产生系统性字段偏移；高分辨率照片又可能超出 OpenCV 在单一尺度下的稳定识别区间。物理契约与多尺度像素回退可以解决两者，且不放宽精确版本安全边界。
 - 证据：`app/adapters/recognition/opencv.py`、`app/application/recognize_forms.py`、`tests/unit/test_image_pipeline.py`、`tests/integration/test_paper_template_acceptance_ds.py` 及 [Task 16 验收记录](acceptance/PAPER_TEMPLATE_ACCEPTANCE.md)。
 
+### D-025：移动页面只有一个类型化生产数据通道
+
+- 决定：移动页面直接使用 `@form-detection/api-client` 导出的唯一 `mobileApiClient`，后端 `mobile_ds.py` 只聚合持久化身份、已发布定义、主数据上下文和电子提交子路由；删除旧前端 API/Auth 包装和 `app.modules.mobile` 原型模型。
+- 原因：双客户端和进程内原型状态会造成 DTO、身份和错误语义漂移，也会让页面在生产服务不可用时悄悄回退演示数据。
+- 证据：`frontend/packages/api-client/src/mobile_ds.ts`、`app/api/routers/mobile_ds.py`、禁止原型状态测试。
+
+### D-026：移动会话使用 HttpOnly Cookie 与 CSRF，不向 JavaScript 暴露 token
+
+- 决定：登录只设置 HttpOnly SameSite 会话 Cookie和可读 CSRF Cookie；所有写请求同时提交 `X-CSRF-Token`。PIN 使用 scrypt 加盐摘要，凭据、失败锁定、授权和会话持久化。
+- 原因：公共设备上的 localStorage/IndexedDB Bearer token 会跨人员残留并扩大 XSS 泄漏面；进程内会话无法跨重启撤销或审计。
+- 证据：`mobile_auth_ds.py`、`mobile_identity_ds.py`、`mobile_identity_repository_ds.py`、迁移 014 和认证测试。
+
+### D-027：草稿与 outbox 属于设备端持久状态，错误按可恢复性分类
+
+- 决定：草稿以 owner/device/localDraftId 生成独立 storageKey；提交先写 outbox，保存原幂等键。401 暂停等待重新登录，403/409/422 保留为最终失败，网络和 5xx 才退避，成功回执后删除 outbox 与来源草稿。退出默认保留 outbox，并要求人员明确确认。
+- 原因：离线提交必须跨刷新恢复；静默删除冲突、递归等待同步或换人后误删他人草稿都会造成不可追溯的数据丢失。
+- 证据：`storage/drafts.ts`、`storage/outbox.ts`、`SubmissionCoordinator.ts` 及其测试。
+
+### D-028：电子提交与纸质导入共用正式 Form/审核/导出主链
+
+- 决定：电子提交在一个数据库事务内创建 Form、FormField、AuditEvent、SubmissionReceipt 和 FactRecord；随后使用现有 NEEDS_REVIEW、RecordVersion 和导出流程。服务端验证 Definition 版本、字段白名单、actor/subject、同班组和幂等性。
+- 原因：另建“移动记录”旁路会复制审核与导出规则；Receipt 成功但 Form/Fact 失败会形成无法对账的假成功。
+- 证据：`electronic_submissions_ds.py`、`electronic_submission_uow_ds.py`、事务回滚与移动提交集成测试。
+
 ## 已否决方案及原因
 
 | 已否决方案 | 原因 |
