@@ -15,6 +15,7 @@
   "dependencies": {
     "@form-detection/api-client": "file:../../packages/api-client",
     "@form-detection/shell-ports": "file:../../packages/shell-ports",
+    "idb": "^8.0.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.28.0"
@@ -29,6 +30,7 @@
     "jsdom": "^29.1.1",
     "typescript": "^5.4.0",
     "vite": "^5.4.10",
+    "vite-plugin-pwa": "^1.3.0",
     "vitest": "^2.1.5"
   }
 }
