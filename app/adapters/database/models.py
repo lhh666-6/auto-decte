@@ -341,3 +341,62 @@ class MasterDataAuditRow(Base):
     before: Mapped[dict[str, Any] | None] = mapped_column(JSON)
     after: Mapped[dict[str, Any] | None] = mapped_column(JSON)
     reason: Mapped[str] = mapped_column(String, nullable=False)
+
+
+# ── Electronic forms (mobile / PWA) ────────────────────────────
+
+class ElectronicFormDefinitionVersionRow(Base):
+    __tablename__ = "electronic_form_definition_versions"
+    __table_args__ = (
+        UniqueConstraint("form_type", "version"),
+        Index("ix_ef_def_versions_form_type_status", "form_type", "status"),
+    )
+
+    definition_version_id: Mapped[str] = mapped_column(String, primary_key=True)
+    form_type: Mapped[str] = mapped_column(String, nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String, nullable=False)
+    display_name: Mapped[str] = mapped_column(String, nullable=False, default="")
+    template_version_id: Mapped[str | None] = mapped_column(String)
+    job_profile_version_id: Mapped[str | None] = mapped_column(String)
+    presentation_config: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    created_by: Mapped[str] = mapped_column(String, nullable=False, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class ElectronicDraftRow(Base):
+    __tablename__ = "electronic_drafts"
+
+    draft_id: Mapped[str] = mapped_column(String, primary_key=True)
+    owner_actor_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    subject_employee_code: Mapped[str] = mapped_column(String, nullable=False)
+    device_id: Mapped[str] = mapped_column(String, nullable=False)
+    definition_version_id: Mapped[str] = mapped_column(String, nullable=False)
+    values: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class ElectronicSubmissionReceiptRow(Base):
+    __tablename__ = "electronic_submission_receipts"
+    __table_args__ = (
+        UniqueConstraint(
+            "actor_id", "device_id", "operation", "client_submission_id",
+            name="ux_electronic_receipts_idempotency",
+        ),
+        Index("ix_es_receipts_actor_submitted", "actor_id", "submitted_at"),
+    )
+
+    receipt_id: Mapped[str] = mapped_column(String, primary_key=True)
+    actor_id: Mapped[str] = mapped_column(String, nullable=False)
+    subject_employee_code: Mapped[str] = mapped_column(String, nullable=False)
+    device_id: Mapped[str] = mapped_column(String, nullable=False)
+    operation: Mapped[str] = mapped_column(String, nullable=False)
+    client_submission_id: Mapped[str] = mapped_column(String, nullable=False)
+    payload_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    form_id: Mapped[str | None] = mapped_column(String)
+    record_version: Mapped[int | None] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String, nullable=False)
+    submitted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

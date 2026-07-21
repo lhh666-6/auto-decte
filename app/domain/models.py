@@ -63,6 +63,7 @@ class EvidenceType(StrEnum):
 class ValueSource(StrEnum):
     HUMAN_CONFIRMED = "HUMAN_CONFIRMED"
     AUTO_APPROVED = "AUTO_APPROVED"
+    ELECTRONIC_SUBMITTED = "ELECTRONIC_SUBMITTED"
 
 
 @dataclass(slots=True)

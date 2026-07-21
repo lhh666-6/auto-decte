@@ -57,7 +57,7 @@ def test_alembic_upgrade_creates_report_definition_versions(tmp_path: Path) -> N
         "configuration",
     }
     with engine.connect() as connection:
-        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "011"
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "012"
 
 
 def test_alembic_upgrade_creates_template_version_tables(tmp_path: Path) -> None:
@@ -120,7 +120,7 @@ def test_alembic_upgrade_creates_job_profile_versions_without_changing_templates
         revision = connection.execute(
             text("SELECT version_num FROM alembic_version")
         ).scalar_one()
-        assert revision == "011"
+        assert revision == "012"
     upgraded.dispose()
 
 
@@ -209,7 +209,7 @@ def test_upgrade_007_preserves_legacy_template_and_adds_layout_storage(
         revision = connection.execute(
             text("SELECT version_num FROM alembic_version")
         ).scalar_one()
-        assert revision == "011"
+        assert revision == "012"
     upgraded.dispose()
 
 
@@ -427,7 +427,7 @@ def test_upgrade_006_export_batch_preserves_data_and_adds_snapshot_columns(
         revision = connection.execute(
             text("SELECT version_num FROM alembic_version")
         ).scalar_one()
-        assert revision == "011"
+        assert revision == "012"
     upgraded.dispose()
 
     _downgrade_to_revision(database_path, "006")
