@@ -19,6 +19,7 @@ from app.modules.bamboo_process.models_ds import (
     BambooStage,
     ElectronicSignature,
     StageSubmission,
+    TaskBucket,
 )
 from app.modules.bamboo_process.ports_ds import BambooRecordRepository
 from app.modules.bamboo_process.state_machine_ds import (
@@ -49,7 +50,11 @@ class BambooProcessFacade:
         source_ref: str | None,
     ) -> BambooRecord:
         if actor.role is not BambooRole.SORT_OPERATOR:
-            raise PermissionError("only a sort operator can create a bamboo record")
+            raise BambooPermissionDenied("only a sort operator can create a bamboo record")
+        if source_ref:
+            repeated = self._repository.find_created_result(actor.actor_id, source_ref)
+            if repeated is not None:
+                return repeated
 
         now = self._clock()
         production_date = now.date().isoformat()
@@ -73,6 +78,42 @@ class BambooProcessFacade:
         )
         self._repository.add(record)
         return record
+
+    def list_tasks(
+        self,
+        *,
+        actor: BambooActor,
+        bucket: TaskBucket,
+    ) -> list[BambooRecord]:
+        records = self._repository.list_for_factory(actor.factory_id)
+        if bucket is TaskBucket.AVAILABLE:
+            return [
+                record
+                for record in records
+                if record.current_stage is not None
+                and can_submit_stage(actor.role, record.current_stage)
+            ]
+        if bucket is TaskBucket.WAITING:
+            return [
+                record
+                for record in records
+                if record.status is BambooRecordStatus.ACTIVE
+                and any(
+                    submission.role_code == actor.role.value
+                    and not submission.invalidated
+                    for submission in record.submissions
+                )
+                and not (
+                    record.current_stage is not None
+                    and can_submit_stage(actor.role, record.current_stage)
+                )
+            ]
+        return [
+            record
+            for record in records
+            if record.status is BambooRecordStatus.COMPLETED
+            and visible_to_role(record.submissions, actor.role)
+        ]
 
     def get_visible(
         self,

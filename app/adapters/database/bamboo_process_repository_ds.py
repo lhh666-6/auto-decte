@@ -60,6 +60,30 @@ class SqlAlchemyBambooProcessRepository:
             ).all()
             return _record(row, submissions)
 
+    def list_for_factory(self, factory_id: str) -> list[BambooRecord]:
+        with Session(self._engine) as session:
+            record_ids = session.scalars(
+                select(BambooRecordRow.record_id)
+                .where(BambooRecordRow.factory_id == factory_id)
+                .order_by(BambooRecordRow.updated_at.desc())
+            ).all()
+        return [record for record_id in record_ids if (record := self.get(record_id))]
+
+    def find_created_result(
+        self,
+        actor_id: str,
+        source_ref: str,
+    ) -> BambooRecord | None:
+        with Session(self._engine) as session:
+            record_id = session.scalar(
+                select(BambooRecordRow.record_id).where(
+                    BambooRecordRow.created_by == actor_id,
+                    BambooRecordRow.source_type == "MOBILE_CREATED",
+                    BambooRecordRow.source_ref == source_ref,
+                )
+            )
+        return self.get(record_id) if record_id is not None else None
+
     def find_idempotent_result(
         self,
         actor_id: str,

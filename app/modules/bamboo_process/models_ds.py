@@ -29,6 +29,12 @@ class BambooRecordStatus(StrEnum):
     COMPLETED = "COMPLETED"
 
 
+class TaskBucket(StrEnum):
+    AVAILABLE = "available"
+    WAITING = "waiting"
+    COMPLETED = "completed"
+
+
 @dataclass(frozen=True, slots=True)
 class BambooActor:
     actor_id: str

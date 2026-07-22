@@ -16,6 +16,14 @@ class BambooRecordRepository(Protocol):
 
     def get(self, record_id: str) -> BambooRecord | None: ...
 
+    def list_for_factory(self, factory_id: str) -> list[BambooRecord]: ...
+
+    def find_created_result(
+        self,
+        actor_id: str,
+        source_ref: str,
+    ) -> BambooRecord | None: ...
+
     def find_idempotent_result(
         self,
         actor_id: str,

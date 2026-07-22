@@ -36,6 +36,21 @@ class _MemoryBambooRepository:
     def get(self, record_id: str) -> BambooRecord | None:
         return self.records.get(record_id)
 
+    def list_for_factory(self, factory_id: str) -> list[BambooRecord]:
+        return [record for record in self.records.values() if record.factory_id == factory_id]
+
+    def find_created_result(
+        self, actor_id: str, source_ref: str
+    ) -> BambooRecord | None:
+        return next(
+            (
+                record
+                for record in self.records.values()
+                if record.created_by == actor_id and record.source_ref == source_ref
+            ),
+            None,
+        )
+
     def find_idempotent_result(
         self, actor_id: str, idempotency_key: str
     ) -> BambooRecord | None:

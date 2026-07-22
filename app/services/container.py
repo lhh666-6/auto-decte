@@ -2,6 +2,8 @@
 
 import logging
 from dataclasses import dataclass
+from datetime import UTC, datetime
+from uuid import uuid4
 
 from sqlalchemy import Engine
 
@@ -10,6 +12,9 @@ from app.adapters.ai.disabled import DisabledAIReview
 from app.adapters.ai.report_assistant_ds import (
     DisabledReportAssistant,
     StructuredReportAssistantProvider,
+)
+from app.adapters.database.bamboo_process_repository_ds import (
+    SqlAlchemyBambooProcessRepository,
 )
 from app.adapters.database.electronic_definition_repository_ds import (
     SqlAlchemyElectronicDefinitionRepository,
@@ -55,6 +60,7 @@ from app.infrastructure.database.migrations import (
 from app.infrastructure.database.sqlite_ds import create_sqlite_engine
 from app.infrastructure.database.uow_ds import SqlAlchemyUnitOfWork
 from app.infrastructure.tasks.sqlite_store_ds import SqliteTaskStore
+from app.modules.bamboo_process.facade_ds import BambooProcessFacade
 from app.modules.electronic_forms.facade_ds import ElectronicDefinitionService
 from app.modules.fact_records.facade_ds import FactRecordFacade
 from app.modules.master_data.facade_ds import MasterDataFacade
@@ -112,6 +118,8 @@ class Services:
     mobile_identity: MobileIdentityService
     electronic_definition_repository: SqlAlchemyElectronicDefinitionRepository
     electronic_definitions: ElectronicDefinitionService
+    bamboo_repository: SqlAlchemyBambooProcessRepository
+    bamboo_process: BambooProcessFacade
 
 
 def build_services(settings: Settings, *, install_seed_templates: bool = False) -> Services:
@@ -152,6 +160,12 @@ def build_services(settings: Settings, *, install_seed_templates: bool = False) 
     mobile_identity = MobileIdentityService(repository=mobile_identity_repository)
     electronic_definition_repository = SqlAlchemyElectronicDefinitionRepository(engine)
     electronic_definitions = ElectronicDefinitionService(electronic_definition_repository)
+    bamboo_repository = SqlAlchemyBambooProcessRepository(engine)
+    bamboo_process = BambooProcessFacade(
+        bamboo_repository,
+        clock=lambda: datetime.now(UTC),
+        id_factory=lambda: str(uuid4()),
+    )
     review_leases = ReviewLeaseService(
         review_repository,
         ttl_seconds=settings.review_lease_seconds,
@@ -240,6 +254,8 @@ def build_services(settings: Settings, *, install_seed_templates: bool = False) 
         mobile_identity=mobile_identity,
         electronic_definition_repository=electronic_definition_repository,
         electronic_definitions=electronic_definitions,
+        bamboo_repository=bamboo_repository,
+        bamboo_process=bamboo_process,
     )
     tasks.recover_interrupted()
     services.export_handler.recover_prepared()
