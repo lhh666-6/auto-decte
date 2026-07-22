@@ -1,12 +1,13 @@
 """HTTP contracts for the mobile bamboo workflow."""
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
 
 class CreateBambooRecordRequest(BaseModel):
+    form_type: Literal["SORTING"] = "SORTING"
     base_info: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -42,6 +43,10 @@ class BambooRecordResponse(BaseModel):
     factory_id: str
     source_type: str
     source_ref: str | None
+    form_type: str
+    production_object_id: str | None
+    source_record_id: str | None
+    source_snapshot: dict[str, Any]
     base_info: dict[str, Any]
     current_stage: str | None
     status: str

@@ -33,7 +33,12 @@ from app.adapters.database.models import (
     MobileAccessProfileRow,
 )
 from app.adapters.storage.local import LocalEvidenceStorage
-from app.modules.bamboo_process.models_ds import BambooActor, BambooRole, BambooStage
+from app.modules.bamboo_process.models_ds import (
+    BambooActor,
+    BambooFormType,
+    BambooRole,
+    BambooStage,
+)
 
 PRODUCTION_ROLES = {
     BambooRole.SORT_OPERATOR.value,
@@ -115,6 +120,39 @@ def _record_options_from_rule(configuration: dict[str, Any]) -> dict[str, Any]:
 def _require_member(value: str, options: list[str], detail: str) -> None:
     if value not in options:
         raise BambooOperationError("INVALID_BAMBOO_BASE_INFO", detail)
+
+
+def _required_decimal(
+    values: dict[str, Any],
+    keys: tuple[str, ...],
+    label: str,
+) -> Decimal:
+    raw = next(
+        (
+            values[key]
+            for key in keys
+            if values.get(key) is not None and values.get(key) != ""
+        ),
+        None,
+    )
+    if raw is None:
+        raise BambooOperationError(
+            "INVALID_BAMBOO_STAGE_VALUES",
+            f"请填写{label}",
+        )
+    try:
+        value = Decimal(str(raw))
+    except (ArithmeticError, ValueError) as error:
+        raise BambooOperationError(
+            "INVALID_BAMBOO_STAGE_VALUES",
+            f"{label}必须是有效数值",
+        ) from error
+    if not value.is_finite() or value < 0:
+        raise BambooOperationError(
+            "INVALID_BAMBOO_STAGE_VALUES",
+            f"{label}必须是非负数",
+        )
+    return value
 
 
 class BambooOperationsService:
@@ -255,8 +293,11 @@ class BambooOperationsService:
         _require_member(length, options["lengths"], "请选择后台发布的长度")
         _require_member(shade, options["shades"], "请选择后台发布的深浅")
         _require_member(grade, options["grades"], "请选择后台发布的品级")
-        if mode not in {"分选", "装笼"}:
-            raise BambooOperationError("INVALID_BAMBOO_BASE_INFO", "作业模式只能选择分选或装笼")
+        if mode not in {"分选", "分选+装笼"}:
+            raise BambooOperationError(
+                "INVALID_BAMBOO_BASE_INFO",
+                "作业模式只能选择分选或分选+装笼",
+            )
         invalid_special = [
             item for item in special_classes if item not in options["special_classes"]
         ]
@@ -276,6 +317,108 @@ class BambooOperationsService:
         factor = options["weight_factors"].get(length)
         if factor is not None:
             normalized["net_weight"] = str(Decimal(bundle_count) * Decimal(str(factor)))
+        return normalized
+
+    def validate_stage_values(
+        self,
+        stage: BambooStage,
+        values: dict[str, Any],
+    ) -> dict[str, Any]:
+        normalized = dict(values)
+        if stage not in {BambooStage.SORT, BambooStage.DIPPING, BambooStage.DRYING}:
+            return normalized
+        moisture = values.get("moisture")
+        if not isinstance(moisture, list) or not moisture:
+            raise BambooOperationError(
+                "INVALID_BAMBOO_STAGE_VALUES",
+                "至少填写一个含水率检测点",
+            )
+        if len(moisture) > 20:
+            raise BambooOperationError(
+                "INVALID_BAMBOO_STAGE_VALUES",
+                "含水率检测点不能超过 20 个",
+            )
+        normalized_moisture: list[int] = []
+        for raw in moisture:
+            if isinstance(raw, bool):
+                raise BambooOperationError(
+                    "INVALID_BAMBOO_STAGE_VALUES",
+                    "含水率必须是 1 至 100 的正整数",
+                )
+            try:
+                point = Decimal(str(raw))
+            except (ArithmeticError, ValueError) as error:
+                raise BambooOperationError(
+                    "INVALID_BAMBOO_STAGE_VALUES",
+                    "含水率必须是 1 至 100 的正整数",
+                ) from error
+            if (
+                not point.is_finite()
+                or point != point.to_integral_value()
+                or not 1 <= point <= 100
+            ):
+                raise BambooOperationError(
+                    "INVALID_BAMBOO_STAGE_VALUES",
+                    "含水率必须是 1 至 100 的正整数",
+                )
+            normalized_moisture.append(int(point))
+        normalized["moisture"] = normalized_moisture
+
+        if stage is BambooStage.DIPPING:
+            before = _required_decimal(
+                values,
+                (
+                    "glue_before_weight",
+                    "pre_glue_weight",
+                    "before_glue_weight",
+                    "weight_before",
+                ),
+                "胶前重",
+            )
+            after = _required_decimal(
+                values,
+                (
+                    "glue_after_weight",
+                    "post_glue_weight",
+                    "after_glue_weight",
+                    "weight_after",
+                ),
+                "胶后重",
+            )
+            _required_decimal(values, ("glue_gain", "glue_amount"), "上胶量")
+            if values.get("wage_amount") is not None and values.get("wage_amount") != "":
+                _required_decimal(values, ("wage_amount",), "工资金额")
+            if after < before:
+                raise BambooOperationError(
+                    "INVALID_BAMBOO_STAGE_VALUES",
+                    "胶后重不能小于胶前重",
+                )
+
+        if stage is BambooStage.DRYING:
+            raw_racks = values.get("rack_numbers", values.get("rack_nos"))
+            if raw_racks is None:
+                raw_racks = values.get("rack_no")
+            if isinstance(raw_racks, str):
+                rack_numbers = [
+                    item.strip()
+                    for item in raw_racks.replace("，", ",").split(",")
+                    if item.strip()
+                ]
+            elif isinstance(raw_racks, list):
+                rack_numbers = [str(item).strip() for item in raw_racks if str(item).strip()]
+            else:
+                rack_numbers = []
+            if not rack_numbers:
+                raise BambooOperationError(
+                    "INVALID_BAMBOO_STAGE_VALUES",
+                    "至少填写一个干燥架号",
+                )
+            if len(set(rack_numbers)) != len(rack_numbers):
+                raise BambooOperationError(
+                    "INVALID_BAMBOO_STAGE_VALUES",
+                    "干燥架号不能重复",
+                )
+            normalized["rack_numbers"] = rack_numbers
         return normalized
 
     def assign_employee_role(
@@ -439,9 +582,26 @@ class BambooOperationsService:
                     )
                 ).all()
             )
-            if not {"SORT", "DIPPING", "DRYING"} <= signed:
+            form_type = BambooFormType(record.form_type)
+            required_stages = (
+                {BambooStage.SORT.value}
+                if form_type is BambooFormType.SORTING
+                else {BambooStage.DIPPING.value, BambooStage.DRYING.value}
+            )
+            allowed_targets = (
+                {BambooStage.SORT}
+                if form_type is BambooFormType.SORTING
+                else {BambooStage.DIPPING, BambooStage.DRYING}
+            )
+            if target_stage not in allowed_targets:
                 raise BambooOperationError(
-                    "INSPECTION_WINDOW_NOT_OPEN", "前三个流程完成后才开放检测"
+                    "INVALID_INSPECTION_STAGE",
+                    "检测目标必须属于当前独立表单",
+                )
+            if not required_stages <= signed:
+                raise BambooOperationError(
+                    "INSPECTION_WINDOW_NOT_OPEN",
+                    "当前表单生产签字完成后才开放检测",
                 )
             if "SUPERVISOR" in signed:
                 raise BambooOperationError("INSPECTION_WINDOW_CLOSED", "主管签字后检测窗口已关闭")
@@ -586,14 +746,42 @@ class BambooOperationsService:
         if actor.role is not BambooRole.SUPERVISOR:
             raise BambooOperationError("RETURN_FORBIDDEN", "由主管选择需要重写的流程")
         selected = set(target_stages)
-        if not selected or not selected <= set(REWORK_DEPENDENCIES):
+        if not selected:
             raise BambooOperationError("INVALID_RETURN_STAGES", "请选择需要重写的生产环节")
-        invalidated_stages = {
-            stage for selected_stage in selected for stage in REWORK_DEPENDENCIES[selected_stage]
-        }
         now = datetime.now(UTC)
         with Session(self._engine) as session, session.begin():
             record = self._record(session, record_id, actor)
+            form_type = BambooFormType(record.form_type)
+            allowed_stages = (
+                {BambooStage.SORT}
+                if form_type is BambooFormType.SORTING
+                else {BambooStage.DIPPING, BambooStage.DRYING}
+            )
+            if not selected <= allowed_stages:
+                raise BambooOperationError(
+                    "INVALID_RETURN_STAGES",
+                    "退回环节必须属于当前独立表单",
+                )
+            invalidated_stages = {
+                stage
+                for selected_stage in selected
+                for stage in REWORK_DEPENDENCIES[selected_stage]
+                if stage
+                in (
+                    {
+                        BambooStage.SORT,
+                        BambooStage.SUPERVISOR,
+                        BambooStage.PLANT_AUDIT,
+                    }
+                    if form_type is BambooFormType.SORTING
+                    else {
+                        BambooStage.DIPPING,
+                        BambooStage.DRYING,
+                        BambooStage.SUPERVISOR,
+                        BambooStage.PLANT_AUDIT,
+                    }
+                )
+            }
             submissions = session.scalars(
                 select(BambooStageSubmissionRow).where(
                     BambooStageSubmissionRow.record_id == record_id,

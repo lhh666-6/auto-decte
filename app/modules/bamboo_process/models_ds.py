@@ -13,6 +13,11 @@ class BambooStage(StrEnum):
     PLANT_AUDIT = "PLANT_AUDIT"
 
 
+class BambooFormType(StrEnum):
+    SORTING = "SORTING"
+    DIPPING_DRYING = "DIPPING_DRYING"
+
+
 class BambooRole(StrEnum):
     SORT_OPERATOR = "SORT_OPERATOR"
     DIPPING_OPERATOR = "DIPPING_OPERATOR"
@@ -59,6 +64,10 @@ class BambooRecord:
     created_by: str
     created_at: datetime
     updated_at: datetime
+    form_type: BambooFormType = BambooFormType.SORTING
+    production_object_id: str | None = None
+    source_record_id: str | None = None
+    source_snapshot: dict[str, object] = field(default_factory=dict)
     submissions: tuple["StageSubmission", ...] = ()
 
 

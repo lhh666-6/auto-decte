@@ -3,6 +3,7 @@
 from typing import Protocol
 
 from app.modules.bamboo_process.models_ds import (
+    BambooFormType,
     BambooRecord,
     ElectronicSignature,
     StageSubmission,
@@ -28,6 +29,12 @@ class BambooRecordRepository(Protocol):
         self,
         actor_id: str,
         idempotency_key: str,
+    ) -> BambooRecord | None: ...
+
+    def find_linked(
+        self,
+        form_type: BambooFormType,
+        source_record_id: str,
     ) -> BambooRecord | None: ...
 
     def append_stage(

@@ -8,6 +8,7 @@ from uuid import uuid4
 
 from sqlalchemy import Engine, func, select, update
 from sqlalchemy.engine import CursorResult
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.adapters.database.models import (
@@ -24,6 +25,7 @@ from app.adapters.database.models import (
 )
 from app.modules.bamboo_process.errors_ds import BambooPermissionDenied, StaleBambooRevision
 from app.modules.bamboo_process.models_ds import (
+    BambooFormType,
     BambooRecord,
     BambooRecordStatus,
     BambooStage,
@@ -87,8 +89,16 @@ class SqlAlchemyBambooProcessRepository:
         return int(count or 0) + 1
 
     def add(self, record: BambooRecord) -> None:
-        with Session(self._engine) as session, session.begin():
-            session.add(_record_row(record))
+        try:
+            with Session(self._engine) as session, session.begin():
+                session.add(_record_row(record))
+        except IntegrityError:
+            if record.source_record_id is not None and self.find_linked(
+                record.form_type,
+                record.source_record_id,
+            ) is not None:
+                return
+            raise
 
     def get(self, record_id: str) -> BambooRecord | None:
         with Session(self._engine) as session:
@@ -149,6 +159,20 @@ class SqlAlchemyBambooProcessRepository:
                 signature.submission_id,
             )
             record_id = submission.record_id if submission is not None else None
+        return self.get(record_id) if record_id is not None else None
+
+    def find_linked(
+        self,
+        form_type: BambooFormType,
+        source_record_id: str,
+    ) -> BambooRecord | None:
+        with Session(self._engine) as session:
+            record_id = session.scalar(
+                select(BambooRecordRow.record_id).where(
+                    BambooRecordRow.form_type == form_type.value,
+                    BambooRecordRow.source_record_id == source_record_id,
+                )
+            )
         return self.get(record_id) if record_id is not None else None
 
     def append_stage(
@@ -234,9 +258,15 @@ class SqlAlchemyBambooProcessRepository:
         submission: StageSubmission,
         signature: ElectronicSignature,
     ) -> None:
-        if submission.stage is BambooStage.SORT:
+        if (
+            record.form_type is BambooFormType.SORTING
+            and submission.stage is BambooStage.SORT
+        ):
             self._create_sort_fact(session, record, submission, signature)
-        elif submission.stage is BambooStage.DRYING:
+        elif (
+            record.form_type is BambooFormType.DIPPING_DRYING
+            and submission.stage is BambooStage.DRYING
+        ):
             self._create_joint_fact(session, record, submission, signature)
         elif submission.stage is BambooStage.PLANT_AUDIT:
             self._activate_payroll_and_export(session, record, submission, signature)
@@ -404,9 +434,15 @@ class SqlAlchemyBambooProcessRepository:
                 revision=record.revision,
             )
         )
+        expected_fact_type = (
+            "SORT"
+            if record.form_type is BambooFormType.SORTING
+            else "DIPPING_DRYING_JOINT"
+        )
         facts = session.scalars(
             select(BambooPayrollFactRow).where(
                 BambooPayrollFactRow.record_id == record.record_id,
+                BambooPayrollFactRow.fact_type == expected_fact_type,
                 BambooPayrollFactRow.status == "PENDING_EFFECTIVE",
             )
         ).all()
@@ -489,6 +525,10 @@ def _record_row(record: BambooRecord) -> BambooRecordRow:
         factory_id=record.factory_id,
         source_type=record.source_type,
         source_ref=record.source_ref,
+        form_type=record.form_type.value,
+        production_object_id=record.production_object_id,
+        source_record_id=record.source_record_id,
+        source_snapshot=record.source_snapshot,
         base_info=record.base_info,
         current_stage=(record.current_stage.value if record.current_stage else None),
         status=record.status.value,
@@ -542,6 +582,10 @@ def _record(
         factory_id=row.factory_id,
         source_type=row.source_type,
         source_ref=row.source_ref,
+        form_type=BambooFormType(row.form_type),
+        production_object_id=row.production_object_id or row.record_id,
+        source_record_id=row.source_record_id,
+        source_snapshot=dict(row.source_snapshot or {}),
         base_info=dict(row.base_info),
         current_stage=(BambooStage(row.current_stage) if row.current_stage else None),
         status=BambooRecordStatus(row.status),

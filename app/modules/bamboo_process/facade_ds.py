@@ -3,6 +3,7 @@
 import hashlib
 import json
 from collections.abc import Callable
+from copy import deepcopy
 from dataclasses import replace
 from datetime import datetime
 
@@ -13,6 +14,7 @@ from app.modules.bamboo_process.errors_ds import (
 )
 from app.modules.bamboo_process.models_ds import (
     BambooActor,
+    BambooFormType,
     BambooRecord,
     BambooRecordStatus,
     BambooRole,
@@ -48,9 +50,12 @@ class BambooProcessFacade:
         base_info: dict[str, object],
         source_type: str,
         source_ref: str | None,
+        form_type: BambooFormType = BambooFormType.SORTING,
     ) -> BambooRecord:
         if actor.role is not BambooRole.SORT_OPERATOR:
             raise BambooPermissionDenied("only a sort operator can create a bamboo record")
+        if form_type is not BambooFormType.SORTING:
+            raise BambooPermissionDenied("linked production forms are created by the system")
         if source_ref:
             repeated = self._repository.find_created_result(actor.actor_id, source_ref)
             if repeated is not None:
@@ -62,8 +67,9 @@ class BambooProcessFacade:
             actor.factory_id,
             production_date,
         )
+        record_id = self._id_factory()
         record = BambooRecord(
-            record_id=self._id_factory(),
+            record_id=record_id,
             display_no=f"ZS-{now:%Y%m%d}-{sequence:03d}",
             factory_id=actor.factory_id,
             source_type=source_type,
@@ -75,6 +81,8 @@ class BambooProcessFacade:
             created_by=actor.actor_id,
             created_at=now,
             updated_at=now,
+            form_type=form_type,
+            production_object_id=record_id,
         )
         self._repository.add(record)
         return record
@@ -91,13 +99,24 @@ class BambooProcessFacade:
                 record
                 for record in records
                 if record.current_stage is not None
-                and can_submit_stage(actor.role, record.current_stage)
+                and can_submit_stage(actor.role, record.current_stage, record.form_type)
             ]
+        completed = {
+            record.record_id
+            for record in records
+            if any(
+                submission.actor_id == actor.actor_id and not submission.invalidated
+                for submission in record.submissions
+            )
+        }
+        if bucket is TaskBucket.COMPLETED:
+            return [record for record in records if record.record_id in completed]
         if bucket is TaskBucket.WAITING:
             return [
                 record
                 for record in records
                 if record.status is BambooRecordStatus.ACTIVE
+                and record.record_id not in completed
                 and any(
                     submission.role_code == actor.role.value
                     and not submission.invalidated
@@ -105,15 +124,14 @@ class BambooProcessFacade:
                 )
                 and not (
                     record.current_stage is not None
-                    and can_submit_stage(actor.role, record.current_stage)
+                    and can_submit_stage(
+                        actor.role,
+                        record.current_stage,
+                        record.form_type,
+                    )
                 )
             ]
-        return [
-            record
-            for record in records
-            if record.status is BambooRecordStatus.COMPLETED
-            and visible_to_role(record.submissions, actor.role)
-        ]
+        return []
 
     def get_visible(
         self,
@@ -124,7 +142,7 @@ class BambooProcessFacade:
         record = self._repository.get(record_id)
         if record is None or record.factory_id != actor.factory_id:
             return None
-        if not visible_to_role(record.submissions, actor.role):
+        if not visible_to_role(record.submissions, actor.role, record.form_type):
             return None
         return record
 
@@ -145,6 +163,11 @@ class BambooProcessFacade:
             idempotency_key,
         )
         if repeated is not None:
+            if repeated.form_type is BambooFormType.SORTING and any(
+                submission.stage is BambooStage.SORT and not submission.invalidated
+                for submission in repeated.submissions
+            ):
+                self._ensure_linked_record(repeated, actor=actor)
             return repeated
 
         current = self._repository.get(record_id)
@@ -152,7 +175,7 @@ class BambooProcessFacade:
             raise BambooRecordNotFound(record_id)
         if current.factory_id != actor.factory_id:
             raise BambooPermissionDenied("record belongs to another factory")
-        if not can_submit_stage(actor.role, stage):
+        if not can_submit_stage(actor.role, stage, current.form_type):
             raise BambooPermissionDenied("role cannot submit this stage")
         if current.current_stage is not stage:
             raise BambooPermissionDenied("stage is not open for submission")
@@ -177,7 +200,7 @@ class BambooProcessFacade:
             submitted_at=now,
         )
         submissions = (*current.submissions, submission)
-        following_stage = next_stage(submissions)
+        following_stage = next_stage(submissions, current.form_type)
         updated = replace(
             current,
             current_stage=following_stage,
@@ -216,9 +239,55 @@ class BambooProcessFacade:
             request_id=request_id,
             idempotency_key=idempotency_key,
         )
-        return self._repository.append_stage(
+        stored = self._repository.append_stage(
             record=updated,
             submission=submission,
             signature=signature,
             expected_revision=expected_revision,
         )
+        if stage is BambooStage.SORT and stored.form_type is BambooFormType.SORTING:
+            self._ensure_linked_record(stored, actor=actor)
+        return stored
+
+    def _ensure_linked_record(
+        self,
+        source: BambooRecord,
+        *,
+        actor: BambooActor,
+    ) -> BambooRecord:
+        linked = self._repository.find_linked(
+            BambooFormType.DIPPING_DRYING,
+            source.record_id,
+        )
+        if linked is not None:
+            return linked
+        now = self._clock()
+        sequence = self._repository.next_display_sequence(
+            source.factory_id,
+            now.date().isoformat(),
+        )
+        linked = BambooRecord(
+            record_id=self._id_factory(),
+            display_no=f"ZS-{now:%Y%m%d}-{sequence:03d}",
+            factory_id=source.factory_id,
+            source_type="SYSTEM_LINKED",
+            source_ref=source.record_id,
+            base_info=deepcopy(source.base_info),
+            current_stage=BambooStage.DIPPING,
+            status=BambooRecordStatus.ACTIVE,
+            revision=1,
+            created_by=actor.actor_id,
+            created_at=now,
+            updated_at=now,
+            form_type=BambooFormType.DIPPING_DRYING,
+            production_object_id=source.production_object_id or source.record_id,
+            source_record_id=source.record_id,
+            source_snapshot={
+                "record_id": source.record_id,
+                "display_no": source.display_no,
+                "revision": source.revision,
+                "base_info": deepcopy(source.base_info),
+            },
+        )
+        self._repository.add(linked)
+        return linked

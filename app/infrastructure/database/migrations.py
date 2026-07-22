@@ -9,7 +9,7 @@ from sqlalchemy import Engine, inspect, text
 from alembic import command
 from app.domain.models import stable_json_sha256
 
-HEAD_REVISION = "016"
+HEAD_REVISION = "017"
 
 _EMPTY_MAPPING_HASH = "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
 
@@ -50,6 +50,68 @@ def ensure_auto_created_schema_compatibility(engine: Engine) -> None:
             if "job_profile_version" not in form_columns:
                 connection.execute(
                     text("ALTER TABLE forms ADD COLUMN job_profile_version VARCHAR")
+                )
+    inspector = inspect(engine)
+    tables = set(inspector.get_table_names())
+    if "bamboo_records" in tables:
+        bamboo_columns = {
+            column["name"] for column in inspector.get_columns("bamboo_records")
+        }
+        with engine.begin() as connection:
+            if "form_type" not in bamboo_columns:
+                connection.execute(
+                    text(
+                        "ALTER TABLE bamboo_records ADD COLUMN form_type "
+                        "VARCHAR NOT NULL DEFAULT 'SORTING'"
+                    )
+                )
+            if "production_object_id" not in bamboo_columns:
+                connection.execute(
+                    text(
+                        "ALTER TABLE bamboo_records ADD COLUMN "
+                        "production_object_id VARCHAR"
+                    )
+                )
+            if "source_record_id" not in bamboo_columns:
+                connection.execute(
+                    text("ALTER TABLE bamboo_records ADD COLUMN source_record_id VARCHAR")
+                )
+            if "source_snapshot" not in bamboo_columns:
+                connection.execute(
+                    text(
+                        "ALTER TABLE bamboo_records ADD COLUMN source_snapshot "
+                        "JSON NOT NULL DEFAULT '{}'"
+                    )
+                )
+            connection.execute(
+                text(
+                    "UPDATE bamboo_records SET form_type = 'SORTING' "
+                    "WHERE form_type IS NULL OR form_type = ''"
+                )
+            )
+            connection.execute(
+                text(
+                    "UPDATE bamboo_records SET production_object_id = record_id "
+                    "WHERE production_object_id IS NULL OR production_object_id = ''"
+                )
+            )
+            connection.execute(
+                text(
+                    "UPDATE bamboo_records SET source_snapshot = '{}' "
+                    "WHERE source_snapshot IS NULL"
+                )
+            )
+        inspector = inspect(engine)
+        bamboo_indexes = {
+            item["name"] for item in inspector.get_indexes("bamboo_records")
+        }
+        if "ix_bamboo_records_source_lookup" not in bamboo_indexes:
+            with engine.begin() as connection:
+                connection.execute(
+                    text(
+                        "CREATE UNIQUE INDEX ix_bamboo_records_source_lookup "
+                        "ON bamboo_records (form_type, source_record_id)"
+                    )
                 )
     inspector = inspect(engine)
     if "evidence_files" in inspector.get_table_names():

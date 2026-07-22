@@ -39,6 +39,7 @@ from app.modules.bamboo_process.errors_ds import (
 )
 from app.modules.bamboo_process.models_ds import (
     BambooActor,
+    BambooFormType,
     BambooRecord,
     BambooRole,
     BambooStage,
@@ -156,6 +157,7 @@ def create_record(
             base_info=base_info,
             source_type="MOBILE_CREATED",
             source_ref=key,
+            form_type=BambooFormType(body.form_type),
         )
     except BambooPermissionDenied as error:
         raise HTTPException(
@@ -565,11 +567,15 @@ def submit_stage(
             detail={"code": "RECORD_NOT_VISIBLE", "detail": "记录不存在或当前不可见。"},
         )
     try:
+        values = _services(request).bamboo_operations.validate_stage_values(
+            stage_key,
+            dict(body.values),
+        )
         record = service.submit_stage(
             record_id,
             actor=actor,
             stage=stage_key,
-            values=dict(body.values),
+            values=values,
             expected_revision=body.expected_revision,
             idempotency_key=key,
             device_id=body.device_id,
@@ -595,6 +601,11 @@ def submit_stage(
             status_code=404,
             detail={"code": "RECORD_NOT_VISIBLE", "detail": str(error)},
         ) from error
+    except BambooOperationError as error:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": error.code, "detail": str(error)},
+        ) from error
     return _response(record)
 
 
@@ -605,6 +616,10 @@ def _response(record: BambooRecord) -> BambooRecordResponse:
         factory_id=record.factory_id,
         source_type=record.source_type,
         source_ref=record.source_ref,
+        form_type=record.form_type.value,
+        production_object_id=record.production_object_id,
+        source_record_id=record.source_record_id,
+        source_snapshot=record.source_snapshot,
         base_info=record.base_info,
         current_stage=(record.current_stage.value if record.current_stage else None),
         status=record.status.value,

@@ -569,6 +569,12 @@ class BambooRecordRow(Base):
             "status",
             "updated_at",
         ),
+        Index(
+            "ix_bamboo_records_source_lookup",
+            "form_type",
+            "source_record_id",
+            unique=True,
+        ),
     )
 
     record_id: Mapped[str] = mapped_column(String, primary_key=True)
@@ -578,6 +584,14 @@ class BambooRecordRow(Base):
     )
     source_type: Mapped[str] = mapped_column(String, nullable=False)
     source_ref: Mapped[str | None] = mapped_column(String)
+    form_type: Mapped[str] = mapped_column(String, nullable=False, default="SORTING")
+    production_object_id: Mapped[str | None] = mapped_column(String)
+    source_record_id: Mapped[str | None] = mapped_column(
+        ForeignKey("bamboo_records.record_id")
+    )
+    source_snapshot: Mapped[dict[str, Any]] = mapped_column(
+        JSON, nullable=False, default=dict
+    )
     base_info: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
     current_stage: Mapped[str | None] = mapped_column(String)
     status: Mapped[str] = mapped_column(String, nullable=False)

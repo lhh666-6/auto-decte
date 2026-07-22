@@ -3,18 +3,25 @@
 from collections.abc import Sequence
 
 from app.modules.bamboo_process.models_ds import (
+    BambooFormType,
     BambooRole,
     BambooStage,
     StageSubmission,
 )
 
-MAIN_STAGE_ORDER = (
-    BambooStage.SORT,
-    BambooStage.DIPPING,
-    BambooStage.DRYING,
-    BambooStage.SUPERVISOR,
-    BambooStage.PLANT_AUDIT,
-)
+FORM_STAGE_ORDER = {
+    BambooFormType.SORTING: (
+        BambooStage.SORT,
+        BambooStage.SUPERVISOR,
+        BambooStage.PLANT_AUDIT,
+    ),
+    BambooFormType.DIPPING_DRYING: (
+        BambooStage.DIPPING,
+        BambooStage.DRYING,
+        BambooStage.SUPERVISOR,
+        BambooStage.PLANT_AUDIT,
+    ),
+}
 
 STAGE_ROLE = {
     BambooStage.SORT: BambooRole.SORT_OPERATOR,
@@ -25,20 +32,31 @@ STAGE_ROLE = {
 }
 
 
-def can_submit_stage(role: BambooRole, stage: BambooStage) -> bool:
-    return STAGE_ROLE[stage] is role
+def can_submit_stage(
+    role: BambooRole,
+    stage: BambooStage,
+    form_type: BambooFormType = BambooFormType.SORTING,
+) -> bool:
+    return stage in FORM_STAGE_ORDER[form_type] and STAGE_ROLE[stage] is role
 
 
-def next_stage(submissions: Sequence[StageSubmission]) -> BambooStage | None:
+def next_stage(
+    submissions: Sequence[StageSubmission],
+    form_type: BambooFormType = BambooFormType.SORTING,
+) -> BambooStage | None:
     signed_stages = {
         submission.stage for submission in submissions if not submission.invalidated
     }
-    return next((stage for stage in MAIN_STAGE_ORDER if stage not in signed_stages), None)
+    return next(
+        (stage for stage in FORM_STAGE_ORDER[form_type] if stage not in signed_stages),
+        None,
+    )
 
 
 def visible_to_role(
     submissions: Sequence[StageSubmission],
     role: BambooRole,
+    form_type: BambooFormType = BambooFormType.SORTING,
 ) -> bool:
     signed_stages = {
         submission.stage for submission in submissions if not submission.invalidated
@@ -46,7 +64,12 @@ def visible_to_role(
     if role is BambooRole.SYSTEM_ADMIN:
         return True
     if role is BambooRole.INSPECTOR:
-        return BambooStage.DRYING in signed_stages
+        open_stage = (
+            BambooStage.SORT
+            if form_type is BambooFormType.SORTING
+            else BambooStage.DRYING
+        )
+        return open_stage in signed_stages
     if role is BambooRole.FINANCE_APPROVER:
         return BambooStage.PLANT_AUDIT in signed_stages
     completed_stage = next(
@@ -55,5 +78,5 @@ def visible_to_role(
     )
     if completed_stage in signed_stages:
         return True
-    current_stage = next_stage(submissions)
+    current_stage = next_stage(submissions, form_type)
     return current_stage is not None and STAGE_ROLE[current_stage] is role
