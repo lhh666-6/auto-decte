@@ -51,6 +51,18 @@ export type BambooStage = "SORT" | "DIPPING" | "DRYING" | "SUPERVISOR" | "PLANT_
 export type BambooFormType = "SORTING" | "DIPPING_DRYING";
 export type BambooTaskBucket = "available" | "waiting" | "completed";
 
+export interface BambooSourceSnapshot {
+  record_id?: string;
+  display_no?: string;
+  revision?: number;
+  base_info?: Record<string, unknown>;
+  source_status?: "CURRENT" | "UPSTREAM_CHANGED";
+  latest_revision?: number;
+  original_revision?: number;
+  changed_at?: string;
+  [key: string]: unknown;
+}
+
 export interface BambooStageSubmission {
   submission_id: string;
   stage: BambooStage;
@@ -71,7 +83,7 @@ export interface BambooRecord {
   form_type: BambooFormType;
   production_object_id: string | null;
   source_record_id: string | null;
-  source_snapshot: Record<string, unknown>;
+  source_snapshot: BambooSourceSnapshot;
   base_info: Record<string, unknown>;
   current_stage: BambooStage | null;
   status: "ACTIVE" | "COMPLETED";
@@ -436,12 +448,11 @@ export class MobileApiClient {
   createBambooRecord(
     baseInfo: Record<string, unknown>,
     idempotencyKey: string,
-    formType: BambooFormType = "SORTING",
   ): Promise<BambooRecord> {
     return this.request("/bamboo/records", {
       method: "POST",
       headers: { "Idempotency-Key": idempotencyKey },
-      body: JSON.stringify({ form_type: formType, base_info: baseInfo }),
+      body: JSON.stringify({ form_type: "SORTING", base_info: baseInfo }),
     });
   }
 

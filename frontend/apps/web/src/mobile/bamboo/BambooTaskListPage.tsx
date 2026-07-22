@@ -19,15 +19,6 @@ const BUCKETS: Array<{ key: BambooTaskBucket; label: string }> = [
   { key: "completed", label: "已完成" },
 ];
 
-const DEFAULT_PRESETS: BambooRecordPresetOptions = {
-  options_version: "system-sort-v1",
-  special_classes: ["直装", "防霉"],
-  lengths: ["2.1", "2.3", "2.5"],
-  shades: ["深", "浅"],
-  grades: ["A", "B"],
-  weight_factors: { "2.1": "5", "2.3": "6", "2.5": "7" },
-};
-
 type PickerKey = "special_classes" | "length" | "shade" | "grade";
 type BaseInfoDraft = {
   mode: "分选" | "分选+装笼";
@@ -64,7 +55,9 @@ export function BambooTaskListPage() {
   const [formError, setFormError] = useState("");
   const [picker, setPicker] = useState<PickerKey | null>(null);
   const [confirming, setConfirming] = useState(false);
-  const [presets, setPresets] = useState<BambooRecordPresetOptions>(DEFAULT_PRESETS);
+  const [presets, setPresets] = useState<BambooRecordPresetOptions | null>(null);
+  const [presetsLoading, setPresetsLoading] = useState(false);
+  const [presetsError, setPresetsError] = useState("");
   const [baseInfo, setBaseInfo] = useState<BaseInfoDraft>(EMPTY_DRAFT);
   const [moisture, setMoisture] = useState(() => Array.from({ length: 8 }, () => ""));
   const [createIdempotencyKey, setCreateIdempotencyKey] = useState("");
@@ -73,10 +66,10 @@ export function BambooTaskListPage() {
 
   const netWeight = useMemo(() => {
     const bundles = Number(baseInfo.bundle_count);
-    const factor = Number(presets.weight_factors[baseInfo.length]);
+    const factor = Number(presets?.weight_factors[baseInfo.length]);
     if (!Number.isFinite(bundles) || bundles <= 0 || !Number.isFinite(factor)) return null;
     return { value: bundles * factor, factor };
-  }, [baseInfo.bundle_count, baseInfo.length, presets.weight_factors]);
+  }, [baseInfo.bundle_count, baseInfo.length, presets]);
 
   const moistureValues = useMemo(
     () => moisture.filter((value) => value.trim() !== "").map(Number),
@@ -107,12 +100,16 @@ export function BambooTaskListPage() {
   }, [bucket]);
 
   const loadPresets = useCallback(async () => {
-    setFormError("");
+    setPresetsLoading(true);
+    setPresetsError("");
+    setPresets(null);
     try {
       setPresets(await mobileApiClient.getBambooRecordOptions());
     } catch (cause) {
-      setPresets(DEFAULT_PRESETS);
-      setFormError(message(cause, "暂时无法读取后台发布的预设，已使用系统默认选项。"));
+      const detail = message(cause, "网络请求失败");
+      setPresetsError(`后台发布选项加载失败：${detail}。当前不能新建表单，请重新加载。`);
+    } finally {
+      setPresetsLoading(false);
     }
   }, []);
 
@@ -125,6 +122,8 @@ export function BambooTaskListPage() {
     setStageIdempotencyKey(createMobileClientId("sorting-stage"));
     setCreatedRecord(null);
     setFormError("");
+    setPresets(null);
+    setPresetsError("");
     setConfirming(false);
     setPicker(null);
     setCreating(true);
@@ -133,6 +132,10 @@ export function BambooTaskListPage() {
 
   const requestConfirm = (event: React.FormEvent) => {
     event.preventDefault();
+    if (!presets) {
+      setFormError("后台发布选项尚未成功加载，不能提交。请重新加载后再试。");
+      return;
+    }
     const validation = validateDraft(baseInfo, moisture);
     if (validation) {
       setFormError(validation);
@@ -143,6 +146,10 @@ export function BambooTaskListPage() {
   };
 
   const createRecord = async () => {
+    if (!presets) {
+      setFormError("后台发布选项不可用，不能建立表单。");
+      return;
+    }
     setSaving(true);
     setFormError("");
     try {
@@ -162,7 +169,6 @@ export function BambooTaskListPage() {
             options_version: presets.options_version,
           },
           createIdempotencyKey,
-          "SORTING",
         );
         setCreatedRecord(created);
       }
@@ -252,8 +258,10 @@ export function BambooTaskListPage() {
         <div className="bamboo-v3-sheet-backdrop" role="presentation">
           <form className="bamboo-v3-bottom-sheet bamboo-v3-create-sheet" onSubmit={requestConfirm} role="dialog" aria-modal="true" aria-label="新建竹丝记录">
             <div className="bamboo-v3-sheet-handle" />
-            <header><h3>新建竹丝工序记录</h3><button type="button" aria-label="关闭" onClick={() => setCreating(false)}>×</button></header>
+            <header><h3>新建竹丝工序记录</h3><button type="button" aria-label="关闭" disabled={saving || createdRecord !== null} onClick={() => setCreating(false)}>×</button></header>
             <div className="banner info">预设选项由管理员后台发布；手机端只能点选，不能临时新增。</div>
+            {presetsLoading && <div className="banner info" role="status">正在加载后台发布选项…</div>}
+            {presetsError && <div className="banner danger bamboo-preset-error" role="alert"><span>{presetsError}</span><button type="button" className="btn secondary small" disabled={presetsLoading || saving} onClick={() => void loadPresets()}>重新加载</button></div>}
             {formError && <div className="banner danger" role="alert">{formError}</div>}
             <div className="field">
               <span className="field-label">作业模式</span>
@@ -276,11 +284,12 @@ export function BambooTaskListPage() {
               value={baseInfo.special_classes.join("、")}
               placeholder="选填，可多选（防霉、直装等）"
               required={false}
+              disabled={!presets || presetsLoading || saving}
               onOpen={() => setPicker("special_classes")}
             />
-            <PickerField label="长度（m）" value={baseInfo.length} placeholder="点开选择长度" required onOpen={() => setPicker("length")} />
-            <PickerField label="深浅" value={baseInfo.shade} placeholder="点开选择深浅" required onOpen={() => setPicker("shade")} />
-            <PickerField label="品级" value={baseInfo.grade} placeholder="点开选择品级" required onOpen={() => setPicker("grade")} />
+            <PickerField label="长度（m）" value={baseInfo.length} placeholder="点开选择长度" required disabled={!presets || presetsLoading || saving} onOpen={() => setPicker("length")} />
+            <PickerField label="深浅" value={baseInfo.shade} placeholder="点开选择深浅" required disabled={!presets || presetsLoading || saving} onOpen={() => setPicker("shade")} />
+            <PickerField label="品级" value={baseInfo.grade} placeholder="点开选择品级" required disabled={!presets || presetsLoading || saving} onOpen={() => setPicker("grade")} />
             <label className="field">
               <span className="field-label">供应商</span>
               <input placeholder="选填，可留空" value={baseInfo.supplier} onChange={(event) => setBaseInfo({ ...baseInfo, supplier: event.target.value })} />
@@ -325,11 +334,11 @@ export function BambooTaskListPage() {
               <p className="bamboo-moisture-average">已填写 {moistureValues.length} 点 · 平均值 {moistureAverage ?? "—"}%</p>
             </fieldset>
             <div className="bamboo-v3-form-actions">
-              <button type="button" className="btn secondary" onClick={() => setCreating(false)}>取消</button>
-              <button type="submit" className="btn primary" disabled={saving}>核对并提交分选/装笼记录</button>
+              <button type="button" className="btn secondary" disabled={saving || createdRecord !== null} onClick={() => setCreating(false)}>取消</button>
+              <button type="submit" className="btn primary" disabled={saving || presetsLoading || !presets}>核对并提交分选/装笼记录</button>
             </div>
           </form>
-          {picker && (
+          {picker && presets && (
             <PickerModal
               picker={picker}
               presets={presets}
@@ -362,18 +371,20 @@ function PickerField({
   value,
   placeholder,
   required,
+  disabled,
   onOpen,
 }: {
   label: string;
   value: string;
   placeholder: string;
   required: boolean;
+  disabled: boolean;
   onOpen: () => void;
 }) {
   return (
     <div className="field">
       <span className="field-label">{label} {required && <em>*</em>}</span>
-      <button type="button" className="picker-trigger" onClick={onOpen}>
+      <button type="button" className="picker-trigger" disabled={disabled} onClick={onOpen}>
         {value ? <span className="val">{value}</span> : <span className="ph">{placeholder}</span>}
         <span className="caret">▾ 点开选择</span>
       </button>
@@ -465,7 +476,7 @@ function ConfirmCreateModal({
       <div className="modal-sheet">
         <div className="modal-head">
           <div className="modal-title" id="confirmCreateTitle">核对分选/装笼记录</div>
-          <button type="button" className="modal-close" aria-label="关闭" onClick={onCancel} disabled={recordCreated}>×</button>
+          <button type="button" className="modal-close" aria-label="关闭" onClick={onCancel} disabled={saving || recordCreated}>×</button>
         </div>
         <div className="banner info">确认后将建立分选表并绑定当前身份完成分选签字。</div>
         {recordCreated && <div className="banner info">分选表已建立；本次重试只继续签字，不会重复创建。</div>}

@@ -2017,6 +2017,13 @@ button { cursor: pointer; }
   margin: 16px 0;
   text-align: left;
 }
+.bamboo-preset-error {
+  display: grid;
+  gap: 9px;
+}
+.bamboo-preset-error button {
+  justify-self: start;
+}
 .bamboo-create-moisture legend em {
   color: var(--danger);
   font-style: normal;
