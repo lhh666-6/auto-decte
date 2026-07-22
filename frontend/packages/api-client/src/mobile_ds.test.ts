@@ -10,6 +10,34 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 describe("MobileApiClient", () => {
+  it("does not call the default browser fetch with the client as its receiver", async () => {
+    const originalFetch = globalThis.fetch;
+    const browserFetch = vi.fn(function (this: unknown) {
+      if (this instanceof MobileApiClient) {
+        throw new TypeError("Illegal invocation");
+      }
+      return Promise.resolve(jsonResponse({
+        employee_name: "张三",
+        employee_code: "E001",
+        team_name: "甲班",
+        position: "操作工",
+        roles: ["WORKER"],
+        allowed_form_types: [],
+        allowed_processes: [],
+      }));
+    });
+    vi.stubGlobal("fetch", browserFetch);
+
+    try {
+      const client = new MobileApiClient();
+
+      await expect(client.getSession()).resolves.toMatchObject({ employee_code: "E001" });
+      expect(browserFetch.mock.instances[0]).not.toBe(client);
+    } finally {
+      vi.stubGlobal("fetch", originalFetch);
+    }
+  });
+
   it("uses same-origin cookies and never returns an auth token from login", async () => {
     const fetcher = vi.fn().mockResolvedValue(jsonResponse({
       employee_name: "张三",

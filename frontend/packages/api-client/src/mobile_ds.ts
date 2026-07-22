@@ -185,7 +185,7 @@ async function toProblem(response: Response): Promise<MobileProblem> {
 export class MobileApiClient {
   constructor(
     private readonly baseUrl = "/api/v1/mobile",
-    private readonly fetcher: MobileFetcher = fetch,
+    private readonly fetcher: MobileFetcher = (input, init) => fetch(input, init),
     private readonly readCsrfToken: CsrfTokenReader = csrfTokenFromCookie,
   ) {}
 
