@@ -95,13 +95,40 @@ def test_complete_bamboo_operations_from_payroll_through_finance(tmp_path: Path)
             }
         },
     ).json()
-    record_id = str(created["record_id"])
-    _submit(sort, record_id, "SORT", 1, {"wage_amount": "80"})
-    _submit(dipping, record_id, "DIPPING", 2, {"wage_amount": "30"})
-    _submit(drying, record_id, "DRYING", 3, {"wage_amount": "20"})
+    sorting_id = str(created["record_id"])
+    sorted_record = _submit(
+        sort,
+        sorting_id,
+        "SORT",
+        1,
+        {"moisture": [12, 13, 14], "wage_amount": "80"},
+    )
+    assert sorted_record["current_stage"] == "SUPERVISOR"
+    linked_tasks = dipping.get("/api/v1/mobile/bamboo/tasks").json()["tasks"]
+    assert len(linked_tasks) == 1
+    linked_id = str(linked_tasks[0]["record_id"])
+    assert linked_tasks[0]["source_record_id"] == sorting_id
+    _submit(
+        dipping,
+        linked_id,
+        "DIPPING",
+        1,
+        {"moisture": [11, 12, 13], "wage_amount": "30"},
+    )
+    _submit(
+        drying,
+        linked_id,
+        "DRYING",
+        2,
+        {
+            "moisture": [8, 9, 10],
+            "rack_numbers": ["R-01", "R-02"],
+            "wage_amount": "20",
+        },
+    )
 
     inspection = inspector.post(
-        f"/api/v1/mobile/bamboo/records/{record_id}/inspections",
+        f"/api/v1/mobile/bamboo/records/{linked_id}/inspections",
         headers=_headers(inspector, "inspect-1"),
         json={
             "serial_no": "JC-001",
@@ -120,9 +147,9 @@ def test_complete_bamboo_operations_from_payroll_through_finance(tmp_path: Path)
     exception_id = payload["exception"]["exception_id"]
 
     blocked = supervisor.post(
-        f"/api/v1/mobile/bamboo/records/{record_id}/stages/SUPERVISOR/submit",
+        f"/api/v1/mobile/bamboo/records/{linked_id}/stages/SUPERVISOR/submit",
         headers=_headers(supervisor, "supervisor-blocked"),
-        json={"expected_revision": 4, "device_id": "phone", "values": {}},
+        json={"expected_revision": 3, "device_id": "phone", "values": {}},
     )
     assert blocked.status_code == 409
     inspector.post(
@@ -131,16 +158,39 @@ def test_complete_bamboo_operations_from_payroll_through_finance(tmp_path: Path)
         json={"resolution": "复测合格"},
     ).raise_for_status()
 
-    _submit(supervisor, record_id, "SUPERVISOR", 4, {"result": "APPROVED"})
-    after_audit = _submit(manager, record_id, "PLANT_AUDIT", 5, {"result": "APPROVED"})
-    assert after_audit["status"] == "COMPLETED"
+    _submit(supervisor, linked_id, "SUPERVISOR", 3, {"result": "APPROVED"})
+    linked_audit = _submit(
+        manager,
+        linked_id,
+        "PLANT_AUDIT",
+        4,
+        {"result": "APPROVED"},
+    )
+    _submit(supervisor, sorting_id, "SUPERVISOR", 2, {"result": "APPROVED"})
+    sorting_audit = _submit(
+        manager,
+        sorting_id,
+        "PLANT_AUDIT",
+        3,
+        {"result": "APPROVED"},
+    )
+    assert linked_audit["status"] == "COMPLETED"
+    assert sorting_audit["status"] == "COMPLETED"
 
-    operations = manager.get(f"/api/v1/mobile/bamboo/records/{record_id}/operations").json()
-    assert {fact["fact_type"] for fact in operations["payroll_facts"]} == {
-        "SORT",
-        "DIPPING_DRYING_JOINT",
-    }
-    assert {fact["status"] for fact in operations["payroll_facts"]} == {"EFFECTIVE"}
+    sorting_operations = manager.get(
+        f"/api/v1/mobile/bamboo/records/{sorting_id}/operations"
+    ).json()
+    linked_operations = manager.get(
+        f"/api/v1/mobile/bamboo/records/{linked_id}/operations"
+    ).json()
+    assert [fact["fact_type"] for fact in sorting_operations["payroll_facts"]] == [
+        "SORT"
+    ]
+    assert [fact["fact_type"] for fact in linked_operations["payroll_facts"]] == [
+        "DIPPING_DRYING_JOINT"
+    ]
+    assert sorting_operations["payroll_facts"][0]["status"] == "EFFECTIVE"
+    assert linked_operations["payroll_facts"][0]["status"] == "EFFECTIVE"
 
     batches = finance.get("/api/v1/mobile/bamboo/finance/daily-batches").json()
     assert len(batches) == 1
@@ -184,7 +234,7 @@ def test_complete_bamboo_operations_from_payroll_through_finance(tmp_path: Path)
     )
     assert correction.status_code == 200
     returned = supervisor.post(
-        f"/api/v1/mobile/bamboo/records/{record_id}/return",
+        f"/api/v1/mobile/bamboo/records/{linked_id}/return",
         headers=_headers(supervisor, "return-drying"),
         json={
             "target_stages": ["DRYING"],
@@ -194,12 +244,71 @@ def test_complete_bamboo_operations_from_payroll_through_finance(tmp_path: Path)
     )
     assert returned.status_code == 200
     assert returned.json()["current_stage"] == "DRYING"
-    _submit(drying, record_id, "DRYING", 7, {"wage_amount": "22"})
-    _submit(supervisor, record_id, "SUPERVISOR", 8, {"result": "APPROVED"})
-    _submit(manager, record_id, "PLANT_AUDIT", 9, {"result": "APPROVED"})
+    _submit(
+        drying,
+        linked_id,
+        "DRYING",
+        6,
+        {
+            "moisture": [7, 8, 9],
+            "rack_numbers": ["R-03", "R-04"],
+            "wage_amount": "22",
+        },
+    )
+    _submit(supervisor, linked_id, "SUPERVISOR", 7, {"result": "APPROVED"})
+    _submit(manager, linked_id, "PLANT_AUDIT", 8, {"result": "APPROVED"})
     supplemented = finance.get("/api/v1/mobile/bamboo/finance/daily-batches").json()
     assert len(supplemented) == 2
     assert any(batch["supplemental"] for batch in supplemented)
+
+
+def test_returning_sorting_marks_linked_source_snapshot_upstream_changed(
+    tmp_path: Path,
+) -> None:
+    services = build_services(Settings(data_root=tmp_path))
+    _add_user(services, "SORT-1", "SORT_OPERATOR")
+    _add_user(services, "DIP-1", "DIPPING_OPERATOR")
+    _add_user(services, "SUP-1", "SUPERVISOR")
+    sort = _client(services, "SORT-1")
+    dipping = _client(services, "DIP-1")
+    supervisor = _client(services, "SUP-1")
+
+    created = sort.post(
+        "/api/v1/mobile/bamboo/records",
+        headers=_headers(sort, "create-return"),
+        json={
+            "base_info": {
+                "cage_no": "RETURN-1",
+                "length": "2.3",
+                "shade": "深",
+                "grade": "A",
+                "bundle_count": 10,
+            }
+        },
+    ).json()
+    sorting_id = str(created["record_id"])
+    _submit(sort, sorting_id, "SORT", 1, {"moisture": [12, 13, 14]})
+    linked = dipping.get("/api/v1/mobile/bamboo/tasks").json()["tasks"][0]
+
+    returned = supervisor.post(
+        f"/api/v1/mobile/bamboo/records/{sorting_id}/return",
+        headers=_headers(supervisor, "return-sorting"),
+        json={
+            "target_stages": ["SORT"],
+            "reason": "分选数据需要重填",
+            "source": "SUPERVISOR",
+        },
+    )
+
+    assert returned.status_code == 200
+    assert returned.json()["current_stage"] == "SORT"
+    refreshed_linked = dipping.get(
+        f"/api/v1/mobile/bamboo/records/{linked['record_id']}"
+    ).json()
+    snapshot = refreshed_linked["source_snapshot"]
+    assert snapshot["source_status"] == "UPSTREAM_CHANGED"
+    assert snapshot["original_revision"] == 2
+    assert snapshot["latest_revision"] == 3
 
 
 def test_worker_role_change_requires_factory_manager_approval(tmp_path: Path) -> None:

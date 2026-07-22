@@ -1,4 +1,9 @@
-from app.modules.bamboo_process.models_ds import BambooRole, BambooStage, StageSubmission
+from app.modules.bamboo_process.models_ds import (
+    BambooFormType,
+    BambooRole,
+    BambooStage,
+    StageSubmission,
+)
 from app.modules.bamboo_process.state_machine_ds import (
     can_submit_stage,
     next_stage,
@@ -6,91 +11,129 @@ from app.modules.bamboo_process.state_machine_ds import (
 )
 
 
-def test_new_record_starts_at_sort() -> None:
-    assert next_stage([]) is BambooStage.SORT
+def test_sorting_form_advances_only_through_its_approval_chain() -> None:
+    submissions: list[StageSubmission] = []
+    assert next_stage(submissions, BambooFormType.SORTING) is BambooStage.SORT
 
-
-def test_signed_stages_open_the_next_main_stage() -> None:
-    submissions = [_submission(BambooStage.SORT)]
-    assert next_stage(submissions) is BambooStage.DIPPING
-
-    submissions.append(_submission(BambooStage.DIPPING))
-    assert next_stage(submissions) is BambooStage.DRYING
-
-    submissions.append(_submission(BambooStage.DRYING))
-    assert next_stage(submissions) is BambooStage.SUPERVISOR
+    submissions.append(_submission(BambooStage.SORT))
+    assert next_stage(submissions, BambooFormType.SORTING) is BambooStage.SUPERVISOR
 
     submissions.append(_submission(BambooStage.SUPERVISOR))
-    assert next_stage(submissions) is BambooStage.PLANT_AUDIT
+    assert next_stage(submissions, BambooFormType.SORTING) is BambooStage.PLANT_AUDIT
 
     submissions.append(_submission(BambooStage.PLANT_AUDIT))
-    assert next_stage(submissions) is None
+    assert next_stage(submissions, BambooFormType.SORTING) is None
 
 
-def test_invalidated_submission_reopens_its_stage() -> None:
+def test_dipping_drying_form_advances_through_both_production_stages() -> None:
+    submissions: list[StageSubmission] = []
+    form_type = BambooFormType.DIPPING_DRYING
+    assert next_stage(submissions, form_type) is BambooStage.DIPPING
+
+    submissions.append(_submission(BambooStage.DIPPING))
+    assert next_stage(submissions, form_type) is BambooStage.DRYING
+
+    submissions.append(_submission(BambooStage.DRYING))
+    assert next_stage(submissions, form_type) is BambooStage.SUPERVISOR
+
+    submissions.append(_submission(BambooStage.SUPERVISOR))
+    assert next_stage(submissions, form_type) is BambooStage.PLANT_AUDIT
+
+    submissions.append(_submission(BambooStage.PLANT_AUDIT))
+    assert next_stage(submissions, form_type) is None
+
+
+def test_invalidated_submission_reopens_the_stage_on_its_own_form() -> None:
     submissions = [
-        _submission(BambooStage.SORT),
-        _submission(BambooStage.DIPPING, invalidated=True),
+        _submission(BambooStage.DIPPING),
         _submission(BambooStage.DRYING, invalidated=True),
     ]
 
-    assert next_stage(submissions) is BambooStage.DIPPING
+    assert (
+        next_stage(submissions, BambooFormType.DIPPING_DRYING)
+        is BambooStage.DRYING
+    )
 
 
-def test_downstream_operator_is_hidden_until_the_previous_signature() -> None:
-    assert visible_to_role([], BambooRole.SORT_OPERATOR)
-    assert not visible_to_role([], BambooRole.DIPPING_OPERATOR)
-
+def test_visibility_is_scoped_to_the_independent_form_stage_order() -> None:
     after_sort = [_submission(BambooStage.SORT)]
-    assert visible_to_role(after_sort, BambooRole.DIPPING_OPERATOR)
-    assert not visible_to_role(after_sort, BambooRole.DRYING_RACK_OPERATOR)
+    assert visible_to_role(after_sort, BambooRole.SORT_OPERATOR, BambooFormType.SORTING)
+    assert visible_to_role(after_sort, BambooRole.SUPERVISOR, BambooFormType.SORTING)
+    assert not visible_to_role(
+        after_sort,
+        BambooRole.DIPPING_OPERATOR,
+        BambooFormType.SORTING,
+    )
 
-    after_dipping = [*after_sort, _submission(BambooStage.DIPPING)]
-    assert visible_to_role(after_dipping, BambooRole.DRYING_RACK_OPERATOR)
-    assert not visible_to_role(after_dipping, BambooRole.SUPERVISOR)
+    after_dipping = [_submission(BambooStage.DIPPING)]
+    assert visible_to_role(
+        after_dipping,
+        BambooRole.DIPPING_OPERATOR,
+        BambooFormType.DIPPING_DRYING,
+    )
+    assert visible_to_role(
+        after_dipping,
+        BambooRole.DRYING_RACK_OPERATOR,
+        BambooFormType.DIPPING_DRYING,
+    )
+    assert not visible_to_role(
+        after_dipping,
+        BambooRole.SUPERVISOR,
+        BambooFormType.DIPPING_DRYING,
+    )
 
 
 def test_supervision_and_finance_visibility_open_by_layer() -> None:
+    form_type = BambooFormType.DIPPING_DRYING
     production_complete = [
-        _submission(BambooStage.SORT),
         _submission(BambooStage.DIPPING),
         _submission(BambooStage.DRYING),
     ]
-    assert visible_to_role(production_complete, BambooRole.SUPERVISOR)
-    assert visible_to_role(production_complete, BambooRole.INSPECTOR)
-    assert not visible_to_role(production_complete, BambooRole.PLANT_MANAGER)
-    assert not visible_to_role(production_complete, BambooRole.FINANCE_APPROVER)
+    assert visible_to_role(production_complete, BambooRole.SUPERVISOR, form_type)
+    assert visible_to_role(production_complete, BambooRole.INSPECTOR, form_type)
+    assert not visible_to_role(production_complete, BambooRole.PLANT_MANAGER, form_type)
+    assert not visible_to_role(production_complete, BambooRole.FINANCE_APPROVER, form_type)
 
     supervisor_complete = [
         *production_complete,
         _submission(BambooStage.SUPERVISOR),
     ]
-    assert visible_to_role(supervisor_complete, BambooRole.INSPECTOR)
-    assert visible_to_role(supervisor_complete, BambooRole.PLANT_MANAGER)
+    assert visible_to_role(supervisor_complete, BambooRole.PLANT_MANAGER, form_type)
 
     audited = [
         *supervisor_complete,
         _submission(BambooStage.PLANT_AUDIT),
     ]
-    assert visible_to_role(audited, BambooRole.FINANCE_APPROVER)
-    assert visible_to_role(audited, BambooRole.SYSTEM_ADMIN)
+    assert visible_to_role(audited, BambooRole.FINANCE_APPROVER, form_type)
+    assert visible_to_role(audited, BambooRole.SYSTEM_ADMIN, form_type)
 
 
-def test_signer_keeps_read_only_visibility_after_completing_a_stage() -> None:
-    after_sort = [_submission(BambooStage.SORT)]
-
-    assert visible_to_role(after_sort, BambooRole.SORT_OPERATOR)
-    assert visible_to_role(after_sort, BambooRole.DIPPING_OPERATOR)
-
-
-def test_each_main_stage_requires_its_assigned_role() -> None:
-    assert can_submit_stage(BambooRole.SORT_OPERATOR, BambooStage.SORT)
-    assert can_submit_stage(BambooRole.DIPPING_OPERATOR, BambooStage.DIPPING)
-    assert can_submit_stage(BambooRole.DRYING_RACK_OPERATOR, BambooStage.DRYING)
-    assert can_submit_stage(BambooRole.SUPERVISOR, BambooStage.SUPERVISOR)
-    assert can_submit_stage(BambooRole.PLANT_MANAGER, BambooStage.PLANT_AUDIT)
-    assert not can_submit_stage(BambooRole.INSPECTOR, BambooStage.SUPERVISOR)
-    assert not can_submit_stage(BambooRole.SORT_OPERATOR, BambooStage.DIPPING)
+def test_stage_permissions_reject_stages_from_the_other_form() -> None:
+    assert can_submit_stage(
+        BambooRole.SORT_OPERATOR,
+        BambooStage.SORT,
+        BambooFormType.SORTING,
+    )
+    assert can_submit_stage(
+        BambooRole.DIPPING_OPERATOR,
+        BambooStage.DIPPING,
+        BambooFormType.DIPPING_DRYING,
+    )
+    assert can_submit_stage(
+        BambooRole.DRYING_RACK_OPERATOR,
+        BambooStage.DRYING,
+        BambooFormType.DIPPING_DRYING,
+    )
+    assert not can_submit_stage(
+        BambooRole.DIPPING_OPERATOR,
+        BambooStage.DIPPING,
+        BambooFormType.SORTING,
+    )
+    assert not can_submit_stage(
+        BambooRole.SORT_OPERATOR,
+        BambooStage.SORT,
+        BambooFormType.DIPPING_DRYING,
+    )
 
 
 def _submission(stage: BambooStage, *, invalidated: bool = False) -> StageSubmission:
@@ -104,6 +147,6 @@ def _submission(stage: BambooStage, *, invalidated: bool = False) -> StageSubmis
         actor_name="测试员工",
         role_code="TEST_ROLE",
         factory_id="FACTORY-A",
-        submitted_at="2026-07-22T10:00:00+08:00",
+        submitted_at="2026-07-22T10:00:00+08:00",  # type: ignore[arg-type]
         invalidated=invalidated,
     )

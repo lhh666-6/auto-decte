@@ -55,7 +55,7 @@ def _write_headers(client: TestClient, key: str) -> dict[str, str]:
     }
 
 
-def test_bamboo_record_opens_to_each_role_only_after_previous_signature(
+def test_bamboo_independent_forms_open_by_role_and_validate_production_values(
     tmp_path: Path,
 ) -> None:
     services = build_services(Settings(data_root=tmp_path))
@@ -80,8 +80,13 @@ def test_bamboo_record_opens_to_each_role_only_after_previous_signature(
         },
     )
     assert created.status_code == 201
-    record_id = created.json()["record_id"]
-    assert created.json()["current_stage"] == "SORT"
+    sorting = created.json()
+    record_id = sorting["record_id"]
+    assert sorting["current_stage"] == "SORT"
+    assert sorting["form_type"] == "SORTING"
+    assert sorting["production_object_id"] == record_id
+    assert sorting["source_record_id"] is None
+    assert sorting["source_snapshot"] == {}
     repeated = sort_client.post(
         "/api/v1/mobile/bamboo/records",
         headers=_write_headers(sort_client, "create-1"),
@@ -96,14 +101,22 @@ def test_bamboo_record_opens_to_each_role_only_after_previous_signature(
     wrong_stage = sort_client.post(
         f"/api/v1/mobile/bamboo/records/{record_id}/stages/DIPPING/submit",
         headers=_write_headers(sort_client, "wrong-stage"),
-        json={"expected_revision": 1, "device_id": "sort-phone", "values": {}},
+        json={
+            "expected_revision": 1,
+            "device_id": "sort-phone",
+            "values": {"moisture": [12, 13, 14]},
+        },
     )
     assert wrong_stage.status_code == 409
     assert wrong_stage.json()["code"] == "STAGE_NOT_AVAILABLE"
     stale = sort_client.post(
         f"/api/v1/mobile/bamboo/records/{record_id}/stages/SORT/submit",
         headers=_write_headers(sort_client, "stale-stage"),
-        json={"expected_revision": 99, "device_id": "sort-phone", "values": {}},
+        json={
+            "expected_revision": 99,
+            "device_id": "sort-phone",
+            "values": {"moisture": [12, 13, 14]},
+        },
     )
     assert stale.status_code == 409
     assert stale.json()["code"] == "STALE_REVISION"
@@ -114,20 +127,134 @@ def test_bamboo_record_opens_to_each_role_only_after_previous_signature(
         json={
             "expected_revision": 1,
             "device_id": "sort-phone",
-            "values": {"moisture": [12, 13]},
+            "values": {"moisture": [12, 13, 14]},
         },
     )
     assert signed.status_code == 200
-    assert signed.json()["current_stage"] == "DIPPING"
-    assert dipping_client.get(
-        f"/api/v1/mobile/bamboo/records/{record_id}"
-    ).status_code == 200
+    assert signed.json()["current_stage"] == "SUPERVISOR"
+    assert sort_client.get("/api/v1/mobile/bamboo/dashboard").json()["completed"] == 1
+
+    replayed = sort_client.post(
+        f"/api/v1/mobile/bamboo/records/{record_id}/stages/SORT/submit",
+        headers=_write_headers(sort_client, "sort-1"),
+        json={
+            "expected_revision": 1,
+            "device_id": "sort-phone",
+            "values": {"moisture": [99]},
+        },
+    )
+    assert replayed.status_code == 200
+    assert replayed.json()["record_id"] == record_id
+
+    dipping_tasks = dipping_client.get("/api/v1/mobile/bamboo/tasks").json()["tasks"]
+    assert len(dipping_tasks) == 1
+    linked = dipping_tasks[0]
+    linked_id = linked["record_id"]
+    assert linked["form_type"] == "DIPPING_DRYING"
+    assert linked["current_stage"] == "DIPPING"
+    assert linked["source_record_id"] == record_id
+    assert linked["production_object_id"] == sorting["production_object_id"]
+    assert linked["source_snapshot"]["record_id"] == record_id
+    assert dipping_client.get(f"/api/v1/mobile/bamboo/records/{record_id}").status_code == 404
     assert drying_client.get(
-        f"/api/v1/mobile/bamboo/records/{record_id}"
+        f"/api/v1/mobile/bamboo/records/{linked_id}"
     ).status_code == 404
-    assert dipping_client.get(
-        "/api/v1/mobile/bamboo/dashboard"
-    ).json()["available"] == 1
+    assert drying_client.get("/api/v1/mobile/bamboo/dashboard").json()["waiting"] == 1
+
+    invalid_weight = dipping_client.post(
+        f"/api/v1/mobile/bamboo/records/{linked_id}/stages/DIPPING/submit",
+        headers=_write_headers(dipping_client, "dip-invalid-weight"),
+        json={
+            "expected_revision": 1,
+            "device_id": "dip-phone",
+            "values": {
+                "moisture": [11, 12, 13],
+                "glue_before_weight": "10",
+                "glue_after_weight": "9",
+            },
+        },
+    )
+    assert invalid_weight.status_code == 422
+    assert invalid_weight.json()["code"] == "INVALID_BAMBOO_STAGE_VALUES"
+
+    dipped = dipping_client.post(
+        f"/api/v1/mobile/bamboo/records/{linked_id}/stages/DIPPING/submit",
+        headers=_write_headers(dipping_client, "dip-without-weight"),
+        json={
+            "expected_revision": 1,
+            "device_id": "dip-phone",
+            "values": {"moisture": [11, 12, 13]},
+        },
+    )
+    assert dipped.status_code == 200
+    assert dipped.json()["current_stage"] == "DRYING"
+
+    duplicate_racks = drying_client.post(
+        f"/api/v1/mobile/bamboo/records/{linked_id}/stages/DRYING/submit",
+        headers=_write_headers(drying_client, "dry-duplicate-racks"),
+        json={
+            "expected_revision": 2,
+            "device_id": "dry-phone",
+            "values": {
+                "moisture": [8, 9, 10],
+                "rack_numbers": ["R-01", "R-01"],
+            },
+        },
+    )
+    assert duplicate_racks.status_code == 422
+    assert duplicate_racks.json()["code"] == "INVALID_BAMBOO_STAGE_VALUES"
+
+    dried = drying_client.post(
+        f"/api/v1/mobile/bamboo/records/{linked_id}/stages/DRYING/submit",
+        headers=_write_headers(drying_client, "dry-valid-racks"),
+        json={
+            "expected_revision": 2,
+            "device_id": "dry-phone",
+            "values": {
+                "moisture": [8, 9, 10],
+                "rack_numbers": ["R-01", "R-02"],
+                "rack_count": 999,
+            },
+        },
+    )
+    assert dried.status_code == 200
+    assert dried.json()["current_stage"] == "SUPERVISOR"
+    assert dried.json()["submissions"][-1]["values"]["rack_count"] == 2
+
+
+def test_bamboo_mode_accepts_sorting_variants_and_rejects_caging_only(
+    tmp_path: Path,
+) -> None:
+    services = build_services(Settings(data_root=tmp_path))
+    _add_bamboo_user(services, employee_code="E-SORT", role="SORT_OPERATOR")
+    client = _client(services, "E-SORT")
+
+    def create(mode: str, key: str) -> object:
+        return client.post(
+            "/api/v1/mobile/bamboo/records",
+            headers=_write_headers(client, key),
+            json={
+                "base_info": {
+                    "mode": mode,
+                    "cage_no": key,
+                    "length": "2.3",
+                    "shade": "深",
+                    "grade": "A",
+                    "bundle_count": 10,
+                }
+            },
+        )
+
+    sorting = create("分选", "mode-sort")
+    sorting_and_caging = create("分选+装笼", "mode-sort-cage")
+    caging_only = create("装笼", "mode-cage")
+
+    assert sorting.status_code == 201
+    assert sorting.json()["base_info"]["mode"] == "分选"
+    assert sorting_and_caging.status_code == 201
+    assert sorting_and_caging.json()["base_info"]["mode"] == "分选+装笼"
+    assert caging_only.status_code == 422
+    assert caging_only.json()["code"] == "INVALID_BAMBOO_BASE_INFO"
 
 
 def test_bamboo_writes_require_csrf_and_idempotency_key(tmp_path: Path) -> None:
