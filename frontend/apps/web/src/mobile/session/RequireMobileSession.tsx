@@ -11,7 +11,7 @@ function safeReturnPath(path: string): string {
 }
 
 export function RequireMobileSession() {
-  const { status, refreshSession, error } = useMobileSession();
+  const { status, refreshSession, error, sessionMetadata } = useMobileSession();
   const location = useLocation();
 
   if (status === "loading") {
@@ -33,6 +33,10 @@ export function RequireMobileSession() {
         </button>
       </section>
     );
+  }
+  const role = sessionMetadata?.bamboo_role ?? "";
+  if ((role === "FINANCE_APPROVER" || !role) && location.pathname !== "/mobile/home") {
+    return <Navigate to="/mobile/home" replace />;
   }
   return <Outlet />;
 }

@@ -6,17 +6,12 @@ import { ExportCenter } from "../ExportCenter_ds";
 import { MasterDataCenter } from "../MasterDataCenter_ds";
 import { TemplateStudio } from "../TemplateStudio_ds";
 import { ReviewWorkbenchPage } from "../workbench/ReviewWorkbenchPage";
-import { MobileLayout } from "../mobile/MobileLayout";
+import { MobileV3Shell } from "../mobile/v3/MobileV3Shell";
+import { BambooV3HomePage } from "../mobile/v3/BambooV3HomePage";
 import { MobileLoginPage } from "../mobile/MobileLoginPage";
-import { MobileHomePage } from "../mobile/MobileHomePage";
-import { MobileRecordPage } from "../mobile/MobileRecordPage";
 import { MobileBambooProcessPage } from "../mobile/MobileBambooProcessPage";
-import { MobileSheetPiecePage } from "../mobile/MobileSheetPiecePage";
-import { MobileTeamSheetPiecePage } from "../mobile/MobileTeamSheetPiecePage";
-import { MobileDraftsPage } from "../mobile/MobileDraftsPage";
-import { MobileOutboxPage } from "../mobile/MobileOutboxPage";
-import { MobileSubmissionsPage } from "../mobile/MobileSubmissionsPage";
-import { MobileProfilePage } from "../mobile/MobileProfilePage";
+import { BambooV3SubmissionsPage } from "../mobile/v3/BambooV3SubmissionsPage";
+import { BambooV3ProfilePage } from "../mobile/v3/BambooV3ProfilePage";
 import { MobileSessionProvider } from "../mobile/session/MobileSessionProvider";
 import { RequireMobileSession } from "../mobile/session/RequireMobileSession";
 import { AppShell } from "./AppShell";
@@ -83,6 +78,11 @@ function ExportsRoute() {
   return <ExportCenter />;
 }
 
+function LegacyBambooRecordRedirect() {
+  const { recordId } = useParams<{ recordId: string }>();
+  return <Navigate to={`/mobile/records/${encodeURIComponent(recordId ?? "")}`} replace />;
+}
+
 function NotFound() {
   return (
     <section className="app-not-found">
@@ -115,20 +115,22 @@ export function AppRoutes() {
       </Route>
 
       {/* Mobile routes — separate layout with bottom tab nav */}
-      <Route element={<MobileSessionProvider><MobileLayout /></MobileSessionProvider>}>
+      <Route element={<MobileSessionProvider><MobileV3Shell /></MobileSessionProvider>}>
         <Route path="mobile" element={<Navigate to="/mobile/home" replace />} />
         <Route path="mobile/login" element={<MobileLoginPage />} />
+        <Route path="mobile/record" element={<Navigate to="/mobile/work" replace />} />
+        <Route path="mobile/record/bamboo-process" element={<Navigate to="/mobile/work" replace />} />
+        <Route path="mobile/record/bamboo-process/:recordId" element={<LegacyBambooRecordRedirect />} />
+        <Route path="mobile/drafts" element={<Navigate to="/mobile/submissions" replace />} />
+        <Route path="mobile/outbox" element={<Navigate to="/mobile/submissions" replace />} />
         <Route element={<RequireMobileSession />}>
-          <Route path="mobile/home" element={<MobileHomePage />} />
-          <Route path="mobile/record" element={<MobileRecordPage />} />
-          <Route path="mobile/record/bamboo-process" element={<MobileBambooProcessPage />} />
-          <Route path="mobile/record/bamboo-process/:recordId" element={<MobileBambooProcessPage />} />
-          <Route path="mobile/record/sheet-piece" element={<MobileSheetPiecePage />} />
-          <Route path="mobile/record/team-sheet-piece" element={<MobileTeamSheetPiecePage />} />
-          <Route path="mobile/drafts" element={<MobileDraftsPage />} />
-          <Route path="mobile/outbox" element={<MobileOutboxPage />} />
-          <Route path="mobile/submissions" element={<MobileSubmissionsPage />} />
-          <Route path="mobile/profile" element={<MobileProfilePage />} />
+          <Route path="mobile/home" element={<BambooV3HomePage />} />
+          <Route path="mobile/work" element={<MobileBambooProcessPage />} />
+          <Route path="mobile/records/:recordId" element={<MobileBambooProcessPage />} />
+          <Route path="mobile/record/sheet-piece" element={<Navigate to="/mobile/work" replace />} />
+          <Route path="mobile/record/team-sheet-piece" element={<Navigate to="/mobile/work" replace />} />
+          <Route path="mobile/submissions" element={<BambooV3SubmissionsPage />} />
+          <Route path="mobile/profile" element={<BambooV3ProfilePage />} />
         </Route>
       </Route>
     </Routes>

@@ -89,15 +89,15 @@ describe("MobileLoginPage", () => {
   it("renders login form with employee code and PIN inputs", () => {
     renderMobileRoute("/mobile/login");
 
-    expect(screen.getByText("工业工资表系统")).toBeTruthy();
+    expect(screen.getByText("竹丝工序记录")).toBeTruthy();
     expect(screen.getByPlaceholderText("请输入工号")).toBeTruthy();
     expect(screen.getByPlaceholderText("请输入密码或 PIN")).toBeTruthy();
     expect(screen.getByRole("button", { name: "登录" })).toBeTruthy();
   });
 
-  it("shows pilot version footer", () => {
+  it("shows authorized-use footer", () => {
     renderMobileRoute("/mobile/login");
-    expect(screen.getByText(/试点版本/)).toBeTruthy();
+    expect(screen.getByText(/仅限已授权人员使用/)).toBeTruthy();
   });
 });
 
