@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
 import {
@@ -31,6 +31,17 @@ type BaseInfoDraft = {
   bundle_count: string;
 };
 
+type PendingSortingSubmission = {
+  createKey: string;
+  stageKey: string;
+  draft: BaseInfoDraft;
+  moisture: string[];
+  baseInfo: Record<string, unknown>;
+  createdRecord?: BambooRecord;
+};
+
+const PENDING_SORTING_STORAGE_KEY = "bamboo-v3-pending-sorting-submission";
+
 const EMPTY_DRAFT: BaseInfoDraft = {
   mode: "分选",
   special_classes: [],
@@ -45,24 +56,28 @@ const EMPTY_DRAFT: BaseInfoDraft = {
 export function BambooTaskListPage() {
   const navigate = useNavigate();
   const { sessionMetadata: session } = useMobileSession();
+  const [initialPending] = useState<PendingSortingSubmission | null>(() => readPendingSortingSubmission());
+  const loadGeneration = useRef(0);
   const [bucket, setBucket] = useState<BambooTaskBucket>("available");
   const [dashboard, setDashboard] = useState<BambooDashboard>({ available: 0, waiting: 0, completed: 0 });
   const [tasks, setTasks] = useState<BambooRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [creating, setCreating] = useState(false);
+  const [creating, setCreating] = useState(initialPending !== null);
   const [saving, setSaving] = useState(false);
-  const [formError, setFormError] = useState("");
+  const [formError, setFormError] = useState(initialPending ? "发现一条未完成的分选提交，请继续提交或稍后处理。" : "");
   const [picker, setPicker] = useState<PickerKey | null>(null);
-  const [confirming, setConfirming] = useState(false);
+  const [confirming, setConfirming] = useState(initialPending !== null);
   const [presets, setPresets] = useState<BambooRecordPresetOptions | null>(null);
   const [presetsLoading, setPresetsLoading] = useState(false);
   const [presetsError, setPresetsError] = useState("");
-  const [baseInfo, setBaseInfo] = useState<BaseInfoDraft>(EMPTY_DRAFT);
-  const [moisture, setMoisture] = useState(() => Array.from({ length: 8 }, () => ""));
-  const [createIdempotencyKey, setCreateIdempotencyKey] = useState("");
-  const [stageIdempotencyKey, setStageIdempotencyKey] = useState("");
-  const [createdRecord, setCreatedRecord] = useState<BambooRecord | null>(null);
+  const [baseInfo, setBaseInfo] = useState<BaseInfoDraft>(initialPending?.draft ?? EMPTY_DRAFT);
+  const [moisture, setMoisture] = useState(() => initialPending?.moisture ?? Array.from({ length: 8 }, () => ""));
+  const [createIdempotencyKey, setCreateIdempotencyKey] = useState(initialPending?.createKey ?? "");
+  const [stageIdempotencyKey, setStageIdempotencyKey] = useState(initialPending?.stageKey ?? "");
+  const [pendingSubmission, setPendingSubmission] = useState<PendingSortingSubmission | null>(initialPending);
+  const hasPendingSubmission = pendingSubmission !== null;
+  const createdRecord = pendingSubmission?.createdRecord ?? null;
 
   const netWeight = useMemo(() => {
     const bundles = Number(baseInfo.bundle_count);
@@ -81,8 +96,11 @@ export function BambooTaskListPage() {
       : null,
     [moistureValues],
   );
+  const pendingNetWeight = Number(pendingSubmission?.baseInfo.net_weight);
+  const summaryNetWeight = netWeight?.value ?? (Number.isFinite(pendingNetWeight) ? pendingNetWeight : null);
 
   const load = useCallback(async () => {
+    const generation = ++loadGeneration.current;
     setLoading(true);
     setError("");
     try {
@@ -90,12 +108,14 @@ export function BambooTaskListPage() {
         mobileApiClient.getBambooDashboard(),
         mobileApiClient.listBambooTasks(bucket),
       ]);
+      if (generation !== loadGeneration.current) return;
       setDashboard(summary);
       setTasks(result.tasks);
     } catch (cause) {
+      if (generation !== loadGeneration.current) return;
       setError(message(cause, "无法加载工作记录，请检查网络后重试。"));
     } finally {
-      setLoading(false);
+      if (generation === loadGeneration.current) setLoading(false);
     }
   }, [bucket]);
 
@@ -113,14 +133,48 @@ export function BambooTaskListPage() {
     }
   }, []);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    void load();
+    return () => { loadGeneration.current += 1; };
+  }, [load]);
+
+  const closeCreateSheet = useCallback(() => {
+    if (saving) return;
+    setCreating(false);
+    setConfirming(false);
+    setPicker(null);
+  }, [saving]);
+
+  useEffect(() => {
+    if (!creating) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || saving) return;
+      event.preventDefault();
+      closeCreateSheet();
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [closeCreateSheet, creating, saving]);
 
   const openCreateSheet = () => {
+    const restored = pendingSubmission ?? readPendingSortingSubmission();
+    if (restored) {
+      setPendingSubmission(restored);
+      setBaseInfo(restored.draft);
+      setMoisture(restored.moisture);
+      setCreateIdempotencyKey(restored.createKey);
+      setStageIdempotencyKey(restored.stageKey);
+      setFormError("发现一条未完成的分选提交；继续时会复用原请求，不会重复建表。");
+      setConfirming(true);
+      setPicker(null);
+      setCreating(true);
+      return;
+    }
     setBaseInfo(EMPTY_DRAFT);
     setMoisture(Array.from({ length: 8 }, () => ""));
     setCreateIdempotencyKey(createMobileClientId("sorting-record"));
     setStageIdempotencyKey(createMobileClientId("sorting-stage"));
-    setCreatedRecord(null);
+    setPendingSubmission(null);
     setFormError("");
     setPresets(null);
     setPresetsError("");
@@ -146,31 +200,49 @@ export function BambooTaskListPage() {
   };
 
   const createRecord = async () => {
-    if (!presets) {
+    if (!pendingSubmission && !presets) {
       setFormError("后台发布选项不可用，不能建立表单。");
       return;
+    }
+    let pending = pendingSubmission;
+    if (!pending) {
+      const baseInfoPayload: Record<string, unknown> = {
+        mode: baseInfo.mode,
+        special_classes: baseInfo.special_classes,
+        length: baseInfo.length,
+        shade: baseInfo.shade,
+        grade: baseInfo.grade,
+        supplier: baseInfo.supplier.trim(),
+        cage_no: baseInfo.cage_no.trim(),
+        bundle_count: Number(baseInfo.bundle_count),
+        net_weight: netWeight?.value,
+        options_version: presets!.options_version,
+      };
+      pending = {
+        createKey: createIdempotencyKey,
+        stageKey: stageIdempotencyKey,
+        draft: { ...baseInfo, special_classes: [...baseInfo.special_classes] },
+        moisture: [...moisture],
+        baseInfo: baseInfoPayload,
+      };
+      if (!writePendingSortingSubmission(pending)) {
+        setFormError("浏览器无法保存本次待提交记录。为避免重复建表，尚未发送请求，请允许会话存储后重试。");
+        return;
+      }
+      setPendingSubmission(pending);
     }
     setSaving(true);
     setFormError("");
     try {
-      let created = createdRecord;
+      let created = pending.createdRecord;
       if (!created) {
         created = await mobileApiClient.createBambooRecord(
-          {
-            mode: baseInfo.mode,
-            special_classes: baseInfo.special_classes,
-            length: baseInfo.length,
-            shade: baseInfo.shade,
-            grade: baseInfo.grade,
-            supplier: baseInfo.supplier.trim(),
-            cage_no: baseInfo.cage_no.trim(),
-            bundle_count: Number(baseInfo.bundle_count),
-            net_weight: netWeight?.value,
-            options_version: presets.options_version,
-          },
-          createIdempotencyKey,
+          pending.baseInfo,
+          pending.createKey,
         );
-        setCreatedRecord(created);
+        pending = { ...pending, createdRecord: created };
+        writePendingSortingSubmission(pending);
+        setPendingSubmission(pending);
       }
       await mobileApiClient.submitBambooStage(
         created.record_id,
@@ -178,14 +250,16 @@ export function BambooTaskListPage() {
         {
           expected_revision: created.revision,
           device_id: getMobileDeviceId(),
-          values: { moisture: moistureValues },
+          values: { moisture: pending.moisture.filter((value) => value.trim() !== "").map(Number) },
         },
-        stageIdempotencyKey,
+        pending.stageKey,
       );
+      clearPendingSortingSubmission();
+      setPendingSubmission(null);
       setCreating(false);
       navigate(`/mobile/records/${encodeURIComponent(created.record_id)}`);
     } catch (cause) {
-      setFormError(message(cause, createdRecord ? "分选签字失败，请重试；系统不会重复建表。" : "新建或签字失败，请重试。"));
+      setFormError(message(cause, pending.createdRecord ? "分选签字失败，可稍后继续；系统不会重复建表。" : "请求结果尚未确认，可稍后用同一请求继续。"));
     } finally {
       setSaving(false);
     }
@@ -201,7 +275,7 @@ export function BambooTaskListPage() {
             <div className="section-note">{workDescription(session?.bamboo_role)}</div>
           </div>
           {session?.bamboo_role === "SORT_OPERATOR" && (
-            <button type="button" className="btn primary small" onClick={openCreateSheet} aria-label="新建竹丝记录">新建</button>
+            <button type="button" className="btn primary small" onClick={openCreateSheet} aria-label={hasPendingSubmission ? "继续未完成的分选提交" : "新建竹丝记录"}>{hasPendingSubmission ? "继续提交" : "新建"}</button>
           )}
         </div>
         <div className="section-note">{session?.factory_name || "当前工厂"} · {roleLabel(session?.bamboo_role)}</div>
@@ -258,7 +332,7 @@ export function BambooTaskListPage() {
         <div className="bamboo-v3-sheet-backdrop" role="presentation">
           <form className="bamboo-v3-bottom-sheet bamboo-v3-create-sheet" onSubmit={requestConfirm} role="dialog" aria-modal="true" aria-label="新建竹丝记录">
             <div className="bamboo-v3-sheet-handle" />
-            <header><h3>新建竹丝工序记录</h3><button type="button" aria-label="关闭" disabled={saving || createdRecord !== null} onClick={() => setCreating(false)}>×</button></header>
+            <header><h3>{hasPendingSubmission ? "继续分选提交" : "新建竹丝工序记录"}</h3><button type="button" aria-label="关闭" disabled={saving} onClick={closeCreateSheet}>×</button></header>
             <div className="banner info">预设选项由管理员后台发布；手机端只能点选，不能临时新增。</div>
             {presetsLoading && <div className="banner info" role="status">正在加载后台发布选项…</div>}
             {presetsError && <div className="banner danger bamboo-preset-error" role="alert"><span>{presetsError}</span><button type="button" className="btn secondary small" disabled={presetsLoading || saving} onClick={() => void loadPresets()}>重新加载</button></div>}
@@ -284,12 +358,12 @@ export function BambooTaskListPage() {
               value={baseInfo.special_classes.join("、")}
               placeholder="选填，可多选（防霉、直装等）"
               required={false}
-              disabled={!presets || presetsLoading || saving}
+              disabled={hasPendingSubmission || !presets || presetsLoading || saving}
               onOpen={() => setPicker("special_classes")}
             />
-            <PickerField label="长度（m）" value={baseInfo.length} placeholder="点开选择长度" required disabled={!presets || presetsLoading || saving} onOpen={() => setPicker("length")} />
-            <PickerField label="深浅" value={baseInfo.shade} placeholder="点开选择深浅" required disabled={!presets || presetsLoading || saving} onOpen={() => setPicker("shade")} />
-            <PickerField label="品级" value={baseInfo.grade} placeholder="点开选择品级" required disabled={!presets || presetsLoading || saving} onOpen={() => setPicker("grade")} />
+            <PickerField label="长度（m）" value={baseInfo.length} placeholder="点开选择长度" required disabled={hasPendingSubmission || !presets || presetsLoading || saving} onOpen={() => setPicker("length")} />
+            <PickerField label="深浅" value={baseInfo.shade} placeholder="点开选择深浅" required disabled={hasPendingSubmission || !presets || presetsLoading || saving} onOpen={() => setPicker("shade")} />
+            <PickerField label="品级" value={baseInfo.grade} placeholder="点开选择品级" required disabled={hasPendingSubmission || !presets || presetsLoading || saving} onOpen={() => setPicker("grade")} />
             <label className="field">
               <span className="field-label">供应商</span>
               <input placeholder="选填，可留空" value={baseInfo.supplier} onChange={(event) => setBaseInfo({ ...baseInfo, supplier: event.target.value })} />
@@ -334,8 +408,8 @@ export function BambooTaskListPage() {
               <p className="bamboo-moisture-average">已填写 {moistureValues.length} 点 · 平均值 {moistureAverage ?? "—"}%</p>
             </fieldset>
             <div className="bamboo-v3-form-actions">
-              <button type="button" className="btn secondary" disabled={saving || createdRecord !== null} onClick={() => setCreating(false)}>取消</button>
-              <button type="submit" className="btn primary" disabled={saving || presetsLoading || !presets}>核对并提交分选/装笼记录</button>
+              <button type="button" className="btn secondary" disabled={saving} onClick={closeCreateSheet}>{hasPendingSubmission ? "稍后继续" : "取消"}</button>
+              <button type="submit" className="btn primary" disabled={saving || (!hasPendingSubmission && (presetsLoading || !presets))}>{hasPendingSubmission ? "继续提交" : "核对并提交分选/装笼记录"}</button>
             </div>
           </form>
           {picker && presets && (
@@ -350,13 +424,15 @@ export function BambooTaskListPage() {
           {confirming && (
             <ConfirmCreateModal
               draft={baseInfo}
-              netWeight={netWeight?.value ?? null}
+              netWeight={summaryNetWeight}
               moisture={moistureValues}
               average={moistureAverage}
               error={formError}
               recordCreated={createdRecord !== null}
+              pending={hasPendingSubmission}
               saving={saving}
               onCancel={() => setConfirming(false)}
+              onDefer={closeCreateSheet}
               onConfirm={() => { void createRecord(); }}
             />
           )}
@@ -457,8 +533,10 @@ function ConfirmCreateModal({
   average,
   error,
   recordCreated,
+  pending,
   saving,
   onCancel,
+  onDefer,
   onConfirm,
 }: {
   draft: BaseInfoDraft;
@@ -467,8 +545,10 @@ function ConfirmCreateModal({
   average: string | null;
   error: string;
   recordCreated: boolean;
+  pending: boolean;
   saving: boolean;
   onCancel: () => void;
+  onDefer: () => void;
   onConfirm: () => void;
 }) {
   return (
@@ -476,10 +556,11 @@ function ConfirmCreateModal({
       <div className="modal-sheet">
         <div className="modal-head">
           <div className="modal-title" id="confirmCreateTitle">核对分选/装笼记录</div>
-          <button type="button" className="modal-close" aria-label="关闭" onClick={onCancel} disabled={saving || recordCreated}>×</button>
+          <button type="button" className="modal-close" aria-label="关闭" onClick={pending ? onDefer : onCancel} disabled={saving}>×</button>
         </div>
-        <div className="banner info">确认后将建立分选表并绑定当前身份完成分选签字。</div>
+        {!pending && <div className="banner info">确认后将建立分选表并绑定当前身份完成分选签字。</div>}
         {recordCreated && <div className="banner info">分选表已建立；本次重试只继续签字，不会重复创建。</div>}
+        {pending && !recordCreated && <div className="banner info">上次建表请求结果尚未确认；继续会用原幂等键重放，不会换键重建。</div>}
         {error && <div className="banner danger" role="alert">{error}</div>}
         <div className="confirm-summary">
           <b>{draft.mode}</b><br />
@@ -490,8 +571,8 @@ function ConfirmCreateModal({
           <br />含水率：{moisture.join("、")}（平均 {average ?? "—"}%）
         </div>
         <div className="btnrow">
-          <button type="button" className="btn secondary" onClick={onCancel} disabled={saving || recordCreated}>返回修改</button>
-          <button type="button" className="btn primary" onClick={onConfirm} disabled={saving}>{saving ? "提交中…" : "确认提交"}</button>
+          <button type="button" className="btn secondary" onClick={pending ? onDefer : onCancel} disabled={saving}>{pending ? "稍后继续" : "返回修改"}</button>
+          <button type="button" className="btn primary" onClick={onConfirm} disabled={saving}>{saving ? "提交中…" : pending ? "继续提交" : "确认提交"}</button>
         </div>
       </div>
     </div>
@@ -562,4 +643,57 @@ function formatTime(value: string): string {
 
 function message(cause: unknown, fallback: string): string {
   return cause instanceof MobileApiError ? cause.problem.detail : fallback;
+}
+
+function readPendingSortingSubmission(): PendingSortingSubmission | null {
+  if (typeof sessionStorage === "undefined") return null;
+  try {
+    const raw = sessionStorage.getItem(PENDING_SORTING_STORAGE_KEY);
+    if (!raw) return null;
+    const value = JSON.parse(raw) as Partial<PendingSortingSubmission>;
+    if (
+      typeof value.createKey !== "string"
+      || typeof value.stageKey !== "string"
+      || !isBaseInfoDraft(value.draft)
+      || !Array.isArray(value.moisture)
+      || value.moisture.some((item) => typeof item !== "string")
+      || !isPlainObject(value.baseInfo)
+      || (value.createdRecord !== undefined && !isPlainObject(value.createdRecord))
+    ) return null;
+    return value as PendingSortingSubmission;
+  } catch {
+    return null;
+  }
+}
+
+function writePendingSortingSubmission(pending: PendingSortingSubmission): boolean {
+  if (typeof sessionStorage === "undefined") return false;
+  try {
+    sessionStorage.setItem(PENDING_SORTING_STORAGE_KEY, JSON.stringify(pending));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function clearPendingSortingSubmission(): void {
+  if (typeof sessionStorage === "undefined") return;
+  try {
+    sessionStorage.removeItem(PENDING_SORTING_STORAGE_KEY);
+  } catch {
+    // A successful server signature is authoritative even if storage cleanup is unavailable.
+  }
+}
+
+function isBaseInfoDraft(value: unknown): value is BaseInfoDraft {
+  if (!isPlainObject(value)) return false;
+  return (value.mode === "分选" || value.mode === "分选+装笼")
+    && Array.isArray(value.special_classes)
+    && value.special_classes.every((item) => typeof item === "string")
+    && [value.length, value.shade, value.grade, value.supplier, value.cage_no, value.bundle_count]
+      .every((item) => typeof item === "string");
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
