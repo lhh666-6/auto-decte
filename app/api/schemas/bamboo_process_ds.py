@@ -125,6 +125,12 @@ class EmployeeRoleAssignmentRequest(BaseModel):
     factory_id: str | None = Field(default=None, max_length=64)
 
 
+class CreateFactoryEmployeeRequest(BaseModel):
+    employee_name: str = Field(min_length=1, max_length=100)
+    initial_pin: str = Field(min_length=4, max_length=12, pattern=r"^\d+$")
+    role_code: str = Field(min_length=1, max_length=64)
+
+
 class CreateFactoryRequest(BaseModel):
     code: str = Field(min_length=1, max_length=64)
     name: str = Field(min_length=1, max_length=200)

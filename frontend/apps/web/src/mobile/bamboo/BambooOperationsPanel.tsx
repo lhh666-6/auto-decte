@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   MobileApiError,
@@ -9,6 +9,8 @@ import {
 } from "@form-detection/api-client";
 
 import { createMobileClientId, getMobileDeviceId } from "../device";
+import { useMobileSession } from "../session/MobileSessionProvider";
+import { clearBambooDraft, readBambooDraft, writeBambooDraft, type BambooDraftScope } from "../storage/bambooDrafts";
 
 export function BambooOperationsPanel({
   record,
@@ -19,10 +21,11 @@ export function BambooOperationsPanel({
   role: string;
   onRefresh(): Promise<void>;
 }) {
+  const { sessionMetadata: session } = useMobileSession();
   const [summary, setSummary] = useState<BambooOperationsSummary | null>(null);
   const [inquiries, setInquiries] = useState<Array<{ inquiry_id: string; subject: string; status: string; messages: Array<{ actor_name: string; body: string }> }>>([]);
   const [serialNo, setSerialNo] = useState("");
-  const productionStages: BambooStage[] = record.form_type === "DIPPING_DRYING" ? ["DIPPING", "DRYING"] : ["SORT"];
+  const productionStages = useMemo<BambooStage[]>(() => record.form_type === "DIPPING_DRYING" ? ["DIPPING", "DRYING"] : ["SORT"], [record.form_type]);
   const [targetStage, setTargetStage] = useState<BambooStage>(() => record.form_type === "DIPPING_DRYING" ? "DIPPING" : "SORT");
   const [points, setPoints] = useState("");
   const [conclusion, setConclusion] = useState("CONFORMING");
@@ -30,9 +33,37 @@ export function BambooOperationsPanel({
   const [evidenceFiles, setEvidenceFiles] = useState<File[]>([]);
   const [returnStages, setReturnStages] = useState<BambooStage[]>([]);
   const [returnReason, setReturnReason] = useState("");
+  const [returnOpen, setReturnOpen] = useState(false);
   const [managerReply, setManagerReply] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
+  const restoredInspection = useRef("");
+  const inspectionScope = useMemo<BambooDraftScope | null>(() => session ? ({
+    employeeCode: session.employee_code,
+    factoryId: session.factory_id,
+    deviceId: getMobileDeviceId(),
+    recordId: record.record_id,
+    stage: "INSPECTION",
+  }) : null, [record.record_id, session]);
+
+  useEffect(() => {
+    if (!inspectionScope || role !== "INSPECTOR") return;
+    const key = JSON.stringify(inspectionScope);
+    if (restoredInspection.current === key) return;
+    restoredInspection.current = key;
+    const draft = readBambooDraft<{ serialNo: string; targetStage: BambooStage; points: string; conclusion: string; note: string }>(inspectionScope);
+    if (!draft) return;
+    setSerialNo(draft.serialNo || "");
+    setTargetStage(draft.targetStage || productionStages[0]);
+    setPoints(draft.points || "");
+    setConclusion(draft.conclusion || "CONFORMING");
+    setNote(draft.note || "");
+  }, [inspectionScope, productionStages, role]);
+
+  useEffect(() => {
+    if (!inspectionScope || role !== "INSPECTOR" || restoredInspection.current !== JSON.stringify(inspectionScope)) return;
+    writeBambooDraft(inspectionScope, { serialNo, targetStage, points, conclusion, note });
+  }, [conclusion, inspectionScope, note, points, role, serialNo, targetStage]);
 
   const load = useCallback(async () => {
     try {
@@ -84,6 +115,11 @@ export function BambooOperationsPanel({
         createMobileClientId("evidence"),
       );
     }
+    if (inspectionScope) clearBambooDraft(inspectionScope);
+    setSerialNo("");
+    setPoints("");
+    setNote("");
+    setEvidenceFiles([]);
   }, "检测记录及留痕已保存");
 
   const payrollFacts = summary?.payroll_facts ?? [];
@@ -137,16 +173,22 @@ export function BambooOperationsPanel({
 
       {role === "SUPERVISOR" && (
         <section className="bamboo-sheet-section bamboo-operations-panel">
-          <h3>主管选择性回退</h3>
+          <h3>主管处理</h3>
           {(summary?.corrections ?? []).filter((item) => item.status === "OPEN").map((item) => <div className="error-banner" key={item.case_id}>财务要求纠错：{item.reason}</div>)}
-          <p>只勾选确实需要重写的工序，系统会自动作废其下游签字，旧版本仍保留用于审计。</p>
-          <div className="bamboo-return-options">
-            {productionStages.map((stage) => (
-              <label key={stage}><input type="checkbox" checked={returnStages.includes(stage)} onChange={(event) => setReturnStages(event.target.checked ? [...returnStages, stage] : returnStages.filter((item) => item !== stage))} />{stageLabel(stage)}</label>
-            ))}
-          </div>
-          <label>回退原因<textarea value={returnReason} onChange={(event) => setReturnReason(event.target.value)} /></label>
-          <button disabled={busy || returnStages.length === 0 || !returnReason} onClick={() => void run(() => mobileApiClient.returnBambooRecord(record.record_id, returnStages, returnReason), "已按选择回退")}>确认回退</button>
+          {!returnOpen ? (
+            <><p>核对无误请直接使用下方“通过并签字”。只有发现错误时才发起回退。</p><button type="button" className="btn secondary" onClick={() => setReturnOpen(true)}>发现问题，发起回退</button></>
+          ) : (
+            <div className="bamboo-operation-form">
+              <p>只勾选确实需要重写的工序；旧版本仍保留用于审计。</p>
+              <div className="bamboo-return-options">
+                {productionStages.map((stage) => (
+                  <label key={stage}><input type="checkbox" checked={returnStages.includes(stage)} onChange={(event) => setReturnStages(event.target.checked ? [...returnStages, stage] : returnStages.filter((item) => item !== stage))} />{stageLabel(stage)}</label>
+                ))}
+              </div>
+              <label>回退原因<textarea value={returnReason} onChange={(event) => setReturnReason(event.target.value)} /></label>
+              <div className="btnrow"><button type="button" className="btn secondary" onClick={() => setReturnOpen(false)} disabled={busy}>取消回退</button><button type="button" className="btn danger" disabled={busy || returnStages.length === 0 || !returnReason} onClick={() => void run(() => mobileApiClient.returnBambooRecord(record.record_id, returnStages, returnReason), "已按选择回退")}>确认回退</button></div>
+            </div>
+          )}
         </section>
       )}
 

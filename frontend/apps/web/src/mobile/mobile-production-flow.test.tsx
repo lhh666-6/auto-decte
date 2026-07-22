@@ -38,7 +38,10 @@ vi.mock("./storage/outbox", () => ({
 vi.mock("./sync/SubmissionCoordinator", () => ({
   flushPendingOutbox: mocks.flushPendingOutbox,
 }));
-vi.mock("./device", () => ({ getMobileDeviceId: () => "device-1" }));
+vi.mock("./device", () => ({
+  createMobileClientId: (prefix: string) => `${prefix}-test-id`,
+  getMobileDeviceId: () => "device-1",
+}));
 vi.mock("./MobileFormEngine", () => ({
   MobileFormEngine: ({ children }: { children?: React.ReactNode }) => <div>{children}</div>,
 }));

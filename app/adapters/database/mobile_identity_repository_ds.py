@@ -172,8 +172,8 @@ class SqlAlchemyMobileIdentityRepository:
                         updated_at=now,
                     )
                 )
-                session.merge(
-                    BambooRoleDefinitionRow(
+                if session.get(BambooRoleDefinitionRow, bamboo_role) is None:
+                    session.add(BambooRoleDefinitionRow(
                         role_code=bamboo_role,
                         display_name=bamboo_role,
                         category="PRODUCTION",

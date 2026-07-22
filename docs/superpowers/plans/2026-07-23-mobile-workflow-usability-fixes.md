@@ -21,10 +21,10 @@
 - Test: `tests/api/test_mobile_bamboo_operations_ds.py`
 - Test: `frontend/apps/web/src/mobile/v3/BambooV3Pages.test.tsx`
 
-- [ ] 增加当前角色可见的预设职位、本厂人员和新增人员接口。
-- [ ] 拒绝未知或停用职位，删除厂长操作时自动创建职位的行为。
-- [ ] 将换岗申请、换岗审批、本厂人员拆成独立 UI，并使用中文选择控件。
-- [ ] 新增人员时生成工号、设置初始 PIN、绑定本厂和预设职位。
+- [x] 增加当前角色可见的预设职位、本厂人员和新增人员接口。
+- [x] 拒绝未知或停用职位，删除厂长操作时自动创建职位的行为。
+- [x] 将换岗申请、换岗审批、本厂人员拆成独立 UI，并使用中文选择控件。
+- [x] 新增人员时生成工号、设置初始 PIN、绑定本厂和预设职位。
 
 ### Task 2: 笼号检索与检测窗口
 
@@ -39,10 +39,10 @@
 - Test: `tests/api/test_mobile_bamboo_operations_ds.py`
 - Test: `frontend/apps/web/src/mobile/v3/BambooV3Pages.test.tsx`
 
-- [ ] `tasks` 支持笼号查询并在服务端按工厂/角色/步骤过滤。
-- [ ] 为检测人返回生产签字完成、主管尚未签字的候选记录。
-- [ ] 浸胶、干燥和检测工作页改为先搜索笼号再展示记录。
-- [ ] 保留异常阻止主管签字的规则。
+- [x] `tasks` 支持笼号查询并在服务端按工厂/角色/步骤过滤。
+- [x] 为检测人返回生产签字完成、主管尚未签字的候选记录。
+- [x] 浸胶、干燥和检测工作页改为先搜索笼号再展示记录。
+- [x] 保留异常阻止主管签字的规则。
 
 ### Task 3: 草稿缓存、本人历史与 PWA 安装
 
@@ -56,10 +56,10 @@
 - Modify: `frontend/apps/web/src/mobile/v3/BambooV3ProfilePage.tsx`
 - Test: `frontend/apps/web/src/mobile/v3/BambooV3Pages.test.tsx`
 
-- [ ] 实现按账号/工厂/设备/记录/步骤隔离的本地草稿读写和清理。
-- [ ] 所有输入变更自动保存，挂载时恢复，成功提交后清理。
-- [ ] 提交记录读取竹丝 `completed` 任务并展示本人步骤历史。
-- [ ] 捕获 PWA 安装事件并提供安装状态与不支持时指引。
+- [x] 实现按账号/工厂/设备/记录/步骤隔离的本地草稿读写和清理。
+- [x] 所有输入变更自动保存，挂载时恢复，成功提交后清理。
+- [x] 提交记录读取竹丝本人步骤与检测历史。
+- [x] 捕获 PWA 安装事件并提供安装状态与不支持时指引。
 
 ### Task 4: 主管通过与厂长即时审核
 
@@ -71,17 +71,16 @@
 - Test: `tests/integration/test_bamboo_process_repository_ds.py`
 - Test: `frontend/apps/web/src/mobile/bamboo/bamboo.test.tsx`
 
-- [ ] 将厂长审核默认等待时间设为零并在零值时不执行时间门禁。
-- [ ] 将主管回退表单改为显式打开的独立面板。
-- [ ] 保持主管通过按钮直接提交 `SUPERVISOR` 签字。
+- [x] 将厂长审核默认等待时间设为零并在零值时不执行时间门禁。
+- [x] 将主管回退表单改为显式打开的独立面板。
+- [x] 保持主管通过按钮直接提交 `SUPERVISOR` 签字。
 
 ### Task 5: 集中验证与运行服务
 
 **Files:**
 - Verify all files above.
 
-- [ ] 运行 Bamboo 后端模块、仓储和 API 测试。
-- [ ] 运行前端移动端聚焦测试、TypeScript 检查和生产构建。
-- [ ] 运行 Ruff 与 mypy。
-- [ ] 重启 8000 后端并通过 5173 局域网地址验证各角色登录和关键接口。
-
+- [x] 运行 Bamboo 后端模块、仓储和 API 测试。
+- [x] 运行前端移动端聚焦测试、TypeScript 检查和生产构建。
+- [x] 运行 Ruff 与 mypy。
+- [x] 重启 8000 后端并通过 5173 局域网地址验证各角色登录和关键接口。

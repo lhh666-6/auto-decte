@@ -69,7 +69,7 @@ def install_default_bamboo_payroll_rules(engine: Engine) -> None:
 
 
 class SqlAlchemyBambooProcessRepository:
-    def __init__(self, engine: Engine, *, plant_audit_wait_hours: float = 12.0) -> None:
+    def __init__(self, engine: Engine, *, plant_audit_wait_hours: float = 0.0) -> None:
         self._engine = engine
         self._plant_audit_wait_hours = plant_audit_wait_hours
         install_default_bamboo_payroll_rules(engine)
@@ -304,12 +304,15 @@ class SqlAlchemyBambooProcessRepository:
             )
             if supervisor_at is None:
                 raise BambooPermissionDenied("supervisor signature is required")
-            earliest = _utc(supervisor_at) + timedelta(hours=self._plant_audit_wait_hours)
-            submitted_at = submission.submitted_at
-            if submitted_at is None or submitted_at < earliest:
-                raise BambooPermissionDenied(
-                    f"plant audit is available after {earliest.isoformat()}"
+            if self._plant_audit_wait_hours > 0:
+                earliest = _utc(supervisor_at) + timedelta(
+                    hours=self._plant_audit_wait_hours
                 )
+                submitted_at = submission.submitted_at
+                if submitted_at is None or submitted_at < earliest:
+                    raise BambooPermissionDenied(
+                        f"厂长审核将在 {earliest.isoformat()} 后开放"
+                    )
 
     def _apply_stage_side_effects(
         self,

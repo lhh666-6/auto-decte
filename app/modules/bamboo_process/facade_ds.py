@@ -93,6 +93,7 @@ class BambooProcessFacade:
         *,
         actor: BambooActor,
         bucket: TaskBucket,
+        cage_no: str | None = None,
     ) -> list[BambooRecord]:
         records = self._repository.list_for_factory(actor.factory_id)
         completed = {
@@ -104,16 +105,29 @@ class BambooProcessFacade:
             )
         }
         if bucket is TaskBucket.AVAILABLE:
-            return [
-                record
-                for record in records
-                if record.record_id not in completed
-                and record.status is BambooRecordStatus.ACTIVE
-                and record.current_stage is not None
-                and can_submit_stage(actor.role, record.current_stage, record.form_type)
-            ]
+            if actor.role is BambooRole.INSPECTOR:
+                available = [
+                    record
+                    for record in records
+                    if record.status is BambooRecordStatus.ACTIVE
+                    and record.current_stage is BambooStage.SUPERVISOR
+                    and visible_to_role(record.submissions, actor.role, record.form_type)
+                ]
+            else:
+                available = [
+                    record
+                    for record in records
+                    if record.record_id not in completed
+                    and record.status is BambooRecordStatus.ACTIVE
+                    and record.current_stage is not None
+                    and can_submit_stage(actor.role, record.current_stage, record.form_type)
+                ]
+            return _filter_by_cage(available, cage_no)
         if bucket is TaskBucket.COMPLETED:
-            return [record for record in records if record.record_id in completed]
+            return _filter_by_cage(
+                [record for record in records if record.record_id in completed],
+                cage_no,
+            )
         if bucket is TaskBucket.WAITING:
             waiting: list[BambooRecord] = []
             for record in records:
@@ -134,7 +148,7 @@ class BambooProcessFacade:
                     continue
                 if stage_order.index(record.current_stage) < stage_order.index(role_stage):
                     waiting.append(record)
-            return waiting
+            return _filter_by_cage(waiting, cage_no)
         return []
 
     def get_visible(
@@ -320,3 +334,14 @@ class BambooProcessFacade:
                 "base_info": deepcopy(source.base_info),
             },
         )
+
+
+def _filter_by_cage(records: list[BambooRecord], cage_no: str | None) -> list[BambooRecord]:
+    query = (cage_no or "").strip().casefold()
+    if not query:
+        return records
+    return [
+        record
+        for record in records
+        if query in str(record.base_info.get("cage_no", "")).strip().casefold()
+    ]

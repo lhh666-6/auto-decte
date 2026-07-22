@@ -18,6 +18,7 @@ from app.api.schemas.bamboo_process_ds import (
     BambooTaskListResponse,
     CloseInspectionExceptionRequest,
     CreateBambooRecordRequest,
+    CreateFactoryEmployeeRequest,
     CreateFactoryRequest,
     CreateInspectionRequest,
     EmployeeRoleAssignmentRequest,
@@ -112,9 +113,14 @@ def dashboard(request: Request) -> BambooDashboardResponse:
 def list_tasks(
     request: Request,
     bucket: TaskBucket = TaskBucket.AVAILABLE,
+    cage_no: str | None = None,
 ) -> BambooTaskListResponse:
     actor = _bamboo_actor(request)
-    records = _services(request).bamboo_process.list_tasks(actor=actor, bucket=bucket)
+    records = _services(request).bamboo_process.list_tasks(
+        actor=actor,
+        bucket=bucket,
+        cage_no=cage_no,
+    )
     return BambooTaskListResponse(
         bucket=bucket.value,
         tasks=[_response(record) for record in records],
@@ -231,6 +237,53 @@ def assign_employee_role(
             role_code=body.role_code,
             factory_id=body.factory_id,
         )
+    except BambooOperationError as error:
+        raise _operation_error(error) from error
+
+
+@router.get("/role-options")
+def role_options(request: Request) -> list[dict[str, object]]:
+    actor = _bamboo_actor(request)
+    try:
+        return _services(request).bamboo_operations.list_role_options(actor)
+    except BambooOperationError as error:
+        raise _operation_error(error) from error
+
+
+@router.get("/admin/employees")
+def list_factory_employees(request: Request) -> list[dict[str, object]]:
+    actor = _bamboo_actor(request)
+    try:
+        return _services(request).bamboo_operations.list_factory_employees(actor)
+    except BambooOperationError as error:
+        raise _operation_error(error) from error
+
+
+@router.post("/admin/employees", status_code=status.HTTP_201_CREATED)
+def create_factory_employee(
+    body: CreateFactoryEmployeeRequest,
+    request: Request,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token"),
+) -> dict[str, object]:
+    actor = _bamboo_actor(request)
+    _require_write_headers(request, idempotency_key, x_csrf_token)
+    try:
+        return _services(request).bamboo_operations.create_factory_employee(
+            actor=actor,
+            employee_name=body.employee_name,
+            initial_pin=body.initial_pin,
+            role_code=body.role_code,
+        )
+    except BambooOperationError as error:
+        raise _operation_error(error) from error
+
+
+@router.get("/history")
+def actor_history(request: Request) -> list[dict[str, object]]:
+    actor = _bamboo_actor(request)
+    try:
+        return _services(request).bamboo_operations.list_actor_history(actor)
     except BambooOperationError as error:
         raise _operation_error(error) from error
 

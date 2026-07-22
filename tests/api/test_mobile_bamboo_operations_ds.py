@@ -127,6 +127,16 @@ def test_complete_bamboo_operations_from_payroll_through_finance(tmp_path: Path)
         },
     )
 
+    inspector_tasks = inspector.get(
+        "/api/v1/mobile/bamboo/tasks",
+        params={"bucket": "available", "cage_no": "L-207"},
+    ).json()["tasks"]
+    assert {item["record_id"] for item in inspector_tasks} == {sorting_id, linked_id}
+    assert inspector.get(
+        "/api/v1/mobile/bamboo/tasks",
+        params={"bucket": "available", "cage_no": "不存在"},
+    ).json()["tasks"] == []
+
     inspection = inspector.post(
         f"/api/v1/mobile/bamboo/records/{linked_id}/inspections",
         headers=_headers(inspector, "inspect-1"),
@@ -145,6 +155,9 @@ def test_complete_bamboo_operations_from_payroll_through_finance(tmp_path: Path)
     assert payload["average_value"] == "13.00"
     assert payload["evidence"][0]["evidence_type"] == "TEXT"
     exception_id = payload["exception"]["exception_id"]
+    inspector_history = inspector.get("/api/v1/mobile/bamboo/history").json()
+    assert inspector_history[0]["action"] == "INSPECTION"
+    assert inspector_history[0]["cage_no"] == "L-207"
 
     blocked = supervisor.post(
         f"/api/v1/mobile/bamboo/records/{linked_id}/stages/SUPERVISOR/submit",
@@ -379,6 +392,48 @@ def test_manager_configures_factory_rule_and_assigns_new_hire(tmp_path: Path) ->
     assert assigned.json()["role_code"] == "INSPECTOR"
     new_hire = _client(services, "NEW-1")
     assert new_hire.get("/api/v1/mobile/auth/session").json()["bamboo_role"] == "INSPECTOR"
+
+
+def test_manager_adds_people_only_with_published_business_roles(tmp_path: Path) -> None:
+    services = build_services(Settings(data_root=tmp_path))
+    _add_user(services, "MANAGER-1", "PLANT_MANAGER")
+    manager = _client(services, "MANAGER-1")
+
+    role_options = manager.get("/api/v1/mobile/bamboo/role-options").json()
+    assert {item["display_name"] for item in role_options} >= {
+        "分选工", "浸胶工", "干燥工", "检测人", "主管"
+    }
+    assert "PLANT_MANAGER" not in {item["role_code"] for item in role_options}
+
+    created = manager.post(
+        "/api/v1/mobile/bamboo/admin/employees",
+        headers=_headers(manager, "create-person"),
+        json={"employee_name": "新检测员", "initial_pin": "1357", "role_code": "INSPECTOR"},
+    )
+    assert created.status_code == 201
+    assert created.json() == {
+        "employee_code": "YG0001",
+        "employee_name": "新检测员",
+        "role_code": "INSPECTOR",
+        "role_name": "检测人",
+    }
+    people = manager.get("/api/v1/mobile/bamboo/admin/employees").json()
+    assert any(item["employee_code"] == "YG0001" for item in people)
+    new_person = TestClient(create_app(services))
+    login = new_person.post(
+        "/api/v1/mobile/auth/login",
+        json={"employee_code": "YG0001", "pin": "1357", "device_id": "new-phone"},
+    )
+    assert login.status_code == 200
+    assert new_person.get("/api/v1/mobile/auth/session").json()["bamboo_role"] == "INSPECTOR"
+
+    rejected = manager.post(
+        "/api/v1/mobile/bamboo/admin/assignments",
+        headers=_headers(manager, "unknown-role"),
+        json={"employee_code": "YG0001", "role_code": "NEW_UNPUBLISHED_ROLE"},
+    )
+    assert rejected.status_code == 409
+    assert "ASSIGNMENT_FORBIDDEN" in rejected.text
 
 
 def test_system_admin_can_add_future_factory(tmp_path: Path) -> None:

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
   MobileApiError,
@@ -9,6 +9,9 @@ import {
 
 import { createMobileClientId, getMobileDeviceId } from "../device";
 import { useMobileSession } from "../session/MobileSessionProvider";
+import { clearBambooDraft, readBambooDraft, writeBambooDraft, type BambooDraftScope } from "../storage/bambooDrafts";
+
+type StageDraft = { moisture: string[]; fields: Record<string, string>; rackNumbers: string[] };
 
 export function BambooStageForm({
   record,
@@ -27,6 +30,31 @@ export function BambooStageForm({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [idempotencyKey] = useState(() => createMobileClientId(`stage-${stage.toLowerCase()}`));
+  const restoredKey = useRef("");
+  const draftScope = useMemo<BambooDraftScope | null>(() => session ? ({
+    employeeCode: session.employee_code,
+    factoryId: session.factory_id,
+    deviceId: getMobileDeviceId(),
+    recordId: record.record_id,
+    stage,
+  }) : null, [record.record_id, session, stage]);
+
+  useEffect(() => {
+    if (!draftScope) return;
+    const key = JSON.stringify(draftScope);
+    if (restoredKey.current === key) return;
+    restoredKey.current = key;
+    const draft = readBambooDraft<StageDraft>(draftScope);
+    if (!draft) return;
+    if (Array.isArray(draft.moisture)) setMoisture(draft.moisture);
+    if (draft.fields && typeof draft.fields === "object") setFields(draft.fields);
+    if (Array.isArray(draft.rackNumbers)) setRackNumbers(draft.rackNumbers);
+  }, [draftScope]);
+
+  useEffect(() => {
+    if (!draftScope || restoredKey.current !== JSON.stringify(draftScope)) return;
+    writeBambooDraft(draftScope, { moisture, fields, rackNumbers });
+  }, [draftScope, fields, moisture, rackNumbers]);
 
   const moistureValues = useMemo(
     () => moisture.filter((value) => value.trim() !== "").map(Number),
@@ -77,6 +105,7 @@ export function BambooStageForm({
         },
         idempotencyKey,
       );
+      if (draftScope) clearBambooDraft(draftScope);
       setReviewing(false);
       onSigned(updated);
     } catch (cause) {

@@ -182,6 +182,32 @@ export interface BambooRoleChange {
   status: string;
 }
 
+export interface BambooRoleOption {
+  role_code: string;
+  display_name: string;
+  category: string;
+  self_requestable: boolean;
+}
+
+export interface BambooFactoryEmployee {
+  employee_code: string;
+  employee_name: string;
+  role_code: string;
+  role_name: string;
+}
+
+export interface BambooHistoryItem {
+  activity_id: string;
+  record_id: string;
+  display_no: string;
+  form_type: string;
+  cage_no: string;
+  action: string;
+  submitted_at: string;
+  current_stage: BambooStage | null;
+  status: string;
+}
+
 export interface MobileAvailableForm {
   form_type: string;
   title: string;
@@ -434,11 +460,13 @@ export class MobileApiClient {
     return this.request("/bamboo/dashboard");
   }
 
-  listBambooTasks(bucket: BambooTaskBucket): Promise<{
+  listBambooTasks(bucket: BambooTaskBucket, cageNo = ""): Promise<{
     bucket: BambooTaskBucket;
     tasks: BambooRecord[];
   }> {
-    return this.request(`/bamboo/tasks?bucket=${encodeURIComponent(bucket)}`);
+    const params = new URLSearchParams({ bucket });
+    if (cageNo.trim()) params.set("cage_no", cageNo.trim());
+    return this.request(`/bamboo/tasks?${params.toString()}`);
   }
 
   getBambooRecordOptions(): Promise<BambooRecordPresetOptions> {
@@ -594,6 +622,34 @@ export class MobileApiClient {
       headers: { "Idempotency-Key": createMobileClientId("employee-role") },
       body: JSON.stringify({ employee_code: employeeCode, role_code: roleCode }),
     });
+  }
+
+  listBambooRoleOptions(): Promise<BambooRoleOption[]> {
+    return this.request("/bamboo/role-options");
+  }
+
+  listBambooFactoryEmployees(): Promise<BambooFactoryEmployee[]> {
+    return this.request("/bamboo/admin/employees");
+  }
+
+  createBambooFactoryEmployee(
+    employeeName: string,
+    initialPin: string,
+    roleCode: string,
+  ): Promise<BambooFactoryEmployee> {
+    return this.request("/bamboo/admin/employees", {
+      method: "POST",
+      headers: { "Idempotency-Key": createMobileClientId("factory-employee") },
+      body: JSON.stringify({
+        employee_name: employeeName,
+        initial_pin: initialPin,
+        role_code: roleCode,
+      }),
+    });
+  }
+
+  listBambooHistory(): Promise<BambooHistoryItem[]> {
+    return this.request("/bamboo/history");
   }
 }
 

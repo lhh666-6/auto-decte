@@ -31,8 +31,10 @@ from app.adapters.database.models import (
     EmployeeBambooAssignmentRow,
     MasterDataRecordRow,
     MobileAccessProfileRow,
+    MobileCredentialRow,
 )
 from app.adapters.storage.local import LocalEvidenceStorage
+from app.application.mobile_identity_ds import hash_pin
 from app.modules.bamboo_process.models_ds import (
     BambooActor,
     BambooFormType,
@@ -64,6 +66,16 @@ DEFAULT_LENGTHS = ["2.1", "2.3", "2.5"]
 DEFAULT_SHADES = ["深", "浅"]
 DEFAULT_GRADES = ["A", "B"]
 DEFAULT_WEIGHT_FACTORS = {"2.1": "5", "2.3": "6", "2.5": "7"}
+DEFAULT_ROLE_DEFINITIONS = {
+    "SORT_OPERATOR": ("分选工", "PRODUCTION", True),
+    "DIPPING_OPERATOR": ("浸胶工", "PRODUCTION", True),
+    "DRYING_RACK_OPERATOR": ("干燥工", "PRODUCTION", True),
+    "INSPECTOR": ("检测人", "QUALITY", True),
+    "SUPERVISOR": ("主管", "MANAGEMENT", True),
+    "PLANT_MANAGER": ("厂长", "MANAGEMENT", False),
+    "FINANCE_APPROVER": ("财务审批", "FINANCE", False),
+    "SYSTEM_ADMIN": ("系统管理员", "ADMIN", False),
+}
 
 
 class BambooOperationError(RuntimeError):
@@ -156,6 +168,26 @@ class BambooOperationsService:
     def __init__(self, engine: Engine, storage: LocalEvidenceStorage) -> None:
         self._engine = engine
         self._storage = storage
+        self._install_default_roles()
+
+    def _install_default_roles(self) -> None:
+        with Session(self._engine) as session, session.begin():
+            for code, (name, category, requestable) in DEFAULT_ROLE_DEFINITIONS.items():
+                row = session.get(BambooRoleDefinitionRow, code)
+                if row is None:
+                    session.add(BambooRoleDefinitionRow(
+                        role_code=code,
+                        display_name=name,
+                        category=category,
+                        self_requestable=requestable,
+                        active=True,
+                        revision=1,
+                    ))
+                    continue
+                if row.display_name == code:
+                    row.display_name = name
+                row.category = category
+                row.self_requestable = requestable
 
     def record_summary(self, record_id: str, actor: BambooActor) -> dict[str, Any]:
         with Session(self._engine) as session:
@@ -465,18 +497,27 @@ class BambooOperationsService:
             if factory is None or not factory.active:
                 raise BambooOperationError("FACTORY_NOT_FOUND", "目标工厂不存在或已停用")
             role = session.get(BambooRoleDefinitionRow, role_code)
-            if role is None:
-                category = "PRODUCTION" if role_code in PRODUCTION_ROLES else "MANAGEMENT"
-                role = BambooRoleDefinitionRow(
-                    role_code=role_code,
-                    display_name=role_code,
-                    category=category,
-                    self_requestable=role_code in PRODUCTION_ROLES,
-                    active=True,
-                    revision=1,
+            if role is None or not role.active:
+                raise BambooOperationError(
+                    "ROLE_NOT_PUBLISHED",
+                    "该职位尚未由管理员发布或已经停用",
                 )
-                session.add(role)
-                session.flush()
+            active_assignment = session.scalar(
+                select(EmployeeBambooAssignmentRow).where(
+                    EmployeeBambooAssignmentRow.employee_catalog == "employees",
+                    EmployeeBambooAssignmentRow.employee_code == employee_code,
+                    EmployeeBambooAssignmentRow.status == "ACTIVE",
+                )
+            )
+            if (
+                actor.role is BambooRole.PLANT_MANAGER
+                and active_assignment is not None
+                and active_assignment.factory_id != actor.factory_id
+            ):
+                raise BambooOperationError(
+                    "EMPLOYEE_OUTSIDE_FACTORY",
+                    "厂长只能调整本厂人员",
+                )
             session.execute(
                 update(EmployeeBambooAssignmentRow)
                 .where(
@@ -507,7 +548,7 @@ class BambooOperationsService:
                         employee_code=employee_code,
                         team_id=f"TEAM-{selected_factory}",
                         team_name=factory.name,
-                        position=role_code,
+                        position=role.display_name,
                         roles=["WORKER"],
                         allowed_form_types=[],
                         allowed_processes=["BAMBOO_PROCESS"],
@@ -515,7 +556,9 @@ class BambooOperationsService:
                     )
                 )
             else:
-                profile.position = role_code
+                profile.team_id = f"TEAM-{selected_factory}"
+                profile.team_name = factory.name
+                profile.position = role.display_name
                 profile.allowed_processes = sorted(
                     set(profile.allowed_processes) | {"BAMBOO_PROCESS"}
                 )
@@ -527,6 +570,235 @@ class BambooOperationsService:
                 "role_code": role_code,
                 "status": "ACTIVE",
             }
+
+    def list_role_options(self, actor: BambooActor) -> list[dict[str, Any]]:
+        manager_roles = PRODUCTION_ROLES | {
+            BambooRole.INSPECTOR.value,
+            BambooRole.SUPERVISOR.value,
+        }
+        with Session(self._engine) as session:
+            rows = session.scalars(
+                select(BambooRoleDefinitionRow)
+                .where(BambooRoleDefinitionRow.active.is_(True))
+                .order_by(
+                    BambooRoleDefinitionRow.category,
+                    BambooRoleDefinitionRow.display_name,
+                )
+            ).all()
+            if actor.role.value in manager_roles and actor.role is not BambooRole.PLANT_MANAGER:
+                rows = [row for row in rows if row.self_requestable]
+            elif actor.role is BambooRole.PLANT_MANAGER:
+                rows = [row for row in rows if row.role_code in manager_roles]
+            elif actor.role is not BambooRole.SYSTEM_ADMIN:
+                rows = []
+            return [
+                {
+                    "role_code": row.role_code,
+                    "display_name": row.display_name,
+                    "category": row.category,
+                    "self_requestable": row.self_requestable,
+                }
+                for row in rows
+            ]
+
+    def list_factory_employees(self, actor: BambooActor) -> list[dict[str, Any]]:
+        if actor.role not in {BambooRole.PLANT_MANAGER, BambooRole.SYSTEM_ADMIN}:
+            raise BambooOperationError("MANAGER_REQUIRED", "仅厂长或管理员可查看人员")
+        with Session(self._engine) as session:
+            assignments = session.scalars(
+                select(EmployeeBambooAssignmentRow)
+                .where(
+                    EmployeeBambooAssignmentRow.factory_id == actor.factory_id,
+                    EmployeeBambooAssignmentRow.status == "ACTIVE",
+                )
+                .order_by(EmployeeBambooAssignmentRow.effective_at.desc())
+            ).all()
+            people: list[dict[str, Any]] = []
+            for assignment in assignments:
+                employee = session.get(
+                    MasterDataRecordRow,
+                    (assignment.employee_catalog, assignment.employee_code),
+                )
+                role = session.get(BambooRoleDefinitionRow, assignment.role_code)
+                if employee is None or not employee.active:
+                    continue
+                people.append(
+                    {
+                        "employee_code": employee.code,
+                        "employee_name": employee.display_name,
+                        "role_code": assignment.role_code,
+                        "role_name": (
+                            role.display_name if role is not None else assignment.role_code
+                        ),
+                    }
+                )
+            return sorted(
+                people,
+                key=lambda item: (item["employee_name"], item["employee_code"]),
+            )
+
+    def create_factory_employee(
+        self,
+        *,
+        actor: BambooActor,
+        employee_name: str,
+        initial_pin: str,
+        role_code: str,
+    ) -> dict[str, Any]:
+        if actor.role is not BambooRole.PLANT_MANAGER:
+            raise BambooOperationError("MANAGER_REQUIRED", "仅厂长可新增本厂人员")
+        manager_roles = PRODUCTION_ROLES | {
+            BambooRole.INSPECTOR.value,
+            BambooRole.SUPERVISOR.value,
+        }
+        if role_code not in manager_roles:
+            raise BambooOperationError("ASSIGNMENT_FORBIDDEN", "厂长不能分配该职位")
+        name = employee_name.strip()
+        if not name:
+            raise BambooOperationError("EMPLOYEE_NAME_REQUIRED", "请填写员工姓名")
+        now = datetime.now(UTC)
+        with Session(self._engine) as session, session.begin():
+            factory = session.get(BambooFactoryRow, actor.factory_id)
+            role = session.get(BambooRoleDefinitionRow, role_code)
+            if factory is None or not factory.active:
+                raise BambooOperationError("FACTORY_NOT_FOUND", "当前工厂不存在或已停用")
+            if role is None or not role.active:
+                raise BambooOperationError(
+                    "ROLE_NOT_PUBLISHED",
+                    "该职位尚未由管理员发布或已经停用",
+                )
+            codes = session.scalars(
+                select(MasterDataRecordRow.code).where(
+                    MasterDataRecordRow.catalog == "employees",
+                    MasterDataRecordRow.code.like("YG%"),
+                )
+            ).all()
+            sequence = max(
+                (int(code[2:]) for code in codes if code[2:].isdigit()),
+                default=0,
+            ) + 1
+            employee_code = f"YG{sequence:04d}"
+            session.add(
+                MasterDataRecordRow(
+                    catalog="employees",
+                    code=employee_code,
+                    display_name=name,
+                    attributes={"factory_id": actor.factory_id},
+                    active=True,
+                    revision=1,
+                    created_at=now,
+                    updated_at=now,
+                    created_by=actor.actor_id,
+                    updated_by=actor.actor_id,
+                )
+            )
+            session.flush()
+            salt, digest = hash_pin(initial_pin)
+            session.add(
+                MobileCredentialRow(
+                    employee_catalog="employees",
+                    employee_code=employee_code,
+                    pin_salt=salt,
+                    pin_hash=digest,
+                    failed_attempts=0,
+                    locked_until=None,
+                    revision=1,
+                    updated_at=now,
+                )
+            )
+            session.add(
+                MobileAccessProfileRow(
+                    employee_catalog="employees",
+                    employee_code=employee_code,
+                    team_id=f"TEAM-{actor.factory_id}",
+                    team_name=factory.name,
+                    position=role.display_name,
+                    roles=["WORKER"],
+                    allowed_form_types=[],
+                    allowed_processes=["BAMBOO_PROCESS"],
+                    active=True,
+                )
+            )
+            session.flush()
+            assignment = EmployeeBambooAssignmentRow(
+                assignment_id=f"MBA-{uuid4().hex}",
+                employee_catalog="employees",
+                employee_code=employee_code,
+                factory_id=actor.factory_id,
+                role_code=role_code,
+                status="ACTIVE",
+                effective_at=now,
+                ended_at=None,
+                created_by=actor.actor_id,
+                created_at=now,
+            )
+            session.add(assignment)
+            return {
+                "employee_code": employee_code,
+                "employee_name": name,
+                "role_code": role_code,
+                "role_name": role.display_name,
+            }
+
+    def list_actor_history(self, actor: BambooActor) -> list[dict[str, Any]]:
+        with Session(self._engine) as session:
+            rows = session.execute(
+                select(BambooStageSubmissionRow, BambooRecordRow)
+                .join(
+                    BambooRecordRow,
+                    BambooRecordRow.record_id == BambooStageSubmissionRow.record_id,
+                )
+                .where(
+                    BambooStageSubmissionRow.actor_id == actor.actor_id,
+                    BambooStageSubmissionRow.factory_id == actor.factory_id,
+                )
+                .order_by(BambooStageSubmissionRow.submitted_at.desc())
+            ).all()
+            history = [
+                {
+                    "activity_id": submission.submission_id,
+                    "record_id": record.record_id,
+                    "display_no": record.display_no,
+                    "form_type": record.form_type,
+                    "cage_no": str((record.base_info or {}).get("cage_no", "")),
+                    "action": submission.stage_key,
+                    "submitted_at": submission.submitted_at,
+                    "current_stage": record.current_stage,
+                    "status": record.status,
+                }
+                for submission, record in rows
+            ]
+            inspections = session.execute(
+                select(BambooInspectionRow, BambooRecordRow)
+                .join(
+                    BambooRecordRow,
+                    BambooRecordRow.record_id == BambooInspectionRow.record_id,
+                )
+                .where(
+                    BambooInspectionRow.actor_id == actor.actor_id,
+                    BambooInspectionRow.factory_id == actor.factory_id,
+                )
+                .order_by(BambooInspectionRow.signed_at.desc())
+            ).all()
+            history.extend(
+                {
+                    "activity_id": inspection.inspection_id,
+                    "record_id": record.record_id,
+                    "display_no": record.display_no,
+                    "form_type": record.form_type,
+                    "cage_no": str((record.base_info or {}).get("cage_no", "")),
+                    "action": "INSPECTION",
+                    "submitted_at": inspection.signed_at,
+                    "current_stage": record.current_stage,
+                    "status": record.status,
+                }
+                for inspection, record in inspections
+            )
+            return sorted(
+                history,
+                key=lambda item: item["submitted_at"],
+                reverse=True,
+            )
 
     def create_factory(self, *, actor: BambooActor, code: str, name: str) -> dict[str, Any]:
         if actor.role is not BambooRole.SYSTEM_ADMIN:
@@ -885,6 +1157,12 @@ class BambooOperationsService:
             raise BambooOperationError("ROLE_UNCHANGED", "目标职务与当前职务相同")
         now = datetime.now(UTC)
         with Session(self._engine) as session, session.begin():
+            target = session.get(BambooRoleDefinitionRow, to_role)
+            if target is None or not target.active or not target.self_requestable:
+                raise BambooOperationError(
+                    "ROLE_NOT_REQUESTABLE",
+                    "该职位未开放换岗申请",
+                )
             duplicate = session.scalar(
                 select(BambooRoleChangeRequestRow).where(
                     BambooRoleChangeRequestRow.employee_code == actor.employee_code,
@@ -940,18 +1218,12 @@ class BambooOperationsService:
             row.decision_note = note
             row.revision += 1
             if approve:
-                if session.get(BambooRoleDefinitionRow, row.to_role) is None:
-                    session.add(
-                        BambooRoleDefinitionRow(
-                            role_code=row.to_role,
-                            display_name=row.to_role,
-                            category="PRODUCTION",
-                            self_requestable=True,
-                            active=True,
-                            revision=1,
-                        )
+                target = session.get(BambooRoleDefinitionRow, row.to_role)
+                if target is None or not target.active or not target.self_requestable:
+                    raise BambooOperationError(
+                        "ROLE_NOT_REQUESTABLE",
+                        "目标职位已停用，请驳回申请并让员工重新选择",
                     )
-                    session.flush()
                 active = session.scalar(
                     select(EmployeeBambooAssignmentRow).where(
                         EmployeeBambooAssignmentRow.employee_code == row.employee_code,
@@ -976,6 +1248,12 @@ class BambooOperationsService:
                         created_at=now,
                     )
                 )
+                profile = session.get(
+                    MobileAccessProfileRow,
+                    ("employees", row.employee_code),
+                )
+                if profile is not None:
+                    profile.position = target.display_name
             session.flush()
             return self._role_request(row)
 

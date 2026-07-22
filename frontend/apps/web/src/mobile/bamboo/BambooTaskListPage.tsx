@@ -12,6 +12,7 @@ import {
 
 import { createMobileClientId, getMobileDeviceId } from "../device";
 import { useMobileSession } from "../session/MobileSessionProvider";
+import { clearBambooDraft, readBambooDraft, writeBambooDraft, type BambooDraftScope } from "../storage/bambooDrafts";
 
 const BUCKETS: Array<{ key: BambooTaskBucket; label: string }> = [
   { key: "available", label: "可记录" },
@@ -63,6 +64,8 @@ export function BambooTaskListPage() {
   const loadGeneration = useRef(0);
   const restoredScope = useRef("");
   const [bucket, setBucket] = useState<BambooTaskBucket>("available");
+  const [cageQuery, setCageQuery] = useState("");
+  const [searchedCage, setSearchedCage] = useState("");
   const [dashboard, setDashboard] = useState<BambooDashboard>({ available: 0, waiting: 0, completed: 0 });
   const [tasks, setTasks] = useState<BambooRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -80,6 +83,14 @@ export function BambooTaskListPage() {
   const [createIdempotencyKey, setCreateIdempotencyKey] = useState("");
   const [stageIdempotencyKey, setStageIdempotencyKey] = useState("");
   const [pendingSubmission, setPendingSubmission] = useState<PendingSortingSubmission | null>(null);
+  const roleRequiresCageSearch = ["DIPPING_OPERATOR", "DRYING_RACK_OPERATOR", "INSPECTOR"].includes(session?.bamboo_role ?? "") && bucket === "available";
+  const sortingDraftScope = useMemo<BambooDraftScope | null>(() => session ? ({
+    employeeCode: session.employee_code,
+    factoryId: session.factory_id,
+    deviceId,
+    recordId: "new-sorting",
+    stage: "SORT_CREATE",
+  }) : null, [deviceId, session]);
   const scopedPendingSubmission = pendingSubmission
     && pendingSubmission.ownerEmployeeCode === session?.employee_code
     && pendingSubmission.factoryId === session?.factory_id
@@ -111,13 +122,18 @@ export function BambooTaskListPage() {
   const summaryNetWeight = netWeight?.value ?? (Number.isFinite(pendingNetWeight) ? pendingNetWeight : null);
 
   const load = useCallback(async () => {
+    if (!session?.bamboo_role) return;
     const generation = ++loadGeneration.current;
     setLoading(true);
     setError("");
     try {
       const [summary, result] = await Promise.all([
         mobileApiClient.getBambooDashboard(),
-        mobileApiClient.listBambooTasks(bucket),
+        roleRequiresCageSearch && !searchedCage
+          ? Promise.resolve({ tasks: [] as BambooRecord[] })
+          : roleRequiresCageSearch
+            ? mobileApiClient.listBambooTasks(bucket, searchedCage)
+            : mobileApiClient.listBambooTasks(bucket),
       ]);
       if (generation !== loadGeneration.current) return;
       setDashboard(summary);
@@ -128,7 +144,7 @@ export function BambooTaskListPage() {
     } finally {
       if (generation === loadGeneration.current) setLoading(false);
     }
-  }, [bucket]);
+  }, [bucket, roleRequiresCageSearch, searchedCage, session?.bamboo_role]);
 
   const loadPresets = useCallback(async () => {
     setPresetsLoading(true);
@@ -175,6 +191,11 @@ export function BambooTaskListPage() {
     setCreating(true);
   }, [deviceId, session?.employee_code, session?.factory_id]);
 
+  useEffect(() => {
+    if (!creating || hasPendingSubmission || !sortingDraftScope) return;
+    writeBambooDraft(sortingDraftScope, { baseInfo, moisture });
+  }, [baseInfo, creating, hasPendingSubmission, moisture, sortingDraftScope]);
+
   const closeCreateSheet = useCallback(() => {
     if (saving) return;
     setCreating(false);
@@ -211,8 +232,9 @@ export function BambooTaskListPage() {
       setCreating(true);
       return;
     }
-    setBaseInfo(EMPTY_DRAFT);
-    setMoisture(Array.from({ length: 8 }, () => ""));
+    const savedDraft = sortingDraftScope ? readBambooDraft<{ baseInfo: BaseInfoDraft; moisture: string[] }>(sortingDraftScope) : null;
+    setBaseInfo(savedDraft?.baseInfo && isBaseInfoDraft(savedDraft.baseInfo) ? savedDraft.baseInfo : EMPTY_DRAFT);
+    setMoisture(Array.isArray(savedDraft?.moisture) ? savedDraft!.moisture : Array.from({ length: 8 }, () => ""));
     setCreateIdempotencyKey(createMobileClientId("sorting-record"));
     setStageIdempotencyKey(createMobileClientId("sorting-stage"));
     setPendingSubmission(null);
@@ -303,6 +325,7 @@ export function BambooTaskListPage() {
         pending.stageKey,
       );
       clearPendingSortingSubmission(pending);
+      if (sortingDraftScope) clearBambooDraft(sortingDraftScope);
       setPendingSubmission(null);
       setCreating(false);
       navigate(`/mobile/records/${encodeURIComponent(created.record_id)}`);
@@ -331,6 +354,15 @@ export function BambooTaskListPage() {
 
       {error && <div className="banner danger" role="alert">{error}</div>}
 
+      {roleRequiresCageSearch && (
+        <form className="bamboo-cage-search card" onSubmit={(event) => { event.preventDefault(); const value = cageQuery.trim(); if (!value) { setError("请先输入笼号。"); return; } setError(""); setSearchedCage(value); }}>
+          <label htmlFor="bamboo-cage-query">按笼号查找{session?.bamboo_role === "INSPECTOR" ? "待检测表单" : "上游表单"}</label>
+          <div className="btnrow"><input id="bamboo-cage-query" value={cageQuery} onChange={(event) => setCageQuery(event.target.value)} placeholder="输入完整或部分笼号" autoComplete="off" /><button type="submit" className="btn primary">搜索</button></div>
+          <p>{session?.bamboo_role === "DIPPING_OPERATOR" ? "查到分选来源后才能填写浸胶。" : session?.bamboo_role === "DRYING_RACK_OPERATOR" ? "查到已完成浸胶的联合表后才能填写干燥。" : "生产工序完成后即可抽查，不必等待主管签字。"}</p>
+          {searchedCage && <button type="button" className="btn secondary small" onClick={() => { setSearchedCage(""); setCageQuery(""); }}>清除“{searchedCage}”</button>}
+        </form>
+      )}
+
       <nav className="tabs" aria-label="工作分类">
         {BUCKETS.map((item) => (
           <button
@@ -346,6 +378,8 @@ export function BambooTaskListPage() {
 
       {loading ? (
         <div className="mobile-loading">加载工作中…</div>
+      ) : roleRequiresCageSearch && !searchedCage ? (
+        <div className="card empty"><h3>请先搜索笼号</h3><p>系统只显示与该笼号匹配、当前可处理的表单，避免逐张翻找。</p></div>
       ) : tasks.length === 0 ? (
         <div className="card empty">
           <h3>当前分类暂无记录</h3>
@@ -703,9 +737,10 @@ function pendingStorageKey(employeeCode: string, factoryId: string, deviceId: st
 }
 
 function readPendingSortingSubmission(employeeCode: string, factoryId: string, deviceId: string): PendingSortingSubmission | null {
-  if (typeof sessionStorage === "undefined") return null;
+  if (typeof localStorage === "undefined") return null;
   try {
-    const raw = sessionStorage.getItem(pendingStorageKey(employeeCode, factoryId, deviceId));
+    const key = pendingStorageKey(employeeCode, factoryId, deviceId);
+    const raw = localStorage.getItem(key) ?? (typeof sessionStorage === "undefined" ? null : sessionStorage.getItem(key));
     if (!raw) return null;
     const value = JSON.parse(raw) as Partial<PendingSortingSubmission>;
     if (
@@ -727,9 +762,9 @@ function readPendingSortingSubmission(employeeCode: string, factoryId: string, d
 }
 
 function writePendingSortingSubmission(pending: PendingSortingSubmission): boolean {
-  if (typeof sessionStorage === "undefined") return false;
+  if (typeof localStorage === "undefined") return false;
   try {
-    sessionStorage.setItem(
+    localStorage.setItem(
       pendingStorageKey(pending.ownerEmployeeCode, pending.factoryId, pending.deviceId),
       JSON.stringify(pending),
     );
@@ -740,9 +775,9 @@ function writePendingSortingSubmission(pending: PendingSortingSubmission): boole
 }
 
 function clearPendingSortingSubmission(pending: PendingSortingSubmission): void {
-  if (typeof sessionStorage === "undefined") return;
+  if (typeof localStorage === "undefined") return;
   try {
-    sessionStorage.removeItem(pendingStorageKey(pending.ownerEmployeeCode, pending.factoryId, pending.deviceId));
+    localStorage.removeItem(pendingStorageKey(pending.ownerEmployeeCode, pending.factoryId, pending.deviceId));
   } catch {
     // A successful server signature is authoritative even if storage cleanup is unavailable.
   }
