@@ -105,7 +105,7 @@ class BambooProcessFacade:
             record.record_id
             for record in records
             if any(
-                submission.actor_id == actor.actor_id and not submission.invalidated
+                submission.role_code == actor.role.value and not submission.invalidated
                 for submission in record.submissions
             )
         }
@@ -239,14 +239,19 @@ class BambooProcessFacade:
             request_id=request_id,
             idempotency_key=idempotency_key,
         )
+        linked_record = (
+            self._build_linked_record(updated, actor=actor)
+            if stage is BambooStage.SORT
+            and updated.form_type is BambooFormType.SORTING
+            else None
+        )
         stored = self._repository.append_stage(
             record=updated,
             submission=submission,
             signature=signature,
             expected_revision=expected_revision,
+            linked_record=linked_record,
         )
-        if stage is BambooStage.SORT and stored.form_type is BambooFormType.SORTING:
-            self._ensure_linked_record(stored, actor=actor)
         return stored
 
     def _ensure_linked_record(
@@ -255,18 +260,41 @@ class BambooProcessFacade:
         *,
         actor: BambooActor,
     ) -> BambooRecord:
-        linked = self._repository.find_linked(
+        existing = self._repository.find_linked(
             BambooFormType.DIPPING_DRYING,
             source.record_id,
         )
-        if linked is not None:
-            return linked
+        if existing is not None:
+            return existing
+        linked = self._build_linked_record(source, actor=actor)
+        if linked is None:
+            existing = self._repository.find_linked(
+                BambooFormType.DIPPING_DRYING,
+                source.record_id,
+            )
+            if existing is None:  # pragma: no cover - concurrent insert disappeared
+                raise RuntimeError("linked bamboo record disappeared")
+            return existing
+        self._repository.add(linked)
+        return linked
+
+    def _build_linked_record(
+        self,
+        source: BambooRecord,
+        *,
+        actor: BambooActor,
+    ) -> BambooRecord | None:
+        if self._repository.find_linked(
+            BambooFormType.DIPPING_DRYING,
+            source.record_id,
+        ) is not None:
+            return None
         now = self._clock()
         sequence = self._repository.next_display_sequence(
             source.factory_id,
             now.date().isoformat(),
         )
-        linked = BambooRecord(
+        return BambooRecord(
             record_id=self._id_factory(),
             display_no=f"ZS-{now:%Y%m%d}-{sequence:03d}",
             factory_id=source.factory_id,
@@ -289,5 +317,3 @@ class BambooProcessFacade:
                 "base_info": deepcopy(source.base_info),
             },
         )
-        self._repository.add(linked)
-        return linked

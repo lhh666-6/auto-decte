@@ -44,4 +44,5 @@ class BambooRecordRepository(Protocol):
         submission: StageSubmission,
         signature: ElectronicSignature,
         expected_revision: int,
+        linked_record: BambooRecord | None = None,
     ) -> BambooRecord: ...

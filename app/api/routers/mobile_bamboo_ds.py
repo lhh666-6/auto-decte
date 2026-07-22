@@ -249,9 +249,23 @@ def create_factory(
 @router.get("/records/{record_id}/operations")
 def record_operations(record_id: str, request: Request) -> dict[str, object]:
     actor = _bamboo_actor(request)
+    services = _services(request)
+    if services.bamboo_process.get_visible(record_id, actor=actor) is None:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "RECORD_NOT_VISIBLE", "detail": "记录不存在或当前不可见。"},
+        )
     try:
-        return _services(request).bamboo_operations.record_summary(record_id, actor)
+        return services.bamboo_operations.record_summary(record_id, actor)
     except BambooOperationError as error:
+        if error.code == "RECORD_NOT_VISIBLE":
+            raise HTTPException(
+                status_code=404,
+                detail={
+                    "code": "RECORD_NOT_VISIBLE",
+                    "detail": "记录不存在或当前不可见。",
+                },
+            ) from error
         raise _operation_error(error) from error
 
 

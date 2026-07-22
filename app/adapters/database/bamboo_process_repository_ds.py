@@ -182,6 +182,7 @@ class SqlAlchemyBambooProcessRepository:
         submission: StageSubmission,
         signature: ElectronicSignature,
         expected_revision: int,
+        linked_record: BambooRecord | None = None,
     ) -> BambooRecord:
         with Session(self._engine) as session, session.begin():
             self._validate_stage_gate(session, submission)
@@ -215,6 +216,16 @@ class SqlAlchemyBambooProcessRepository:
             session.add(_signature_row(signature))
             session.flush()
             self._apply_stage_side_effects(session, record, submission, signature)
+            if linked_record is not None:
+                existing_link = session.scalar(
+                    select(BambooRecordRow.record_id).where(
+                        BambooRecordRow.form_type == linked_record.form_type.value,
+                        BambooRecordRow.source_record_id
+                        == linked_record.source_record_id,
+                    )
+                )
+                if existing_link is None:
+                    session.add(_record_row(linked_record))
         stored = self.get(record.record_id)
         if stored is None:  # pragma: no cover - guarded by the successful update
             raise RuntimeError("bamboo record disappeared after stage submission")
