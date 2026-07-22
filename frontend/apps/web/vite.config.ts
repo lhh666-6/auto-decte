@@ -3,6 +3,7 @@ import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
 
 import { runtimePolicyForPath } from "./src/pwa/cache-policy";
+import { PWA_CACHE_ID } from "./src/pwa/pwa-cache-names";
 
 export default defineConfig({
   plugins: [
@@ -12,6 +13,7 @@ export default defineConfig({
       includeAssets: ["icons/icon-192x192.png", "icons/icon-512x512.png"],
       manifest: false, // we provide our own manifest.webmanifest in public/
       workbox: {
+        cacheId: PWA_CACHE_ID,
         globPatterns: ["**/*.{js,css,html,ico,png,svg,woff2}"],
         runtimeCaching: [
           {
