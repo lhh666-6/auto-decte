@@ -28,13 +28,15 @@ class SqlAlchemyBambooProcessRepository:
         self._engine = engine
 
     def next_display_sequence(self, factory_id: str, production_date: str) -> int:
+        # Display numbers are externally visible and globally unique. Factory access
+        # remains scoped by factory_id, but the daily sequence spans all factories.
+        del factory_id
         date_token = production_date.replace("-", "")
         with Session(self._engine) as session:
             count = session.scalar(
                 select(func.count())
                 .select_from(BambooRecordRow)
                 .where(
-                    BambooRecordRow.factory_id == factory_id,
                     BambooRecordRow.display_no.like(f"ZS-{date_token}-%"),
                 )
             )

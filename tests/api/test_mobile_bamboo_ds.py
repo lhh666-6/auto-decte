@@ -181,3 +181,10 @@ def test_cross_factory_record_is_not_visible(tmp_path: Path) -> None:
     )
     assert submit.status_code == 404
     assert submit.json()["code"] == "RECORD_NOT_VISIBLE"
+    factory_b_record = factory_b.post(
+        "/api/v1/mobile/bamboo/records",
+        headers=_write_headers(factory_b, "create-b"),
+        json={"base_info": {"cage_no": "B-001"}},
+    )
+    assert factory_b_record.status_code == 201
+    assert factory_b_record.json()["display_no"] != created.json()["display_no"]
