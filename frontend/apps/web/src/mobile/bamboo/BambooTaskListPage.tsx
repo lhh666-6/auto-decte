@@ -32,6 +32,9 @@ type BaseInfoDraft = {
 };
 
 type PendingSortingSubmission = {
+  ownerEmployeeCode: string;
+  factoryId: string;
+  deviceId: string;
   createKey: string;
   stageKey: string;
   draft: BaseInfoDraft;
@@ -40,7 +43,7 @@ type PendingSortingSubmission = {
   createdRecord?: BambooRecord;
 };
 
-const PENDING_SORTING_STORAGE_KEY = "bamboo-v3-pending-sorting-submission";
+const PENDING_SORTING_STORAGE_PREFIX = "bamboo-v3-pending-sorting-submission";
 
 const EMPTY_DRAFT: BaseInfoDraft = {
   mode: "分选",
@@ -56,28 +59,36 @@ const EMPTY_DRAFT: BaseInfoDraft = {
 export function BambooTaskListPage() {
   const navigate = useNavigate();
   const { sessionMetadata: session } = useMobileSession();
-  const [initialPending] = useState<PendingSortingSubmission | null>(() => readPendingSortingSubmission());
+  const [deviceId] = useState(() => getMobileDeviceId());
   const loadGeneration = useRef(0);
+  const restoredScope = useRef("");
   const [bucket, setBucket] = useState<BambooTaskBucket>("available");
   const [dashboard, setDashboard] = useState<BambooDashboard>({ available: 0, waiting: 0, completed: 0 });
   const [tasks, setTasks] = useState<BambooRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [creating, setCreating] = useState(initialPending !== null);
+  const [creating, setCreating] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [formError, setFormError] = useState(initialPending ? "发现一条未完成的分选提交，请继续提交或稍后处理。" : "");
+  const [formError, setFormError] = useState("");
   const [picker, setPicker] = useState<PickerKey | null>(null);
-  const [confirming, setConfirming] = useState(initialPending !== null);
+  const [confirming, setConfirming] = useState(false);
   const [presets, setPresets] = useState<BambooRecordPresetOptions | null>(null);
   const [presetsLoading, setPresetsLoading] = useState(false);
   const [presetsError, setPresetsError] = useState("");
-  const [baseInfo, setBaseInfo] = useState<BaseInfoDraft>(initialPending?.draft ?? EMPTY_DRAFT);
-  const [moisture, setMoisture] = useState(() => initialPending?.moisture ?? Array.from({ length: 8 }, () => ""));
-  const [createIdempotencyKey, setCreateIdempotencyKey] = useState(initialPending?.createKey ?? "");
-  const [stageIdempotencyKey, setStageIdempotencyKey] = useState(initialPending?.stageKey ?? "");
-  const [pendingSubmission, setPendingSubmission] = useState<PendingSortingSubmission | null>(initialPending);
-  const hasPendingSubmission = pendingSubmission !== null;
-  const createdRecord = pendingSubmission?.createdRecord ?? null;
+  const [baseInfo, setBaseInfo] = useState<BaseInfoDraft>(EMPTY_DRAFT);
+  const [moisture, setMoisture] = useState(() => Array.from({ length: 8 }, () => ""));
+  const [createIdempotencyKey, setCreateIdempotencyKey] = useState("");
+  const [stageIdempotencyKey, setStageIdempotencyKey] = useState("");
+  const [pendingSubmission, setPendingSubmission] = useState<PendingSortingSubmission | null>(null);
+  const scopedPendingSubmission = pendingSubmission
+    && pendingSubmission.ownerEmployeeCode === session?.employee_code
+    && pendingSubmission.factoryId === session?.factory_id
+    && pendingSubmission.deviceId === deviceId
+    ? pendingSubmission
+    : null;
+  const hasPendingSubmission = scopedPendingSubmission !== null;
+  const createdRecord = scopedPendingSubmission?.createdRecord ?? null;
+  const createSheetVisible = creating && (pendingSubmission === null || scopedPendingSubmission !== null);
 
   const netWeight = useMemo(() => {
     const bundles = Number(baseInfo.bundle_count);
@@ -96,7 +107,7 @@ export function BambooTaskListPage() {
       : null,
     [moistureValues],
   );
-  const pendingNetWeight = Number(pendingSubmission?.baseInfo.net_weight);
+  const pendingNetWeight = Number(scopedPendingSubmission?.baseInfo.net_weight);
   const summaryNetWeight = netWeight?.value ?? (Number.isFinite(pendingNetWeight) ? pendingNetWeight : null);
 
   const load = useCallback(async () => {
@@ -138,6 +149,32 @@ export function BambooTaskListPage() {
     return () => { loadGeneration.current += 1; };
   }, [load]);
 
+  useEffect(() => {
+    if (!session?.employee_code || !session.factory_id) return;
+    const scope = pendingStorageKey(session.employee_code, session.factory_id, deviceId);
+    if (restoredScope.current === scope) return;
+    restoredScope.current = scope;
+    const restored = readPendingSortingSubmission(session.employee_code, session.factory_id, deviceId);
+    setPendingSubmission(restored);
+    if (!restored) {
+      setCreating(false);
+      setConfirming(false);
+      setPicker(null);
+      setBaseInfo(EMPTY_DRAFT);
+      setMoisture(Array.from({ length: 8 }, () => ""));
+      setFormError("");
+      return;
+    }
+    setBaseInfo(restored.draft);
+    setMoisture(restored.moisture);
+    setCreateIdempotencyKey(restored.createKey);
+    setStageIdempotencyKey(restored.stageKey);
+    setFormError("发现一条属于当前账号、工厂和设备的未完成分选提交，请继续提交或稍后处理。");
+    setConfirming(true);
+    setPicker(null);
+    setCreating(true);
+  }, [deviceId, session?.employee_code, session?.factory_id]);
+
   const closeCreateSheet = useCallback(() => {
     if (saving) return;
     setCreating(false);
@@ -157,7 +194,11 @@ export function BambooTaskListPage() {
   }, [closeCreateSheet, creating, saving]);
 
   const openCreateSheet = () => {
-    const restored = pendingSubmission ?? readPendingSortingSubmission();
+    if (!session?.employee_code || !session.factory_id) {
+      setError("当前身份尚未加载完成，暂时不能新建记录。");
+      return;
+    }
+    const restored = scopedPendingSubmission ?? readPendingSortingSubmission(session.employee_code, session.factory_id, deviceId);
     if (restored) {
       setPendingSubmission(restored);
       setBaseInfo(restored.draft);
@@ -200,11 +241,15 @@ export function BambooTaskListPage() {
   };
 
   const createRecord = async () => {
-    if (!pendingSubmission && !presets) {
+    if (!session?.employee_code || !session.factory_id) {
+      setFormError("当前身份已失效，请重新登录后继续。");
+      return;
+    }
+    if (!scopedPendingSubmission && !presets) {
       setFormError("后台发布选项不可用，不能建立表单。");
       return;
     }
-    let pending = pendingSubmission;
+    let pending = scopedPendingSubmission;
     if (!pending) {
       const baseInfoPayload: Record<string, unknown> = {
         mode: baseInfo.mode,
@@ -219,6 +264,9 @@ export function BambooTaskListPage() {
         options_version: presets!.options_version,
       };
       pending = {
+        ownerEmployeeCode: session.employee_code,
+        factoryId: session.factory_id,
+        deviceId,
         createKey: createIdempotencyKey,
         stageKey: stageIdempotencyKey,
         draft: { ...baseInfo, special_classes: [...baseInfo.special_classes] },
@@ -249,12 +297,12 @@ export function BambooTaskListPage() {
         "SORT",
         {
           expected_revision: created.revision,
-          device_id: getMobileDeviceId(),
+          device_id: pending.deviceId,
           values: { moisture: pending.moisture.filter((value) => value.trim() !== "").map(Number) },
         },
         pending.stageKey,
       );
-      clearPendingSortingSubmission();
+      clearPendingSortingSubmission(pending);
       setPendingSubmission(null);
       setCreating(false);
       navigate(`/mobile/records/${encodeURIComponent(created.record_id)}`);
@@ -328,7 +376,7 @@ export function BambooTaskListPage() {
         </div>
       )}
 
-      {creating && (
+      {createSheetVisible && (
         <div className="bamboo-v3-sheet-backdrop" role="presentation">
           <form className="bamboo-v3-bottom-sheet bamboo-v3-create-sheet" onSubmit={requestConfirm} role="dialog" aria-modal="true" aria-label="新建竹丝记录">
             <div className="bamboo-v3-sheet-handle" />
@@ -336,6 +384,7 @@ export function BambooTaskListPage() {
             <div className="banner info">预设选项由管理员后台发布；手机端只能点选，不能临时新增。</div>
             {presetsLoading && <div className="banner info" role="status">正在加载后台发布选项…</div>}
             {presetsError && <div className="banner danger bamboo-preset-error" role="alert"><span>{presetsError}</span><button type="button" className="btn secondary small" disabled={presetsLoading || saving} onClick={() => void loadPresets()}>重新加载</button></div>}
+            {hasPendingSubmission && <div className="banner info" role="status">待继续提交，字段已锁定。继续操作将使用已保存的原始数据。</div>}
             {formError && <div className="banner danger" role="alert">{formError}</div>}
             <div className="field">
               <span className="field-label">作业模式</span>
@@ -346,6 +395,7 @@ export function BambooTaskListPage() {
                     type="button"
                     className={`mode-btn${baseInfo.mode === mode ? " on" : ""}`}
                     aria-pressed={baseInfo.mode === mode}
+                    disabled={hasPendingSubmission || saving}
                     onClick={() => setBaseInfo({ ...baseInfo, mode })}
                   >
                     {mode}
@@ -366,20 +416,20 @@ export function BambooTaskListPage() {
             <PickerField label="品级" value={baseInfo.grade} placeholder="点开选择品级" required disabled={hasPendingSubmission || !presets || presetsLoading || saving} onOpen={() => setPicker("grade")} />
             <label className="field">
               <span className="field-label">供应商</span>
-              <input placeholder="选填，可留空" value={baseInfo.supplier} onChange={(event) => setBaseInfo({ ...baseInfo, supplier: event.target.value })} />
+              <input placeholder="选填，可留空" readOnly={hasPendingSubmission} value={baseInfo.supplier} onChange={(event) => setBaseInfo({ ...baseInfo, supplier: event.target.value })} />
             </label>
             <label className="field">
               <span className="field-label">笼号 <em>*</em></span>
-              <input required placeholder="如：L-207" value={baseInfo.cage_no} onChange={(event) => setBaseInfo({ ...baseInfo, cage_no: event.target.value })} />
+              <input required placeholder="如：L-207" readOnly={hasPendingSubmission} value={baseInfo.cage_no} onChange={(event) => setBaseInfo({ ...baseInfo, cage_no: event.target.value })} />
             </label>
             <label className="field">
               <span className="field-label">把数 <em>*</em></span>
-              <input required type="number" min="1" inputMode="numeric" placeholder="本笼把数（整数）" value={baseInfo.bundle_count} onChange={(event) => setBaseInfo({ ...baseInfo, bundle_count: event.target.value })} />
+              <input required type="number" min="1" inputMode="numeric" readOnly={hasPendingSubmission} placeholder="本笼把数（整数）" value={baseInfo.bundle_count} onChange={(event) => setBaseInfo({ ...baseInfo, bundle_count: event.target.value })} />
             </label>
             <div className="kv">
               <span className="k">净重（自动）</span>
-              {netWeight ? (
-                <span className="v">{netWeight.value} kg <small>（{baseInfo.bundle_count} 把 × {netWeight.factor}）</small></span>
+              {summaryNetWeight != null ? (
+                <span className="v">{summaryNetWeight} kg {netWeight && <small>（{baseInfo.bundle_count} 把 × {netWeight.factor}）</small>}</span>
               ) : (
                 <span className="v muted">填完把数和长度后自动计算</span>
               )}
@@ -394,6 +444,7 @@ export function BambooTaskListPage() {
                       type="text"
                       inputMode="numeric"
                       pattern="[0-9]*"
+                      readOnly={hasPendingSubmission}
                       value={value}
                       placeholder="1-100"
                       onChange={(event) => setMoisture(moisture.map((item, itemIndex) => itemIndex === index ? event.target.value : item))}
@@ -402,8 +453,8 @@ export function BambooTaskListPage() {
                 ))}
               </div>
               <div className="bamboo-point-actions">
-                <button type="button" disabled={moisture.length >= 20} onClick={() => setMoisture([...moisture, ""])}>增加检测点</button>
-                <button type="button" disabled={moisture.length <= 1} onClick={() => setMoisture(moisture.slice(0, -1))}>删除最后一个</button>
+                <button type="button" disabled={hasPendingSubmission || moisture.length >= 20} onClick={() => setMoisture([...moisture, ""])}>增加检测点</button>
+                <button type="button" disabled={hasPendingSubmission || moisture.length <= 1} onClick={() => setMoisture(moisture.slice(0, -1))}>删除最后一个</button>
               </div>
               <p className="bamboo-moisture-average">已填写 {moistureValues.length} 点 · 平均值 {moistureAverage ?? "—"}%</p>
             </fieldset>
@@ -645,14 +696,23 @@ function message(cause: unknown, fallback: string): string {
   return cause instanceof MobileApiError ? cause.problem.detail : fallback;
 }
 
-function readPendingSortingSubmission(): PendingSortingSubmission | null {
+function pendingStorageKey(employeeCode: string, factoryId: string, deviceId: string): string {
+  return [PENDING_SORTING_STORAGE_PREFIX, employeeCode, factoryId, deviceId]
+    .map((part) => encodeURIComponent(part))
+    .join(":");
+}
+
+function readPendingSortingSubmission(employeeCode: string, factoryId: string, deviceId: string): PendingSortingSubmission | null {
   if (typeof sessionStorage === "undefined") return null;
   try {
-    const raw = sessionStorage.getItem(PENDING_SORTING_STORAGE_KEY);
+    const raw = sessionStorage.getItem(pendingStorageKey(employeeCode, factoryId, deviceId));
     if (!raw) return null;
     const value = JSON.parse(raw) as Partial<PendingSortingSubmission>;
     if (
-      typeof value.createKey !== "string"
+      value.ownerEmployeeCode !== employeeCode
+      || value.factoryId !== factoryId
+      || value.deviceId !== deviceId
+      || typeof value.createKey !== "string"
       || typeof value.stageKey !== "string"
       || !isBaseInfoDraft(value.draft)
       || !Array.isArray(value.moisture)
@@ -669,17 +729,20 @@ function readPendingSortingSubmission(): PendingSortingSubmission | null {
 function writePendingSortingSubmission(pending: PendingSortingSubmission): boolean {
   if (typeof sessionStorage === "undefined") return false;
   try {
-    sessionStorage.setItem(PENDING_SORTING_STORAGE_KEY, JSON.stringify(pending));
+    sessionStorage.setItem(
+      pendingStorageKey(pending.ownerEmployeeCode, pending.factoryId, pending.deviceId),
+      JSON.stringify(pending),
+    );
     return true;
   } catch {
     return false;
   }
 }
 
-function clearPendingSortingSubmission(): void {
+function clearPendingSortingSubmission(pending: PendingSortingSubmission): void {
   if (typeof sessionStorage === "undefined") return;
   try {
-    sessionStorage.removeItem(PENDING_SORTING_STORAGE_KEY);
+    sessionStorage.removeItem(pendingStorageKey(pending.ownerEmployeeCode, pending.factoryId, pending.deviceId));
   } catch {
     // A successful server signature is authoritative even if storage cleanup is unavailable.
   }
