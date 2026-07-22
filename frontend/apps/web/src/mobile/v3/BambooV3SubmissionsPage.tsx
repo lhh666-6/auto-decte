@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 
 import { mobileApiClient, type MobileSubmissionListItem } from "@form-detection/api-client";
 
@@ -42,49 +43,54 @@ export function BambooV3SubmissionsPage() {
     return () => window.removeEventListener("mobile-outbox-changed", refresh);
   }, [load]);
 
-  const waiting = submissions.filter((item) => !["ACCEPTED", "COMPLETED", "APPROVED"].includes(item.status));
-  const completed = submissions.filter((item) => !waiting.includes(item));
-
   return (
-    <div className="mobile-page bamboo-v3-page bamboo-v3-submissions">
-      <header className="bamboo-v3-page-header">
-        <p>查看本人提交与流转状态</p>
-        <h2>提交记录</h2>
-      </header>
-
-      <section className="bamboo-v3-counter-grid" aria-label="本机提交概况">
-        <div><span>本地草稿</span><strong>{draftCount}</strong></div>
-        <div><span>待同步</span><strong>{outboxCount}</strong></div>
-        <div><span>已提交</span><strong>{submissions.length}</strong></div>
+    <div className="page bamboo-v3-submissions">
+      <h2 className="visually-hidden">提交记录</h2>
+      <section className="section">
+        <div className="section-head">
+          <div className="section-title">我的提交</div>
+          <div className="section-note">{submissions.length} 条</div>
+        </div>
+        <div className="stats submissions-stats" aria-label="本机提交概况">
+          <div className="stat"><span className="visually-hidden">本地草稿</span><b>{draftCount}</b><span>我的草稿</span></div>
+          <div className="stat"><span className="visually-hidden">待同步</span><b>{outboxCount}</b><span>同步队列</span></div>
+          <div className="stat"><span className="visually-hidden">已提交</span><b>{submissions.length}</b><span>我的提交</span></div>
+        </div>
       </section>
 
-      {error && <div className="error-banner" role="alert">{error}<button type="button" onClick={() => void load()}>重试</button></div>}
-      {loading ? <div className="mobile-loading">加载中…</div> : (
-        <div className="bamboo-v3-submission-groups">
-          <SubmissionGroup title="等待中" items={waiting} empty="暂无等待中的记录" />
-          <SubmissionGroup title="已完成" items={completed} empty="暂无已完成的记录" />
+      {error && <div className="banner danger" role="alert">{error}<button type="button" className="btn small secondary" onClick={() => void load()}>重试</button></div>}
+
+      {loading ? (
+        <div className="mobile-loading">加载中…</div>
+      ) : submissions.length === 0 ? (
+        <div className="card empty">
+          <h3>暂无提交记录</h3>
+          <p>完成工序签字后，这里会显示本人提交与后续流转状态。</p>
+          <Link className="btn primary full" to="/mobile/work">记录我的工作</Link>
+        </div>
+      ) : (
+        <div className="list">
+          {submissions.map((item) => (
+            <article className="record-card" key={item.submission_id}>
+              <div className="record-top">
+                <div>
+                  <div className="record-no">{item.form_id || item.submission_id}</div>
+                  <span className="visually-hidden">{item.submission_id}</span>
+                  <div className="record-meta">提交单号 {item.submission_id} · {formatTime(item.submitted_at)}</div>
+                </div>
+                <span className={`chip ${chipClass(item.status)}`}>{submissionStatus(item.status)}</span>
+              </div>
+            </article>
+          ))}
         </div>
       )}
     </div>
   );
 }
 
-function SubmissionGroup({ title, items, empty }: { title: string; items: MobileSubmissionListItem[]; empty: string }) {
-  return (
-    <section className="bamboo-v3-list-section">
-      <h3>{title}<span>{items.length}</span></h3>
-      {items.length === 0 ? <p className="bamboo-v3-empty-copy">{empty}</p> : (
-        <ul>
-          {items.map((item) => (
-            <li className="bamboo-v3-submission-card" key={item.submission_id}>
-              <div><strong>{item.submission_id}</strong><span>{item.form_id || "竹丝工序记录"}</span></div>
-              <div><span className="bamboo-v3-status-pill">{submissionStatus(item.status)}</span><time>{formatTime(item.submitted_at)}</time></div>
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
-  );
+function chipClass(status: string): string {
+  if (["ACCEPTED", "COMPLETED", "APPROVED"].includes(status)) return "ok";
+  return "wait";
 }
 
 function submissionStatus(status: string): string {

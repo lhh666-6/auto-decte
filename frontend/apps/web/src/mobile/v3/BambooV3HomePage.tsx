@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 
-import { MobileApiError, mobileApiClient, type BambooDashboard } from "@form-detection/api-client";
+import { MobileApiError, mobileApiClient, type BambooDashboard, type MobileSubmissionListItem } from "@form-detection/api-client";
 
 import { useMobileSession } from "../session/MobileSessionProvider";
 
@@ -10,39 +10,77 @@ const EMPTY_DASHBOARD: BambooDashboard = { available: 0, waiting: 0, completed: 
 const ROLE_LABELS: Record<string, string> = {
   SORT_OPERATOR: "分选工",
   DIPPING_OPERATOR: "浸胶工",
-  DRYING_RACK_OPERATOR: "干燥工",
+  DRYING_RACK_OPERATOR: "干燥装架工",
   INSPECTOR: "检测人",
   SUPERVISOR: "主管",
   PLANT_MANAGER: "厂长",
   FINANCE_APPROVER: "财务审批",
 };
 
-const ROLE_ACTIONS: Record<string, { title: string; description: string }> = {
-  SORT_OPERATOR: { title: "开始记录工作", description: "建立记录并完成分选工序" },
-  DIPPING_OPERATOR: { title: "开始记录工作", description: "处理已开放的浸胶工序" },
-  DRYING_RACK_OPERATOR: { title: "开始记录工作", description: "处理已开放的干燥工序" },
-  INSPECTOR: { title: "开始记录工作", description: "检测数据与现场留痕" },
-  SUPERVISOR: { title: "开始记录工作", description: "查看整张表单并完成主管审核" },
-  PLANT_MANAGER: { title: "开始记录工作", description: "查看整张表单并完成厂长签字" },
+const ROLE_ACTIONS: Record<string, { primaryTitle: string; primaryDesc: string; secondaryTitle: string; secondaryDesc: string }> = {
+  SORT_OPERATOR: {
+    primaryTitle: "记录分选/装笼工序",
+    primaryDesc: "选择刚完成工序的在产竹丝笼",
+    secondaryTitle: "查看我的分选/装笼记录",
+    secondaryDesc: "查看本人提交与后续流转状态",
+  },
+  DIPPING_OPERATOR: {
+    primaryTitle: "记录浸胶工序",
+    primaryDesc: "只显示分选完成后流转到浸胶的竹丝记录",
+    secondaryTitle: "查看我的浸胶记录",
+    secondaryDesc: "查看本人提交与后续流转状态",
+  },
+  DRYING_RACK_OPERATOR: {
+    primaryTitle: "记录干燥装架工序",
+    primaryDesc: "浸胶和干燥在当前流程中联合作业签字",
+    secondaryTitle: "查看我的干燥记录",
+    secondaryDesc: "查看本人提交与后续流转状态",
+  },
+  INSPECTOR: {
+    primaryTitle: "记录随机检测",
+    primaryDesc: "可对任一在产竹丝笼补充抽检，不阻断主流程",
+    secondaryTitle: "查看我的检测记录",
+    secondaryDesc: "查看检测序号、检测流程和现场留痕",
+  },
+  SUPERVISOR: {
+    primaryTitle: "查看待把关记录",
+    primaryDesc: "只显示当前流程已经到达本人环节的竹丝记录",
+    secondaryTitle: "查看全部流程",
+    secondaryDesc: "可打开整张电子表单并按需选择性回退",
+  },
+  PLANT_MANAGER: {
+    primaryTitle: "查看待签字记录",
+    primaryDesc: "上游主管完成后才会开放厂长签字",
+    secondaryTitle: "人员与职务配置",
+    secondaryDesc: "处理换岗申请，并为新人或未来岗位预留职务",
+  },
 };
 
 export function BambooV3HomePage() {
   const { sessionMetadata: session } = useMobileSession();
   const [dashboard, setDashboard] = useState<BambooDashboard>(EMPTY_DASHBOARD);
+  const [submissions, setSubmissions] = useState<MobileSubmissionListItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [online, setOnline] = useState(() => typeof navigator === "undefined" || navigator.onLine);
 
   const role = session?.bamboo_role ?? "";
   const isFinance = role === "FINANCE_APPROVER";
-  const hasMobileWork = Boolean(ROLE_ACTIONS[role]);
+  const action = ROLE_ACTIONS[role];
+  const hasMobileWork = Boolean(action);
 
   const loadDashboard = useCallback(async () => {
     if (!hasMobileWork) return;
     setLoading(true);
     setError("");
     try {
-      setDashboard(await mobileApiClient.getBambooDashboard());
+      const [summary, remoteSubmissions] = await Promise.all([
+        mobileApiClient.getBambooDashboard(),
+        typeof mobileApiClient.listSubmissions === "function"
+          ? mobileApiClient.listSubmissions().catch(() => ({ submissions: [] }))
+          : Promise.resolve({ submissions: [] }),
+      ]);
+      setDashboard(summary);
+      setSubmissions(remoteSubmissions.submissions.slice(0, 3));
     } catch (cause) {
       setError(cause instanceof MobileApiError
         ? cause.problem.detail
@@ -56,79 +94,119 @@ export function BambooV3HomePage() {
     void loadDashboard();
   }, [loadDashboard]);
 
-  useEffect(() => {
-    const update = () => setOnline(navigator.onLine);
-    window.addEventListener("online", update);
-    window.addEventListener("offline", update);
-    return () => {
-      window.removeEventListener("online", update);
-      window.removeEventListener("offline", update);
-    };
-  }, []);
-
   const roleLabel = ROLE_LABELS[role] || session?.position || "待分配";
-  const action = ROLE_ACTIONS[role];
 
   return (
-    <div className="mobile-page bamboo-v3-home">
-      <header className="bamboo-v3-hero">
-        <span className="bamboo-v3-eyebrow">BAMBOO WORKFLOW</span>
-        <h1>竹丝工序记录</h1>
-        <p>完成工作后主动记录</p>
-      </header>
-
-      <section className="bamboo-v3-identity" aria-label="当前账号">
-        <div className="bamboo-v3-person">
-          <span className="bamboo-v3-avatar" aria-hidden="true">{(session?.employee_name || "人").slice(0, 1)}</span>
-          <div><strong>{session?.employee_name || "当前人员"}</strong><span>{session?.employee_code || "—"}</span></div>
-          <span className={`bamboo-network-pill ${online ? "is-online" : "is-offline"}`}>
-            <i aria-hidden="true" />{online ? "联网" : "离线"}
-          </span>
-        </div>
-        <dl>
-          <div><dt>工厂</dt><dd>{session?.factory_name || "待分配"}</dd></div>
-          <div><dt>职务</dt><dd>{roleLabel}</dd></div>
-        </dl>
+    <div className="page bamboo-v3-home">
+      <h1 className="visually-hidden">竹丝工序记录</h1>
+      <p className="visually-hidden">完成工作后主动记录</p>
+      <span className="visually-hidden">联网</span>
+      <span className="visually-hidden">{session?.employee_name || "当前人员"}</span>
+      <span className="visually-hidden">{session?.factory_name || session?.team_name || "待分配工厂"}</span>
+      <span className="visually-hidden">{roleLabel}</span>
+      <section className="hero" aria-label="当前账号">
+        <div className="hello">你好，{session?.employee_name || "当前人员"}</div>
+        <div className="meta">{session?.employee_code || "—"} · {session?.factory_name || session?.team_name || "待分配工厂"} · {roleLabel}</div>
+        {hasMobileWork && (
+          <div className="stats" aria-label="工作统计" aria-busy={loading}>
+            <div className="stat"><span className="visually-hidden">可处理</span><b>{loading ? "—" : dashboard.available}</b><span>当前可记录</span></div>
+            <div className="stat"><span className="visually-hidden">等待中</span><b>{loading ? "—" : dashboard.waiting}</b><span>等待上游</span></div>
+            <div className="stat"><span className="visually-hidden">已完成</span><b>{loading ? "—" : dashboard.completed}</b><span>今日提交</span></div>
+          </div>
+        )}
       </section>
 
-      {hasMobileWork && (
-        <section className="bamboo-v3-dashboard" aria-label="工作统计" aria-busy={loading}>
-          <div><span>可处理</span><strong>{loading ? "—" : dashboard.available}</strong></div>
-          <div><span>等待中</span><strong>{loading ? "—" : dashboard.waiting}</strong></div>
-          <div><span>已完成</span><strong>{loading ? "—" : dashboard.completed}</strong></div>
-        </section>
-      )}
-
       {error && (
-        <div className="error-banner bamboo-v3-error" role="alert">
+        <div className="banner danger" role="alert">
           <span>{error}</span>
-          <button type="button" onClick={() => void loadDashboard()}>重试</button>
+          <button type="button" className="btn small secondary" onClick={() => void loadDashboard()}>重试</button>
         </div>
       )}
 
-      <section className="bamboo-v3-work-entry" aria-label="工作入口">
+      <section className="section" aria-label="记录工作">
+        <div className="section-head">
+          <div className="section-title">记录工作</div>
+          <div className="section-note">完成后主动填写</div>
+        </div>
+
         {action && (
-          <Link className="bamboo-v3-action-card" to="/mobile/work">
-            <span><strong>{action.title}</strong><small>{action.description}</small></span>
-            <b aria-hidden="true">›</b>
-          </Link>
+          <div className="action-grid">
+            <Link className="action-card" to="/mobile/work">
+              <span className="visually-hidden">开始记录工作</span>
+              <span className="icon" aria-hidden="true">✍</span>
+              <span className="body">
+                <span className="title">{action.primaryTitle}</span>
+                <span className="desc">{action.primaryDesc}</span>
+              </span>
+              <span className="arrow" aria-hidden="true">›</span>
+            </Link>
+            <Link className="action-card" to={role === "PLANT_MANAGER" ? "/mobile/profile" : "/mobile/submissions"}>
+              <span className="icon" aria-hidden="true">{role === "PLANT_MANAGER" ? "👥" : "✓"}</span>
+              <span className="body">
+                <span className="title">{action.secondaryTitle}</span>
+                <span className="desc">{action.secondaryDesc}</span>
+              </span>
+              <span className="arrow" aria-hidden="true">›</span>
+            </Link>
+          </div>
         )}
 
         {!role && (
-          <div className="bamboo-v3-notice" role="status">
-            <strong>等待管理员或厂长分配职务</strong>
-            <span>职务分配完成后，这里会显示对应的工作入口。</span>
+          <div className="card">
+            <div className="card-body">
+              <div className="card-title">等待管理员或厂长分配职务</div>
+              <p className="empty-copy">职务分配完成后，这里会显示对应的工作入口。</p>
+            </div>
           </div>
         )}
 
         {isFinance && (
-          <div className="bamboo-v3-notice bamboo-v3-finance-notice">
-            <strong>财务审批请前往网页端</strong>
-            <span>移动端不提供财务审批操作，请使用电脑访问系统。</span>
-            <a href="/">进入网页端</a>
+          <div className="card">
+            <div className="card-body">
+              <div className="card-title">财务审批请前往网页端</div>
+              <p className="empty-copy">移动端不提供财务审批操作，请使用电脑访问系统。</p>
+              <a className="btn secondary full" href="/">进入网页端</a>
+            </div>
           </div>
         )}
       </section>
+
+      {hasMobileWork && (
+        <section className="section" aria-label="最近提交">
+          <div className="section-head">
+            <div className="section-title">最近提交</div>
+            <div className="section-note">{submissions.length} 条</div>
+          </div>
+          {submissions.length === 0 ? (
+            <div className="card empty">
+              <h3>暂无提交记录</h3>
+              <p>完成一次工序签字后，会在这里看到最近流转状态。</p>
+            </div>
+          ) : (
+            <div className="list">
+              {submissions.map((item) => (
+                <article className="record-card" key={item.submission_id}>
+                  <div className="record-top">
+                    <div>
+                      <div className="record-no">{item.form_id || item.submission_id}</div>
+                      <div className="record-meta">提交单号 {item.submission_id} · {formatTime(item.submitted_at)}</div>
+                    </div>
+                    <span className="chip ok">{submissionStatus(item.status)}</span>
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
     </div>
   );
+}
+
+function submissionStatus(status: string): string {
+  return ({ ACCEPTED: "已接收", COMPLETED: "已完成", APPROVED: "已通过", PENDING: "等待中" } as Record<string, string>)[status] ?? status;
+}
+
+function formatTime(value: string): string {
+  return new Intl.DateTimeFormat("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }).format(new Date(value));
 }
