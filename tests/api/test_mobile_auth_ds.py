@@ -70,6 +70,66 @@ def test_login_uses_httponly_cookie_and_does_not_return_token(tmp_path: Path) ->
     assert session.json()["bamboo_role"] == "SORT_OPERATOR"
 
 
+def test_login_exposes_csrf_cookie_to_mobile_page_paths(tmp_path: Path) -> None:
+    client = TestClient(create_app(_services(tmp_path)))
+
+    response = client.post(
+        "/api/v1/mobile/auth/login",
+        json={"employee_code": "E10001", "pin": "2468", "device_id": "device-a"},
+    )
+
+    csrf_cookie = next(
+        value
+        for value in response.headers.get_list("set-cookie")
+        if value.startswith("mobile_csrf=") and "Max-Age=0" not in value
+    )
+    assert "Path=/;" in csrf_cookie
+
+
+def test_login_removes_legacy_api_scoped_csrf_cookie(tmp_path: Path) -> None:
+    client = TestClient(create_app(_services(tmp_path)))
+
+    response = client.post(
+        "/api/v1/mobile/auth/login",
+        json={"employee_code": "E10001", "pin": "2468", "device_id": "device-a"},
+    )
+
+    legacy_deletion = next(
+        (
+            value
+            for value in response.headers.get_list("set-cookie")
+            if value.startswith('mobile_csrf=""') and "Path=/api/v1/mobile;" in value
+        ),
+        None,
+    )
+    assert legacy_deletion is not None
+    assert "Max-Age=0" in legacy_deletion
+
+
+def test_session_refresh_migrates_legacy_csrf_cookie(tmp_path: Path) -> None:
+    client = TestClient(create_app(_services(tmp_path)))
+    assert client.post(
+        "/api/v1/mobile/auth/login",
+        json={"employee_code": "E10001", "pin": "2468", "device_id": "device-a"},
+    ).status_code == 200
+    client.cookies.delete("mobile_csrf")
+    client.cookies.set("mobile_csrf", "legacy-token", path="/api/v1/mobile")
+
+    response = client.get("/api/v1/mobile/auth/session")
+
+    assert response.status_code == 200
+    refreshed_cookie = next(
+        (
+            value
+            for value in response.headers.get_list("set-cookie")
+            if value.startswith("mobile_csrf=") and "Max-Age=0" not in value
+        ),
+        None,
+    )
+    assert refreshed_cookie is not None
+    assert "Path=/;" in refreshed_cookie
+
+
 def test_logout_revokes_server_session_and_clears_cookie(tmp_path: Path) -> None:
     client = TestClient(create_app(_services(tmp_path)))
     assert client.post(

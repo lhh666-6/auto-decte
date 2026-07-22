@@ -55,6 +55,21 @@ def require_csrf(request: Request, submitted_token: str | None) -> None:
         )
 
 
+def _set_page_readable_csrf_cookie(response: Response, *, secure: bool) -> None:
+    # Remove cookies issued before the CSRF token became readable from
+    # /mobile/* pages. Keeping both paths can send two values with the same
+    # name and make the submitted header disagree with the server cookie.
+    response.delete_cookie(CSRF_COOKIE, path="/api/v1/mobile")
+    response.set_cookie(
+        CSRF_COOKIE,
+        secrets.token_urlsafe(24),
+        httponly=False,
+        secure=secure,
+        samesite="lax",
+        path="/",
+    )
+
+
 @router.post("/login", response_model=LoginResponse)
 def login(body: LoginRequest, request: Request, response: Response) -> LoginResponse:
     services = _services(request)
@@ -82,13 +97,9 @@ def login(body: LoginRequest, request: Request, response: Response) -> LoginResp
         samesite="lax",
         path="/api/v1/mobile",
     )
-    response.set_cookie(
-        CSRF_COOKIE,
-        secrets.token_urlsafe(24),
-        httponly=False,
+    _set_page_readable_csrf_cookie(
+        response,
         secure=services.settings.environment == "production",
-        samesite="lax",
-        path="/api/v1/mobile",
     )
     return LoginResponse(
         employee_name=actor.employee_name,
@@ -103,8 +114,12 @@ def login(body: LoginRequest, request: Request, response: Response) -> LoginResp
 
 
 @router.get("/session", response_model=SessionResponse)
-def session(request: Request) -> SessionResponse:
+def session(request: Request, response: Response) -> SessionResponse:
     actor = require_mobile_actor(request)
+    _set_page_readable_csrf_cookie(
+        response,
+        secure=_services(request).settings.environment == "production",
+    )
     return SessionResponse(
         employee_name=actor.employee_name,
         employee_code=actor.employee_code,
@@ -131,4 +146,5 @@ def logout(
         _services(request).mobile_identity.revoke_session(token)
     response.delete_cookie(SESSION_COOKIE, path="/api/v1/mobile")
     response.delete_cookie(CSRF_COOKIE, path="/api/v1/mobile")
+    response.delete_cookie(CSRF_COOKIE, path="/")
     return {"status": "ok"}
