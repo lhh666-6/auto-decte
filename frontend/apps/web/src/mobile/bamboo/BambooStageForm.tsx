@@ -109,7 +109,7 @@ export function BambooStageForm({
       ) : (
         <div className="bamboo-sign-review">
           <h4>签字前核对</h4>
-          <p>签字后，本工序数据将进入下一层处理。签字记录会绑定当前账号、工厂、职务、服务器时间和数据摘要。</p>
+          <p>{stage === "DIPPING" ? "本次为浸胶作业确认，干燥完成后将两道工序组合签字。" : stage === "DRYING" ? "确认后将浸胶与干燥作为一组联合作业签字，并生成联合工资事实。" : "签字后，本工序数据将进入下一层处理。签字记录会绑定当前账号、工厂、职务、服务器时间和数据摘要。"}</p>
           <dl>
             {Object.entries(values).map(([key, value]) => (
               <div key={key}><dt>{key}</dt><dd>{Array.isArray(value) ? value.join("、") || "—" : String(value)}</dd></div>
@@ -128,8 +128,8 @@ export function BambooStageForm({
 function stageTitle(stage: BambooStage): string {
   return ({
     SORT: "填写分选记录",
-    DIPPING: "填写浸胶记录",
-    DRYING: "填写干燥记录",
+    DIPPING: "浸胶与干燥联合作业 · 浸胶",
+    DRYING: "浸胶与干燥联合作业 · 干燥签字",
     SUPERVISOR: "主管审核与签字",
     PLANT_AUDIT: "厂长审核与签字",
   })[stage];

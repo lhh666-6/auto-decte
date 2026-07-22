@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   getBambooRecord: vi.fn(),
   createBambooRecord: vi.fn(),
   submitBambooStage: vi.fn(),
+  getBambooOperations: vi.fn(),
 }));
 
 vi.mock("@form-detection/api-client", async (importOriginal) => ({
@@ -84,6 +85,7 @@ beforeEach(() => {
     current_stage: "DIPPING",
     revision: 2,
   });
+  mocks.getBambooOperations.mockResolvedValue({ payroll_facts: [], inspections: [], corrections: [] });
 });
 
 afterEach(cleanup);
@@ -102,7 +104,7 @@ describe("bamboo mobile workflow", () => {
     const user = userEvent.setup();
     renderRoute("/mobile/record/bamboo-process/BR-18");
 
-    expect(await screen.findByRole("heading", { name: "竹丝工序记录" })).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "竹丝流程详情" })).toBeTruthy();
     expect(screen.getAllByLabelText(/含水率检测点/)).toHaveLength(8);
     await user.click(screen.getByRole("button", { name: "增加检测点" }));
     expect(screen.getAllByLabelText(/含水率检测点/)).toHaveLength(9);

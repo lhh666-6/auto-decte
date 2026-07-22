@@ -12,8 +12,8 @@ import { MobileLoginPage } from "../mobile/MobileLoginPage";
 import { MobileBambooProcessPage } from "../mobile/MobileBambooProcessPage";
 import { MobileSheetPiecePage } from "../mobile/MobileSheetPiecePage";
 import { MobileTeamSheetPiecePage } from "../mobile/MobileTeamSheetPiecePage";
-import { MobileSubmissionsPage } from "../mobile/MobileSubmissionsPage";
-import { MobileProfilePage } from "../mobile/MobileProfilePage";
+import { BambooV3SubmissionsPage } from "../mobile/v3/BambooV3SubmissionsPage";
+import { BambooV3ProfilePage } from "../mobile/v3/BambooV3ProfilePage";
 import { MobileSessionProvider } from "../mobile/session/MobileSessionProvider";
 import { RequireMobileSession } from "../mobile/session/RequireMobileSession";
 import { AppShell } from "./AppShell";
@@ -131,8 +131,8 @@ export function AppRoutes() {
           <Route path="mobile/records/:recordId" element={<MobileBambooProcessPage />} />
           <Route path="mobile/record/sheet-piece" element={<MobileSheetPiecePage />} />
           <Route path="mobile/record/team-sheet-piece" element={<MobileTeamSheetPiecePage />} />
-          <Route path="mobile/submissions" element={<MobileSubmissionsPage />} />
-          <Route path="mobile/profile" element={<MobileProfilePage />} />
+          <Route path="mobile/submissions" element={<BambooV3SubmissionsPage />} />
+          <Route path="mobile/profile" element={<BambooV3ProfilePage />} />
         </Route>
       </Route>
     </Routes>
