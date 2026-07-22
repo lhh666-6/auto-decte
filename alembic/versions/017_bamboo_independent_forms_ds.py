@@ -17,6 +17,37 @@ branch_labels: Sequence[str] | None = None
 depends_on: Sequence[str] | None = None
 
 
+def _archive_duplicate_mobile_records() -> None:
+    connection = op.get_bind()
+    rows = connection.execute(
+        sa.text(
+            "SELECT record_id, created_by, source_ref "
+            "FROM bamboo_records "
+            "WHERE source_type = 'MOBILE_CREATED' "
+            "AND source_ref IS NOT NULL AND source_ref <> '' "
+            "ORDER BY created_by, source_ref, created_at, record_id"
+        )
+    ).mappings().all()
+    seen: set[tuple[str, str]] = set()
+    for row in rows:
+        key = (str(row["created_by"]), str(row["source_ref"]))
+        if key not in seen:
+            seen.add(key)
+            continue
+        connection.execute(
+            sa.text(
+                "UPDATE bamboo_records "
+                "SET source_type = 'MOBILE_CREATED_DUPLICATE', "
+                "source_ref = :source_ref "
+                "WHERE record_id = :record_id"
+            ),
+            {
+                "record_id": row["record_id"],
+                "source_ref": f"{row['source_ref']}#duplicate:{row['record_id']}",
+            },
+        )
+
+
 def upgrade() -> None:
     with op.batch_alter_table("bamboo_records") as batch_op:
         batch_op.add_column(
@@ -53,13 +84,20 @@ def upgrade() -> None:
         ["form_type", "source_record_id"],
         unique=True,
     )
+    _archive_duplicate_mobile_records()
     op.create_index(
         "ux_bamboo_records_mobile_create_idempotency",
         "bamboo_records",
         ["created_by", "source_type", "source_ref"],
         unique=True,
-        sqlite_where=sa.text("source_type = 'MOBILE_CREATED'"),
-        postgresql_where=sa.text("source_type = 'MOBILE_CREATED'"),
+        sqlite_where=sa.text(
+            "source_type = 'MOBILE_CREATED' "
+            "AND source_ref IS NOT NULL AND source_ref <> ''"
+        ),
+        postgresql_where=sa.text(
+            "source_type = 'MOBILE_CREATED' "
+            "AND source_ref IS NOT NULL AND source_ref <> ''"
+        ),
     )
 
 

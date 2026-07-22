@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 from alembic.config import Config
-from sqlalchemy import Engine, inspect, text
+from sqlalchemy import Connection, Engine, inspect, text
 
 from alembic import command
 from app.domain.models import stable_json_sha256
@@ -16,6 +16,36 @@ _EMPTY_MAPPING_HASH = "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161
 
 class SchemaRevisionError(RuntimeError):
     pass
+
+
+def _archive_duplicate_bamboo_mobile_records(connection: Connection) -> None:
+    rows = connection.execute(
+        text(
+            "SELECT record_id, created_by, source_ref "
+            "FROM bamboo_records "
+            "WHERE source_type = 'MOBILE_CREATED' "
+            "AND source_ref IS NOT NULL AND source_ref <> '' "
+            "ORDER BY created_by, source_ref, created_at, record_id"
+        )
+    ).mappings().all()
+    seen: set[tuple[str, str]] = set()
+    for row in rows:
+        key = (str(row["created_by"]), str(row["source_ref"]))
+        if key not in seen:
+            seen.add(key)
+            continue
+        connection.execute(
+            text(
+                "UPDATE bamboo_records "
+                "SET source_type = 'MOBILE_CREATED_DUPLICATE', "
+                "source_ref = :source_ref "
+                "WHERE record_id = :record_id"
+            ),
+            {
+                "record_id": row["record_id"],
+                "source_ref": f"{row['source_ref']}#duplicate:{row['record_id']}",
+            },
+        )
 
 
 def is_alembic_managed(engine: Engine) -> bool:
@@ -115,12 +145,14 @@ def ensure_auto_created_schema_compatibility(engine: Engine) -> None:
                 )
         if "ux_bamboo_records_mobile_create_idempotency" not in bamboo_indexes:
             with engine.begin() as connection:
+                _archive_duplicate_bamboo_mobile_records(connection)
                 connection.execute(
                     text(
                         "CREATE UNIQUE INDEX "
                         "ux_bamboo_records_mobile_create_idempotency "
                         "ON bamboo_records (created_by, source_type, source_ref) "
-                        "WHERE source_type = 'MOBILE_CREATED'"
+                        "WHERE source_type = 'MOBILE_CREATED' "
+                        "AND source_ref IS NOT NULL AND source_ref <> ''"
                     )
                 )
     inspector = inspect(engine)

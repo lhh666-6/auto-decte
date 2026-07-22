@@ -581,8 +581,14 @@ class BambooRecordRow(Base):
             "source_type",
             "source_ref",
             unique=True,
-            sqlite_where=text("source_type = 'MOBILE_CREATED'"),
-            postgresql_where=text("source_type = 'MOBILE_CREATED'"),
+            sqlite_where=text(
+                "source_type = 'MOBILE_CREATED' "
+                "AND source_ref IS NOT NULL AND source_ref <> ''"
+            ),
+            postgresql_where=text(
+                "source_type = 'MOBILE_CREATED' "
+                "AND source_ref IS NOT NULL AND source_ref <> ''"
+            ),
         ),
     )
 
