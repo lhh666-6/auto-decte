@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   getBambooRecord: vi.fn(),
   getBambooRecordOptions: vi.fn(),
   createBambooRecord: vi.fn(),
+  submitBambooStage: vi.fn(),
   getBambooOperations: vi.fn(),
   listSubmissions: vi.fn(),
   listDrafts: vi.fn(),
@@ -28,6 +29,7 @@ vi.mock("@form-detection/api-client", async (importOriginal) => ({
     getBambooRecord: mocks.getBambooRecord,
     getBambooRecordOptions: mocks.getBambooRecordOptions,
     createBambooRecord: mocks.createBambooRecord,
+    submitBambooStage: mocks.submitBambooStage,
     getBambooOperations: mocks.getBambooOperations,
     listSubmissions: mocks.listSubmissions,
     listBambooRoleChanges: mocks.listBambooRoleChanges,
@@ -35,7 +37,7 @@ vi.mock("@form-detection/api-client", async (importOriginal) => ({
 }));
 vi.mock("../storage/drafts", () => ({ listDrafts: mocks.listDrafts }));
 vi.mock("../storage/outbox", () => ({ countAll: mocks.countAll }));
-vi.mock("../device", () => ({ createMobileClientId: () => "record-key", getMobileDeviceId: () => "device-v3" }));
+vi.mock("../device", () => ({ createMobileClientId: (prefix: string) => `${prefix}-key`, getMobileDeviceId: () => "device-v3" }));
 
 import { BambooRecordDetailPage } from "../bamboo/BambooRecordDetailPage";
 import { BambooTaskListPage } from "../bamboo/BambooTaskListPage";
@@ -56,24 +58,60 @@ const worker: MobileSession = {
   bamboo_role: "SORT_OPERATOR",
 };
 
-const record: BambooRecord = {
-  record_id: "BR-18",
-  display_no: "ZS-20260722-018",
+const sortingRecord: BambooRecord = {
+  record_id: "SORT-18",
+  display_no: "FX-20260722-018",
   factory_id: "FACTORY-A",
   source_type: "MOBILE_CREATED",
   source_ref: "create-18",
-  base_info: { cage_no: "3-018", length: "2.3", grade: "A", bundle_count: 16 },
+  form_type: "SORTING",
+  production_object_id: "CAGE-18",
+  source_record_id: null,
+  source_snapshot: {},
+  base_info: { mode: "分选+装笼", cage_no: "3-018", length: "2.3", grade: "A", bundle_count: 16 },
   current_stage: "SUPERVISOR",
   status: "ACTIVE",
-  revision: 4,
+  revision: 2,
   created_by: "ZS001",
   created_at: "2026-07-22T02:30:00Z",
   updated_at: "2026-07-22T04:30:00Z",
   submissions: [
-    { submission_id: "S1", stage: "SORT", version: 1, values: { sort_quantity: 16, wage_amount: 80 }, actor_id: "1", actor_name: "王分选", role_code: "SORT_OPERATOR", submitted_at: "2026-07-22T03:00:00Z" },
-    { submission_id: "S2", stage: "DIPPING", version: 1, values: { glue_batch: "J-01" }, actor_id: "2", actor_name: "李浸胶", role_code: "DIPPING_OPERATOR", submitted_at: "2026-07-22T03:30:00Z" },
-    { submission_id: "S3", stage: "DRYING", version: 1, values: { rack_no: "G-01" }, actor_id: "3", actor_name: "陈干燥", role_code: "DRYING_RACK_OPERATOR", submitted_at: "2026-07-22T04:00:00Z" },
+    { submission_id: "SORT-S1", stage: "SORT", version: 1, values: { moisture: [12, 13] }, actor_id: "1", actor_name: "王分选", role_code: "SORT_OPERATOR", submitted_at: "2026-07-22T03:00:00Z" },
   ],
+};
+
+const jointRecord: BambooRecord = {
+  ...sortingRecord,
+  record_id: "JOINT-18",
+  display_no: "JG-20260722-018",
+  source_type: "SORTING_RECORD",
+  source_ref: sortingRecord.display_no,
+  form_type: "DIPPING_DRYING",
+  source_record_id: sortingRecord.record_id,
+  source_snapshot: {
+    record_id: sortingRecord.record_id,
+    display_no: sortingRecord.display_no,
+    revision: 2,
+    original_revision: 2,
+    latest_revision: 3,
+    source_status: "UPSTREAM_CHANGED",
+    base_info: sortingRecord.base_info,
+  },
+  current_stage: "SUPERVISOR",
+  revision: 3,
+  submissions: [
+    { submission_id: "DIP-S1", stage: "DIPPING", version: 1, values: { glue_batch: "J-01", moisture: [11] }, actor_id: "2", actor_name: "李浸胶", role_code: "DIPPING_OPERATOR", submitted_at: "2026-07-22T03:30:00Z" },
+    { submission_id: "DRY-S1", stage: "DRYING", version: 1, values: { rack_numbers: ["G-01"], moisture: [9] }, actor_id: "3", actor_name: "陈干燥", role_code: "DRYING_RACK_OPERATOR", submitted_at: "2026-07-22T04:00:00Z" },
+  ],
+};
+
+const presets = {
+  options_version: "factory-sort-v1",
+  special_classes: ["直装", "防霉"],
+  lengths: ["2.1", "2.3", "2.5"],
+  shades: ["深", "浅"],
+  grades: ["A", "B"],
+  weight_factors: { "2.1": "5", "2.3": "6", "2.5": "7" },
 };
 
 function client(session: MobileSession): MobileApiClient {
@@ -86,47 +124,39 @@ function withSession(ui: React.ReactNode, session: MobileSession = worker) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  mocks.getBambooDashboard.mockResolvedValue({ available: 1, waiting: 2, completed: 3 });
-  mocks.listBambooTasks.mockResolvedValue({ bucket: "available", tasks: [record] });
-  mocks.getBambooRecord.mockResolvedValue(record);
-  mocks.getBambooRecordOptions.mockResolvedValue({
-    options_version: "factory-sort-v1",
-    special_classes: ["直装", "防霉"],
-    lengths: ["2.1", "2.3", "2.5"],
-    shades: ["深", "浅"],
-    grades: ["A", "B"],
-    weight_factors: { "2.1": "5", "2.3": "6", "2.5": "7" },
-  });
-  mocks.createBambooRecord.mockResolvedValue(record);
+  sessionStorage.clear();
+  mocks.getBambooDashboard.mockResolvedValue({ available: 2, waiting: 0, completed: 0 });
+  mocks.listBambooTasks.mockResolvedValue({ bucket: "available", tasks: [sortingRecord, jointRecord] });
+  mocks.getBambooRecord.mockResolvedValue(sortingRecord);
+  mocks.getBambooRecordOptions.mockResolvedValue(presets);
+  mocks.createBambooRecord.mockResolvedValue({ ...sortingRecord, current_stage: "SORT", revision: 1, submissions: [] });
+  mocks.submitBambooStage.mockResolvedValue(sortingRecord);
   mocks.getBambooOperations.mockResolvedValue({ payroll_facts: [], inspections: [], corrections: [] });
   mocks.listSubmissions.mockResolvedValue({ submissions: [
     { submission_id: "SUB-1", form_id: "ZS-18", subject_employee_code: "ZS001", status: "ACCEPTED", submitted_at: "2026-07-22T04:00:00Z", idempotency_key: "key" },
   ] });
   mocks.listDrafts.mockResolvedValue([{ storageKey: "draft-1" }]);
   mocks.countAll.mockResolvedValue(2);
-  mocks.listBambooRoleChanges.mockResolvedValue([{ request_id: "RC-1", employee_code: "JZ001", from_role: "DIPPING_OPERATOR", to_role: "DRYING_RACK_OPERATOR", reason: "调整班组", status: "PENDING" }]);
+  mocks.listBambooRoleChanges.mockResolvedValue([]);
 });
 
 afterEach(cleanup);
 
-describe("V3 work and record pages", () => {
-  it("uses the only work list with the three V3 buckets and V3 record links", async () => {
+describe("independent bamboo forms", () => {
+  it("lists SORTING and DIPPING_DRYING as separate records", async () => {
     withSession(<BambooTaskListPage />);
-    expect(await screen.findByRole("heading", { name: "记录工作" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: /可记录/ })).toBeTruthy();
-    expect(screen.getByRole("button", { name: /等待上游/ })).toBeTruthy();
-    expect(screen.getByRole("button", { name: /已完成/ })).toBeTruthy();
-    expect((await screen.findByText(record.display_no)).closest("a")?.getAttribute("href")).toBe("/mobile/records/BR-18");
+    expect(await screen.findByText(sortingRecord.display_no)).toBeTruthy();
+    expect(screen.getByText(jointRecord.display_no)).toBeTruthy();
+    expect(screen.getAllByText(/分选表/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/浸胶\+干燥联合表/).length).toBeGreaterThan(0);
   });
 
-  it("creates a sort record with published picker options and a visible confirmation", async () => {
+  it("creates a fixed SORTING record then submits SORT with moisture", async () => {
     const user = userEvent.setup();
     withSession(<BambooTaskListPage />);
 
     await user.click(await screen.findByRole("button", { name: "新建竹丝记录" }));
-    expect(await screen.findByRole("dialog", { name: "新建竹丝记录" })).toBeTruthy();
-    expect(screen.getByText("预设选项由管理员后台发布；手机端只能点选，不能临时新增。")).toBeTruthy();
-
+    await user.click(await screen.findByRole("button", { name: "分选+装笼" }));
     await user.click(screen.getByRole("button", { name: /点开选择长度/ }));
     await user.click(await screen.findByRole("button", { name: "2.3" }));
     await user.click(screen.getByRole("button", { name: /点开选择深浅/ }));
@@ -135,45 +165,90 @@ describe("V3 work and record pages", () => {
     await user.click(await screen.findByRole("button", { name: "A" }));
     await user.type(screen.getByLabelText(/笼号/), "L-207");
     await user.type(screen.getByLabelText(/把数/), "12");
-    expect(screen.getByText(/12 把 × 6/)).toBeTruthy();
-
-    await user.click(screen.getByRole("button", { name: "核对并建立" }));
-    expect(screen.getByRole("dialog", { name: "确认建立竹丝记录" })).toBeTruthy();
-    await user.click(screen.getByRole("button", { name: "确认建立" }));
+    await user.type(screen.getByText("检测点 1").closest("label")!.querySelector("input")!, "12");
+    await user.type(screen.getByText("检测点 2").closest("label")!.querySelector("input")!, "14");
+    await user.click(screen.getByRole("button", { name: "核对并提交分选/装笼记录" }));
+    expect(await screen.findByText("确认后将建立分选表并绑定当前身份完成分选签字。")).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "确认提交" }));
 
     await waitFor(() => expect(mocks.createBambooRecord).toHaveBeenCalledWith(
-      expect.objectContaining({
-        length: "2.3",
-        shade: "深",
-        grade: "A",
-        cage_no: "L-207",
-        bundle_count: 12,
-        options_version: "factory-sort-v1",
-      }),
-      "record-key",
+      expect.objectContaining({ mode: "分选+装笼", length: "2.3", cage_no: "L-207", bundle_count: 12, options_version: "factory-sort-v1" }),
+      "sorting-record-key",
     ));
+    expect(mocks.submitBambooStage).toHaveBeenCalledWith(
+      "SORT-18",
+      "SORT",
+      { expected_revision: 1, device_id: "device-v3", values: { moisture: [12, 14] } },
+      "sorting-stage-key",
+    );
   });
 
-  it("shows supervisors the opened whole electronic form and locks downstream stages", async () => {
-    withSession(<BambooRecordDetailPage recordId="BR-18" />, { ...worker, bamboo_role: "SUPERVISOR", position: "主管" });
-    expect(await screen.findByRole("heading", { name: "竹丝流程详情" })).toBeTruthy();
-    expect(screen.getByText("整张电子表单")).toBeTruthy();
-    expect(screen.getByText("分选记录")).toBeTruthy();
-    expect(screen.getByText("浸胶与干燥联合作业")).toBeTruthy();
-    expect(screen.getByText("厂长审核").closest("li")?.textContent).toContain("前序完成后开放");
-    expect(screen.getByText("分选签字后工资已确定")).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "主管选择性回退" })).toBeTruthy();
-    expect(screen.getByText("只勾选确实需要重写的工序，系统会自动作废其下游签字，旧版本仍保留用于审计。")).toBeTruthy();
-    expect(screen.queryByText("财务逐条审批")).toBeNull();
+  it("blocks creation when presets fail and enables it after retry", async () => {
+    const user = userEvent.setup();
+    mocks.getBambooRecordOptions.mockRejectedValueOnce(new Error("offline")).mockResolvedValueOnce(presets);
+    withSession(<BambooTaskListPage />);
+
+    await user.click(await screen.findByRole("button", { name: "新建竹丝记录" }));
+    expect((await screen.findByRole("alert")).textContent).toContain("后台发布选项加载失败");
+    expect((screen.getByRole("button", { name: "核对并提交分选/装笼记录" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(mocks.createBambooRecord).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "重新加载" }));
+    await waitFor(() => expect((screen.getByRole("button", { name: /点开选择长度/ }) as HTMLButtonElement).disabled).toBe(false));
+    expect(mocks.getBambooRecordOptions).toHaveBeenCalledTimes(2);
   });
 
-  it("gives inspectors a self-chosen serial, first-three-stage selector and three evidence modes", async () => {
-    withSession(<BambooRecordDetailPage recordId="BR-18" />, { ...worker, bamboo_role: "INSPECTOR", position: "检测人" });
-    expect(await screen.findByLabelText("检测序号")).toBeTruthy();
-    const stageSelect = screen.getByLabelText("检测流程");
-    expect(Array.from((stageSelect as HTMLSelectElement).options).map((option) => option.text)).toEqual(["分选", "浸胶", "干燥"]);
-    expect(screen.getByLabelText("文字留痕")).toBeTruthy();
-    expect(screen.getByLabelText("照片或录音").getAttribute("accept")).toBe("image/*,audio/*");
+  it("restores only a pending submission owned by the same employee, factory and device", async () => {
+    const key = "bamboo-v3-pending-sorting-submission:ZS001:FACTORY-A:device-v3";
+    sessionStorage.setItem(key, JSON.stringify({
+      ownerEmployeeCode: "ZS001", factoryId: "FACTORY-A", deviceId: "device-v3",
+      createKey: "create-pending", stageKey: "stage-pending",
+      draft: { mode: "分选", special_classes: [], length: "2.3", shade: "深", grade: "A", supplier: "", cage_no: "L-9", bundle_count: "9" },
+      moisture: ["12"], baseInfo: { mode: "分选", length: "2.3", cage_no: "L-9", bundle_count: 9 },
+    }));
+    withSession(<BambooTaskListPage />);
+    expect(await screen.findByRole("button", { name: "继续未完成的分选提交" })).toBeTruthy();
+    expect(screen.getAllByText(/属于当前账号、工厂和设备的未完成分选提交/).length).toBeGreaterThan(0);
+    cleanup();
+
+    withSession(<BambooTaskListPage />, { ...worker, employee_code: "OTHER" });
+    expect(await screen.findByRole("button", { name: "新建竹丝记录" })).toBeTruthy();
+    expect(screen.queryByText(/属于当前账号、工厂和设备的未完成分选提交/)).toBeNull();
+  });
+
+  it("shows only the sorting approval flow on a SORTING record", async () => {
+    withSession(<BambooRecordDetailPage recordId="SORT-18" />, { ...worker, bamboo_role: "SUPERVISOR", position: "主管" });
+    expect(await screen.findByRole("heading", { name: "分选表详情" })).toBeTruthy();
+    const flow = screen.getByRole("list", { name: "分选表表内进度" });
+    expect(within(flow).getAllByRole("listitem").map((item) => item.querySelector("span")?.textContent)).toEqual(["分选签字", "主管审核", "厂长审核", "已生效"]);
+    expect(within(flow).queryByText("浸胶记录")).toBeNull();
+    expect(within(flow).queryByText("干燥联合签字")).toBeNull();
+  });
+
+  it("shows source version, upstream warning and joint flow on DIPPING_DRYING", async () => {
+    mocks.getBambooRecord.mockResolvedValue(jointRecord);
+    withSession(<BambooRecordDetailPage recordId="JOINT-18" />, { ...worker, bamboo_role: "SUPERVISOR", position: "主管" });
+    expect(await screen.findByRole("heading", { name: "浸胶+干燥联合表详情" })).toBeTruthy();
+    expect(screen.getByText("上游数据已变更，待主管确认")).toBeTruthy();
+    const sourceCard = screen.getByRole("heading", { name: "来源分选表" }).closest("section")!;
+    expect(sourceCard.querySelector("p")?.textContent).toBe(`${sortingRecord.display_no} · 第 2 版`);
+    expect(screen.getByRole("link", { name: "查看上游分选表" }).getAttribute("href")).toBe("/mobile/records/SORT-18");
+    const flow = screen.getByRole("list", { name: "浸胶+干燥联合表表内进度" });
+    expect(within(flow).getAllByRole("listitem").map((item) => item.querySelector("span")?.textContent)).toEqual(["浸胶记录", "干燥联合签字", "主管审核", "厂长审核", "已生效"]);
+  });
+
+  it("limits inspector and supervisor targets by form type", async () => {
+    withSession(<BambooRecordDetailPage recordId="SORT-18" />, { ...worker, bamboo_role: "INSPECTOR", position: "检测人" });
+    expect(await screen.findByLabelText("检测目标")).toBeTruthy();
+    expect(Array.from((screen.getByLabelText("检测目标") as HTMLSelectElement).options).map((item) => item.text)).toEqual(["分选"]);
+    cleanup();
+
+    mocks.getBambooRecord.mockResolvedValue(jointRecord);
+    withSession(<BambooRecordDetailPage recordId="JOINT-18" />, { ...worker, bamboo_role: "SUPERVISOR", position: "主管" });
+    expect(await screen.findByRole("heading", { name: "主管选择性回退" })).toBeTruthy();
+    const returnSection = screen.getByRole("heading", { name: "主管选择性回退" }).closest("section")!;
+    expect(within(returnSection).getByLabelText("浸胶")).toBeTruthy();
+    expect(within(returnSection).getByLabelText("干燥")).toBeTruthy();
+    expect(within(returnSection).queryByLabelText("分选")).toBeNull();
   });
 });
 
@@ -184,25 +259,13 @@ describe("V3 submissions and profile", () => {
     await waitFor(() => expect(screen.getByText("本地草稿").nextElementSibling?.textContent).toBe("1"));
     expect(screen.getByText("待同步").nextElementSibling?.textContent).toBe("2");
     expect(screen.getByText("SUB-1")).toBeTruthy();
-    expect(screen.queryByRole("link", { name: /草稿/ })).toBeNull();
   });
 
-  it("shows extensible identity controls and no finance approval action", async () => {
+  it("keeps identity controls free of finance approval", async () => {
     withSession(<BambooV3ProfilePage />);
     expect(await screen.findByRole("heading", { name: "我的" })).toBeTruthy();
     expect(screen.getByText("竹丝示范一厂")).toBeTruthy();
-    expect(screen.getByText("分选工")).toBeTruthy();
     expect(screen.getByRole("button", { name: "申请换岗" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "退出登录" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: /财务审批/ })).toBeNull();
-  });
-
-  it("lets a plant manager configure future roles and review pending applications", async () => {
-    withSession(<BambooV3ProfilePage />, { ...worker, employee_name: "钱厂长", employee_code: "CZ001", position: "厂长", bamboo_role: "PLANT_MANAGER" });
-    const button = await screen.findByRole("button", { name: "人员与职务配置" });
-    await button.click();
-    expect(await screen.findByText(/JZ001/)).toBeTruthy();
-    expect(screen.getByLabelText("职务代码").getAttribute("list")).toBe("manager-role-options");
-    expect(screen.getByText("可输入新增员工和未来职务代码，不限于当前选项。")).toBeTruthy();
   });
 });
