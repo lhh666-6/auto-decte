@@ -29,6 +29,9 @@ export interface MobileLoginResponse {
   position: string;
   roles: string[];
   expires_at: string | null;
+  factory_id: string;
+  factory_name: string;
+  bamboo_role: string;
 }
 
 export interface MobileSession {
@@ -39,6 +42,51 @@ export interface MobileSession {
   roles: string[];
   allowed_form_types: string[];
   allowed_processes: string[];
+  factory_id: string;
+  factory_name: string;
+  bamboo_role: string;
+}
+
+export type BambooStage = "SORT" | "DIPPING" | "DRYING" | "SUPERVISOR" | "PLANT_AUDIT";
+export type BambooTaskBucket = "available" | "waiting" | "completed";
+
+export interface BambooStageSubmission {
+  submission_id: string;
+  stage: BambooStage;
+  version: number;
+  values: Record<string, unknown>;
+  actor_id: string;
+  actor_name: string;
+  role_code: string;
+  submitted_at: string | null;
+}
+
+export interface BambooRecord {
+  record_id: string;
+  display_no: string;
+  factory_id: string;
+  source_type: string;
+  source_ref: string | null;
+  base_info: Record<string, unknown>;
+  current_stage: BambooStage | null;
+  status: "ACTIVE" | "COMPLETED";
+  revision: number;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+  submissions: BambooStageSubmission[];
+}
+
+export interface BambooDashboard {
+  available: number;
+  waiting: number;
+  completed: number;
+}
+
+export interface SubmitBambooStageInput {
+  expected_revision: number;
+  device_id: string;
+  values: Record<string, unknown>;
 }
 
 export interface MobileAvailableForm {
@@ -280,6 +328,48 @@ export class MobileApiClient {
 
   listSubmissions(): Promise<{ submissions: MobileSubmissionListItem[] }> {
     return this.request("/submissions");
+  }
+
+  getBambooDashboard(): Promise<BambooDashboard> {
+    return this.request("/bamboo/dashboard");
+  }
+
+  listBambooTasks(bucket: BambooTaskBucket): Promise<{
+    bucket: BambooTaskBucket;
+    tasks: BambooRecord[];
+  }> {
+    return this.request(`/bamboo/tasks?bucket=${encodeURIComponent(bucket)}`);
+  }
+
+  createBambooRecord(
+    baseInfo: Record<string, unknown>,
+    idempotencyKey: string,
+  ): Promise<BambooRecord> {
+    return this.request("/bamboo/records", {
+      method: "POST",
+      headers: { "Idempotency-Key": idempotencyKey },
+      body: JSON.stringify({ base_info: baseInfo }),
+    });
+  }
+
+  getBambooRecord(recordId: string): Promise<BambooRecord> {
+    return this.request(`/bamboo/records/${encodeURIComponent(recordId)}`);
+  }
+
+  submitBambooStage(
+    recordId: string,
+    stage: BambooStage,
+    input: SubmitBambooStageInput,
+    idempotencyKey: string,
+  ): Promise<BambooRecord> {
+    return this.request(
+      `/bamboo/records/${encodeURIComponent(recordId)}/stages/${encodeURIComponent(stage)}/submit`,
+      {
+        method: "POST",
+        headers: { "Idempotency-Key": idempotencyKey },
+        body: JSON.stringify(input),
+      },
+    );
   }
 }
 

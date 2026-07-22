@@ -86,4 +86,48 @@ describe("MobileApiClient", () => {
     expect(headers.get("X-CSRF-Token")).toBe("csrf-value");
     expect(headers.get("Idempotency-Key")).toBe("submission-key");
   });
+
+  it("loads bamboo task buckets with the current session cookie", async () => {
+    const fetcher = vi.fn().mockResolvedValue(jsonResponse({
+      bucket: "available",
+      tasks: [],
+    }));
+    const client = new MobileApiClient("/api/v1/mobile", fetcher);
+
+    await client.listBambooTasks("available");
+
+    expect(fetcher).toHaveBeenCalledWith(
+      "/api/v1/mobile/bamboo/tasks?bucket=available",
+      expect.objectContaining({ credentials: "same-origin", method: "GET" }),
+    );
+  });
+
+  it("writes bamboo records and signatures with CSRF and idempotency", async () => {
+    const fetcher = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({ record_id: "BR-1" }, 201))
+      .mockResolvedValueOnce(jsonResponse({ record_id: "BR-1", revision: 2 }));
+    const client = new MobileApiClient(
+      "/api/v1/mobile",
+      fetcher,
+      () => "csrf-bamboo",
+    );
+
+    await client.createBambooRecord({ cage_no: "3-018" }, "create-1");
+    await client.submitBambooStage("BR-1", "SORT", {
+      expected_revision: 1,
+      device_id: "phone-a",
+      values: { moisture: [12, 13] },
+    }, "sort-1");
+
+    expect(fetcher.mock.calls[0]?.[0]).toBe("/api/v1/mobile/bamboo/records");
+    expect(fetcher.mock.calls[1]?.[0]).toBe(
+      "/api/v1/mobile/bamboo/records/BR-1/stages/SORT/submit",
+    );
+    for (const call of fetcher.mock.calls) {
+      const init = call[1] as RequestInit;
+      const headers = new Headers(init.headers);
+      expect(headers.get("X-CSRF-Token")).toBe("csrf-bamboo");
+      expect(headers.get("Idempotency-Key")).toMatch(/^(create|sort)-1$/);
+    }
+  });
 });

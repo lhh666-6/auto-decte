@@ -91,6 +91,11 @@ export {
   MobileApiClient,
   MobileApiError,
   mobileApiClient,
+  type BambooDashboard,
+  type BambooRecord,
+  type BambooStage,
+  type BambooStageSubmission,
+  type BambooTaskBucket,
   type MobileActiveResource,
   type MobileAvailableForm,
   type MobileContext,
@@ -106,6 +111,7 @@ export {
   type MobileSubmissionListItem,
   type MobileSubmissionReceipt,
   type MobileTeamMember,
+  type SubmitBambooStageInput,
 } from "./mobile_ds.js";
 
 // When generated types exist, uncomment:
