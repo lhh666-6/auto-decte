@@ -122,11 +122,11 @@ def _require_member(value: str, options: list[str], detail: str) -> None:
         raise BambooOperationError("INVALID_BAMBOO_BASE_INFO", detail)
 
 
-def _required_decimal(
+def _optional_decimal(
     values: dict[str, Any],
     keys: tuple[str, ...],
     label: str,
-) -> Decimal:
+) -> Decimal | None:
     raw = next(
         (
             values[key]
@@ -136,10 +136,7 @@ def _required_decimal(
         None,
     )
     if raw is None:
-        raise BambooOperationError(
-            "INVALID_BAMBOO_STAGE_VALUES",
-            f"请填写{label}",
-        )
+        return None
     try:
         value = Decimal(str(raw))
     except (ArithmeticError, ValueError) as error:
@@ -365,7 +362,7 @@ class BambooOperationsService:
         normalized["moisture"] = normalized_moisture
 
         if stage is BambooStage.DIPPING:
-            before = _required_decimal(
+            before = _optional_decimal(
                 values,
                 (
                     "glue_before_weight",
@@ -375,7 +372,7 @@ class BambooOperationsService:
                 ),
                 "胶前重",
             )
-            after = _required_decimal(
+            after = _optional_decimal(
                 values,
                 (
                     "glue_after_weight",
@@ -385,10 +382,19 @@ class BambooOperationsService:
                 ),
                 "胶后重",
             )
-            _required_decimal(values, ("glue_gain", "glue_amount"), "上胶量")
+            glue_gain = _optional_decimal(
+                values,
+                ("glue_gain", "glue_amount"),
+                "上胶量",
+            )
+            normalized["glue_before_weight"] = str(before) if before is not None else ""
+            normalized["glue_after_weight"] = str(after) if after is not None else ""
+            normalized["glue_gain"] = str(glue_gain) if glue_gain is not None else "0"
             if values.get("wage_amount") is not None and values.get("wage_amount") != "":
-                _required_decimal(values, ("wage_amount",), "工资金额")
-            if after < before:
+                wage_amount = _optional_decimal(values, ("wage_amount",), "工资金额")
+                if wage_amount is not None:
+                    normalized["wage_amount"] = str(wage_amount)
+            if before is not None and after is not None and after < before:
                 raise BambooOperationError(
                     "INVALID_BAMBOO_STAGE_VALUES",
                     "胶后重不能小于胶前重",
