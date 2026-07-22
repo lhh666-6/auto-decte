@@ -23,6 +23,9 @@ class MobileActor:
     roles: list[str]
     allowed_form_types: list[str]
     allowed_processes: list[str]
+    factory_id: str = ""
+    factory_name: str = ""
+    bamboo_role: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,6 +49,9 @@ class MobileAccessProfile:
     allowed_form_types: list[str]
     allowed_processes: list[str]
     active: bool = True
+    factory_id: str = ""
+    factory_name: str = ""
+    bamboo_role: str = ""
 
 
 @dataclass(slots=True)
@@ -231,4 +237,7 @@ class MobileIdentityService:
             roles=list(profile.roles),
             allowed_form_types=list(profile.allowed_form_types),
             allowed_processes=list(profile.allowed_processes),
+            factory_id=profile.factory_id,
+            factory_name=profile.factory_name,
+            bamboo_role=profile.bamboo_role,
         )

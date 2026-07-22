@@ -96,6 +96,9 @@ def login(body: LoginRequest, request: Request, response: Response) -> LoginResp
         team_name=actor.team_name,
         position=actor.position,
         roles=actor.roles,
+        factory_id=actor.factory_id,
+        factory_name=actor.factory_name,
+        bamboo_role=actor.bamboo_role,
     )
 
 
@@ -110,6 +113,9 @@ def session(request: Request) -> SessionResponse:
         roles=actor.roles,
         allowed_form_types=actor.allowed_form_types,
         allowed_processes=actor.allowed_processes,
+        factory_id=actor.factory_id,
+        factory_name=actor.factory_name,
+        bamboo_role=actor.bamboo_role,
     )
 
 

@@ -24,6 +24,9 @@ class LoginResponse(BaseModel):
     position: str
     roles: list[str]
     expires_at: str | None = None
+    factory_id: str = ""
+    factory_name: str = ""
+    bamboo_role: str = ""
 
 
 class SessionResponse(BaseModel):
@@ -34,6 +37,9 @@ class SessionResponse(BaseModel):
     roles: list[str]
     allowed_form_types: list[str]
     allowed_processes: list[str]
+    factory_id: str = ""
+    factory_name: str = ""
+    bamboo_role: str = ""
 
 
 # ── Forms ───────────────────────────────────────────────────────

@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from uuid import uuid4
 
 from sqlalchemy import Engine, select, update
 from sqlalchemy.orm import Session
 
 from app.adapters.database.models import (
+    BambooFactoryRow,
+    BambooRoleDefinitionRow,
+    EmployeeBambooAssignmentRow,
     MasterDataRecordRow,
     MobileAccessProfileRow,
     MobileCredentialRow,
@@ -86,7 +90,24 @@ class SqlAlchemyMobileIdentityRepository:
                 MobileAccessProfileRow,
                 (EMPLOYEE_CATALOG, employee_code),
             )
-            return _profile(row) if row is not None else None
+            if row is None:
+                return None
+            assignment = session.scalar(
+                select(EmployeeBambooAssignmentRow)
+                .where(
+                    EmployeeBambooAssignmentRow.employee_catalog == EMPLOYEE_CATALOG,
+                    EmployeeBambooAssignmentRow.employee_code == employee_code,
+                    EmployeeBambooAssignmentRow.status == "ACTIVE",
+                    EmployeeBambooAssignmentRow.ended_at.is_(None),
+                )
+                .order_by(EmployeeBambooAssignmentRow.effective_at.desc())
+                .limit(1)
+            )
+            factory_name = ""
+            if assignment is not None:
+                factory = session.get(BambooFactoryRow, assignment.factory_id)
+                factory_name = factory.name if factory is not None else ""
+            return _profile(row, assignment, factory_name)
 
     def list_team_members(self, team_id: str) -> list[tuple[str, str]]:
         statement = (
@@ -120,7 +141,11 @@ class SqlAlchemyMobileIdentityRepository:
         allowed_form_types: list[str],
         allowed_processes: list[str],
         active: bool = True,
+        factory_id: str = "",
+        factory_name: str = "",
+        bamboo_role: str = "",
     ) -> None:
+        now = datetime.now(UTC)
         with Session(self._engine) as session, session.begin():
             session.merge(
                 MobileAccessProfileRow(
@@ -135,6 +160,52 @@ class SqlAlchemyMobileIdentityRepository:
                     active=active,
                 )
             )
+            if factory_id and bamboo_role:
+                session.merge(
+                    BambooFactoryRow(
+                        factory_id=factory_id,
+                        code=factory_id,
+                        name=factory_name or factory_id,
+                        active=True,
+                        revision=1,
+                        created_at=now,
+                        updated_at=now,
+                    )
+                )
+                session.merge(
+                    BambooRoleDefinitionRow(
+                        role_code=bamboo_role,
+                        display_name=bamboo_role,
+                        category="PRODUCTION",
+                        self_requestable=False,
+                        active=True,
+                        revision=1,
+                    )
+                )
+                session.execute(
+                    update(EmployeeBambooAssignmentRow)
+                    .where(
+                        EmployeeBambooAssignmentRow.employee_catalog == EMPLOYEE_CATALOG,
+                        EmployeeBambooAssignmentRow.employee_code == employee_code,
+                        EmployeeBambooAssignmentRow.status == "ACTIVE",
+                        EmployeeBambooAssignmentRow.ended_at.is_(None),
+                    )
+                    .values(status="INACTIVE", ended_at=now)
+                )
+                session.add(
+                    EmployeeBambooAssignmentRow(
+                        assignment_id=f"MBA-{uuid4().hex}",
+                        employee_catalog=EMPLOYEE_CATALOG,
+                        employee_code=employee_code,
+                        factory_id=factory_id,
+                        role_code=bamboo_role,
+                        status="ACTIVE",
+                        effective_at=now,
+                        ended_at=None,
+                        created_by="system",
+                        created_at=now,
+                    )
+                )
 
     def create_session(self, session_record: MobileSessionRecord) -> None:
         with Session(self._engine) as session, session.begin():
@@ -180,7 +251,11 @@ def _credential(row: MobileCredentialRow) -> MobileCredential:
     )
 
 
-def _profile(row: MobileAccessProfileRow) -> MobileAccessProfile:
+def _profile(
+    row: MobileAccessProfileRow,
+    assignment: EmployeeBambooAssignmentRow | None,
+    factory_name: str,
+) -> MobileAccessProfile:
     return MobileAccessProfile(
         employee_code=row.employee_code,
         team_id=row.team_id,
@@ -190,6 +265,9 @@ def _profile(row: MobileAccessProfileRow) -> MobileAccessProfile:
         allowed_form_types=list(row.allowed_form_types),
         allowed_processes=list(row.allowed_processes),
         active=row.active,
+        factory_id=assignment.factory_id if assignment is not None else "",
+        factory_name=factory_name,
+        bamboo_role=assignment.role_code if assignment is not None else "",
     )
 
 

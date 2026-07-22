@@ -29,6 +29,9 @@ def _services(tmp_path: Path) -> Services:
         roles=["WORKER"],
         allowed_form_types=["SHEET_PIECE_MEASUREMENT"],
         allowed_processes=["CUTTING"],
+        factory_id="FACTORY-A",
+        factory_name="竹丝一厂",
+        bamboo_role="SORT_OPERATOR",
     )
     return services
 
@@ -62,6 +65,9 @@ def test_login_uses_httponly_cookie_and_does_not_return_token(tmp_path: Path) ->
     session = client.get("/api/v1/mobile/auth/session")
     assert session.status_code == 200
     assert session.json()["employee_code"] == "E10001"
+    assert session.json()["factory_id"] == "FACTORY-A"
+    assert session.json()["factory_name"] == "竹丝一厂"
+    assert session.json()["bamboo_role"] == "SORT_OPERATOR"
 
 
 def test_logout_revokes_server_session_and_clears_cookie(tmp_path: Path) -> None:

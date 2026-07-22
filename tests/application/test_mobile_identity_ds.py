@@ -67,6 +67,9 @@ def _identity_fixture(
         roles=["WORKER"],
         allowed_form_types=["SHEET_PIECE_MEASUREMENT"],
         allowed_processes=["CUTTING"],
+        factory_id="FACTORY-A",
+        factory_name="竹丝一厂",
+        bamboo_role="SORT_OPERATOR",
     )
     service = MobileIdentityService(
         repository=repository,
@@ -85,6 +88,9 @@ def test_authentication_uses_active_employee_and_persistent_credential() -> None
 
     assert actor.employee_code == "E10001"
     assert actor.employee_name == "测试员工"
+    assert actor.factory_id == "FACTORY-A"
+    assert actor.factory_name == "竹丝一厂"
+    assert actor.bamboo_role == "SORT_OPERATOR"
     assert service.verify_session(token).employee_code == "E10001"  # type: ignore[union-attr]
 
 
