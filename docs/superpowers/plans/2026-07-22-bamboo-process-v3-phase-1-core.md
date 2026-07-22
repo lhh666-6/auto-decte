@@ -42,6 +42,7 @@ New frontend files:
 - `frontend/apps/web/src/mobile/bamboo/BambooTaskListPage.tsx`: available/waiting/completed task buckets.
 - `frontend/apps/web/src/mobile/bamboo/BambooRecordDetailPage.tsx`: flow bar, current stage form and signed history.
 - `frontend/apps/web/src/mobile/bamboo/BambooStageForm.tsx`: V3 moisture inputs and stage-specific fields.
+- `frontend/apps/web/src/mobile/bamboo/HandwrittenSignatureInput.tsx`: touch/pointer signature canvas and PNG upload.
 - `frontend/apps/web/src/mobile/bamboo/bamboo.test.tsx`: navigation, visibility and submission UI tests.
 
 Modified frontend files:
@@ -173,7 +174,7 @@ Expected: FAIL because required tables do not exist and head is `014`.
 
 - [ ] **Step 3: Create migration 015 and matching ORM rows**
 
-The migration must create the six tables from the test. `bamboo_records` includes `record_id`, `display_no`, `factory_id`, `source_type`, optional `source_ref`, `base_info` JSON, `current_stage`, `status`, `revision`, `created_by`, `created_at`, and `updated_at`. `bamboo_stage_submissions` has a unique `(record_id, stage_key, version)` constraint. `bamboo_signatures` stores actor/factory/role snapshots, `payload_hash`, service time, device ID, request ID and idempotency key.
+The migration must create the six tables from the test. `bamboo_records` includes `record_id`, `display_no`, `factory_id`, `source_type`, optional `source_ref`, `base_info` JSON, `current_stage`, `status`, `revision`, `created_by`, `created_at`, and `updated_at`. `bamboo_stage_submissions` has a unique `(record_id, stage_key, version)` constraint. `bamboo_signatures` stores actor/factory/role snapshots, `payload_hash`, immutable `signature_asset_id`, `signature_file_hash`, service time, device ID, request ID and idempotency key.
 
 Update:
 
@@ -271,6 +272,8 @@ signed = service.submit_stage(
     idempotency_key="sort-1",
     device_id="device-a",
     request_id="request-a",
+    signature_asset_id="EVIDENCE-SIGN-1",
+    signature_file_hash="a" * 64,
 )
 assert signed.current_stage is BambooStage.DIPPING
 assert repository.get(record.record_id).revision == 2
@@ -291,7 +294,7 @@ The facade methods are:
 def create_record(self, *, actor: BambooActor, base_info: dict[str, object], source_type: str, source_ref: str | None) -> BambooRecord: ...
 def list_tasks(self, *, actor: BambooActor, bucket: TaskBucket) -> list[BambooRecord]: ...
 def get_visible(self, record_id: str, *, actor: BambooActor) -> BambooRecord | None: ...
-def submit_stage(self, record_id: str, *, actor: BambooActor, stage: BambooStage, values: dict[str, object], expected_revision: int, idempotency_key: str, device_id: str, request_id: str) -> BambooRecord: ...
+def submit_stage(self, record_id: str, *, actor: BambooActor, stage: BambooStage, values: dict[str, object], expected_revision: int, idempotency_key: str, device_id: str, request_id: str, signature_asset_id: str, signature_file_hash: str) -> BambooRecord: ...
 ```
 
 The repository saves the stage submission, signature and aggregate revision in one SQLAlchemy transaction. The payload hash uses canonical `json.dumps(..., sort_keys=True, separators=(",", ":"), ensure_ascii=False)` and SHA-256.
@@ -335,7 +338,7 @@ assert hidden.status_code in {403, 404}
 signed = sort_client.post(
     f"/api/v1/mobile/bamboo/records/{record_id}/stages/SORT/submit",
     headers=write_headers(sort_client, "sort-1"),
-    json={"expected_revision": 1, "device_id": "sort-phone", "values": {"moisture": [12, 13]}},
+    json={"expected_revision": 1, "device_id": "sort-phone", "signature_asset_id": "EVIDENCE-SIGN-1", "signature_file_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "values": {"moisture": [12, 13]}},
 )
 assert signed.status_code == 200
 assert dipping_client.get(f"/api/v1/mobile/bamboo/records/{record_id}").status_code == 200
@@ -392,7 +395,9 @@ expect(fetcher).toHaveBeenCalledWith(
 await client.submitBambooStage("BR-1", "SORT", {
   expected_revision: 1,
   device_id: "phone-a",
-  values: { moisture: [12, 13] },
+    values: { moisture: [12, 13] },
+    signature_asset_id: "EVIDENCE-SIGN-1",
+    signature_file_hash: "a".repeat(64),
 }, "sort-1");
 expect(fetcher).toHaveBeenLastCalledWith(
   "/api/v1/mobile/bamboo/records/BR-1/stages/SORT/submit",
@@ -427,6 +432,7 @@ git commit -m "feat(api-client): add bamboo workflow contracts"
 - Create: `frontend/apps/web/src/mobile/bamboo/BambooTaskListPage.tsx`
 - Create: `frontend/apps/web/src/mobile/bamboo/BambooRecordDetailPage.tsx`
 - Create: `frontend/apps/web/src/mobile/bamboo/BambooStageForm.tsx`
+- Create: `frontend/apps/web/src/mobile/bamboo/HandwrittenSignatureInput.tsx`
 - Create: `frontend/apps/web/src/mobile/bamboo/bamboo.test.tsx`
 - Modify: `frontend/apps/web/src/mobile/MobileBambooProcessPage.tsx`
 - Modify: `frontend/apps/web/src/app/router.tsx`
@@ -445,6 +451,10 @@ await user.click(screen.getByRole("button", { name: "增加检测点" }));
 expect(screen.getAllByLabelText(/含水率检测点/)).toHaveLength(9);
 await user.click(screen.getByRole("button", { name: "删除最后一个" }));
 expect(screen.getAllByLabelText(/含水率检测点/)).toHaveLength(8);
+
+expect(screen.getByRole("button", { name: "确认签字" })).toBeDisabled();
+await drawSignatureOnCanvas(screen.getByLabelText("手写签名"));
+expect(screen.getByRole("button", { name: "确认签字" })).toBeEnabled();
 ```
 
 - [ ] **Step 2: Run UI tests and verify missing components**
@@ -454,7 +464,7 @@ Expected: FAIL because bamboo pages do not exist.
 
 - [ ] **Step 3: Implement V3 task list, detail skeleton and stage forms**
 
-Use the approved green V3 mobile style, four-tab shell, horizontal flow strip, 44px controls, 16px inputs and a confirmation summary. `MobileBambooProcessPage` becomes the `/mobile/record/bamboo-process` entry and renders/redirects to task list; detail actions appear only for the stage returned by the server.
+Use the approved green V3 mobile style, four-tab shell, horizontal flow strip, 44px controls, 16px inputs and a confirmation summary. `HandwrittenSignatureInput` uses pointer events, supports clear/redraw, rejects an empty canvas, exports a bounded PNG, uploads it through the existing evidence storage API, and only then submits the stage with asset ID and SHA-256 file hash. `MobileBambooProcessPage` becomes the `/mobile/record/bamboo-process` entry and renders/redirects to task list; detail actions appear only for the stage returned by the server.
 
 - [ ] **Step 4: Run UI and full frontend tests**
 
