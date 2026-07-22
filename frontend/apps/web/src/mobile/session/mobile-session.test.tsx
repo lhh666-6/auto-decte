@@ -28,7 +28,7 @@ function anonymousClient(): MobileApiClient {
   } as unknown as MobileApiClient;
 }
 
-function authenticatedClient(): MobileApiClient {
+function authenticatedClient(overrides: Partial<MobileSession> = {}): MobileApiClient {
   const session: MobileSession = {
     employee_name: "张三",
     employee_code: "E001",
@@ -39,8 +39,9 @@ function authenticatedClient(): MobileApiClient {
   allowed_processes: [],
   factory_id: "FACTORY-A",
   factory_name: "竹丝一厂",
-  bamboo_role: "SORT_OPERATOR",
-};
+    bamboo_role: "SORT_OPERATOR",
+    ...overrides,
+  };
   return {
     getSession: vi.fn().mockResolvedValue(session),
   } as unknown as MobileApiClient;
@@ -95,5 +96,30 @@ describe("mobile session guard", () => {
     );
 
     await waitFor(() => expect(screen.getByText("protected")).toBeTruthy());
+  });
+
+  it.each([
+    [{ bamboo_role: "FINANCE_APPROVER", position: "财务审批" }, "/mobile/home"],
+    [{ bamboo_role: "", position: "待分配" }, "/mobile/home"],
+  ] as const)("redirects non-mobile production roles away from protected deep links", async (overrides, expectedPath) => {
+    function LocationProbe() {
+      return <output data-testid="location">{useLocation().pathname}</output>;
+    }
+    render(
+      <MemoryRouter initialEntries={["/mobile/work"]}>
+        <MobileSessionProvider client={authenticatedClient(overrides)}>
+          <Routes>
+            <Route element={<RequireMobileSession />}>
+              <Route path="mobile/home" element={<div>home</div>} />
+              <Route path="mobile/work" element={<div>work</div>} />
+            </Route>
+          </Routes>
+          <LocationProbe />
+        </MobileSessionProvider>
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => expect(screen.getByTestId("location").textContent).toBe(expectedPath));
+    expect(screen.queryByText("work")).toBeNull();
   });
 });

@@ -1,20 +1,13 @@
 import { useCallback, useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 
 import { MobileApiError } from "@form-detection/api-client";
 
 import { getMobileDeviceId } from "./device";
 import { useMobileSession } from "./session/MobileSessionProvider";
 
-function safeReturnPath(value: unknown): string {
-  return typeof value === "string" && value.startsWith("/mobile/") && !value.startsWith("//")
-    ? value
-    : "/mobile/home";
-}
-
 export function MobileLoginPage() {
   const navigate = useNavigate();
-  const location = useLocation();
   const session = useMobileSession();
   const [employeeCode, setEmployeeCode] = useState("");
   const [pin, setPin] = useState("");
@@ -31,8 +24,7 @@ export function MobileLoginPage() {
     setLoading(true);
     try {
       await session.login(employeeCode.trim(), pin.trim(), getMobileDeviceId());
-      const returnTo = safeReturnPath((location.state as { returnTo?: unknown } | null)?.returnTo);
-      navigate(returnTo, { replace: true });
+      navigate("/mobile/home", { replace: true });
     } catch (cause) {
       setError(cause instanceof MobileApiError
         ? cause.problem.detail
@@ -40,7 +32,7 @@ export function MobileLoginPage() {
     } finally {
       setLoading(false);
     }
-  }, [employeeCode, location.state, navigate, pin, session]);
+  }, [employeeCode, navigate, pin, session]);
 
   return (
     <div className="mobile-page mobile-login-page bamboo-v3-login">

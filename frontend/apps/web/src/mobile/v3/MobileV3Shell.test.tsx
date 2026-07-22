@@ -7,11 +7,15 @@ import { MemoryRouter, Outlet, useLocation } from "react-router-dom";
 
 import { AppRoutes } from "../../app/router";
 
+let mockedRole = "SORT_OPERATOR";
+
 vi.mock("../session/MobileSessionProvider", () => ({
   MobileSessionProvider: ({ children }: { children: ReactNode }) => children,
   useMobileSession: () => ({
     status: "authenticated",
-    sessionMetadata: null,
+    sessionMetadata: {
+      bamboo_role: mockedRole,
+    },
   }),
 }));
 
@@ -30,6 +34,9 @@ vi.mock("../MobileSubmissionsPage", () => ({ MobileSubmissionsPage: () => null }
 vi.mock("../MobileProfilePage", () => ({ MobileProfilePage: () => null }));
 
 afterEach(cleanup);
+afterEach(() => {
+  mockedRole = "SORT_OPERATOR";
+});
 
 function LocationProbe() {
   return <output data-testid="location">{useLocation().pathname}</output>;
@@ -65,6 +72,13 @@ describe("MobileV3Shell", () => {
       expect(icon.textContent).toBe("");
     }
   });
+
+  it.each(["FINANCE_APPROVER", ""])("hides production tabs for %s", (role) => {
+    mockedRole = role;
+    renderRoute("/mobile/home");
+
+    expect(screen.queryByRole("navigation", { name: "移动端导航" })).toBeNull();
+  });
 });
 
 describe("mobile V3 compatibility redirects", () => {
@@ -74,6 +88,8 @@ describe("mobile V3 compatibility redirects", () => {
     ["/mobile/drafts", "/mobile/submissions"],
     ["/mobile/outbox", "/mobile/submissions"],
     ["/mobile/record/bamboo-process/record-42", "/mobile/records/record-42"],
+    ["/mobile/record/sheet-piece", "/mobile/work"],
+    ["/mobile/record/team-sheet-piece", "/mobile/work"],
   ])("redirects %s to %s", async (legacyPath, v3Path) => {
     renderRoute(legacyPath);
 

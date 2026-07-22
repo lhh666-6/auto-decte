@@ -10,8 +10,6 @@ import { MobileV3Shell } from "../mobile/v3/MobileV3Shell";
 import { BambooV3HomePage } from "../mobile/v3/BambooV3HomePage";
 import { MobileLoginPage } from "../mobile/MobileLoginPage";
 import { MobileBambooProcessPage } from "../mobile/MobileBambooProcessPage";
-import { MobileSheetPiecePage } from "../mobile/MobileSheetPiecePage";
-import { MobileTeamSheetPiecePage } from "../mobile/MobileTeamSheetPiecePage";
 import { BambooV3SubmissionsPage } from "../mobile/v3/BambooV3SubmissionsPage";
 import { BambooV3ProfilePage } from "../mobile/v3/BambooV3ProfilePage";
 import { MobileSessionProvider } from "../mobile/session/MobileSessionProvider";
@@ -129,8 +127,8 @@ export function AppRoutes() {
           <Route path="mobile/home" element={<BambooV3HomePage />} />
           <Route path="mobile/work" element={<MobileBambooProcessPage />} />
           <Route path="mobile/records/:recordId" element={<MobileBambooProcessPage />} />
-          <Route path="mobile/record/sheet-piece" element={<MobileSheetPiecePage />} />
-          <Route path="mobile/record/team-sheet-piece" element={<MobileTeamSheetPiecePage />} />
+          <Route path="mobile/record/sheet-piece" element={<Navigate to="/mobile/work" replace />} />
+          <Route path="mobile/record/team-sheet-piece" element={<Navigate to="/mobile/work" replace />} />
           <Route path="mobile/submissions" element={<BambooV3SubmissionsPage />} />
           <Route path="mobile/profile" element={<BambooV3ProfilePage />} />
         </Route>

@@ -66,6 +66,8 @@ describe("PWA lifecycle policy", () => {
     setServiceWorkers(vi.fn().mockResolvedValue([]));
     const deleteCache = vi.fn().mockResolvedValue(true);
     setCacheStorage([
+      "form-detection-web-v1-precache",
+      "form-detection-web-v2-runtime",
       `${PWA_CACHE_ID}-precache`,
       `${PWA_CACHE_ID}-runtime`,
       "shared-cache",
@@ -75,10 +77,12 @@ describe("PWA lifecycle policy", () => {
     registerServiceWorker();
 
     await vi.waitFor(() => {
-      expect(deleteCache).toHaveBeenCalledTimes(2);
+      expect(deleteCache).toHaveBeenCalledTimes(4);
     });
-    expect(deleteCache).toHaveBeenNthCalledWith(1, `${PWA_CACHE_ID}-precache`);
-    expect(deleteCache).toHaveBeenNthCalledWith(2, `${PWA_CACHE_ID}-runtime`);
+    expect(deleteCache).toHaveBeenNthCalledWith(1, "form-detection-web-v1-precache");
+    expect(deleteCache).toHaveBeenNthCalledWith(2, "form-detection-web-v2-runtime");
+    expect(deleteCache).toHaveBeenNthCalledWith(3, `${PWA_CACHE_ID}-precache`);
+    expect(deleteCache).toHaveBeenNthCalledWith(4, `${PWA_CACHE_ID}-runtime`);
   });
 
   it("registers in production and preserves prompt-based activation", async () => {

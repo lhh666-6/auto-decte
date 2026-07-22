@@ -1,5 +1,6 @@
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 
+import { useMobileSession } from "../session/MobileSessionProvider";
 import { MobileV3Icon } from "./MobileV3Icon";
 
 const MOBILE_V3_NAV = [
@@ -11,14 +12,17 @@ const MOBILE_V3_NAV = [
 
 export function MobileV3Shell() {
   const location = useLocation();
+  const { status, sessionMetadata } = useMobileSession();
   const isLogin = location.pathname === "/mobile/login";
+  const role = sessionMetadata?.bamboo_role ?? "";
+  const showProductionNav = !isLogin && status === "authenticated" && Boolean(role) && role !== "FINANCE_APPROVER";
 
   return (
     <div className="mobile-app-shell mobile-v3-shell" data-mobile-shell="v3">
       <main className="mobile-content">
         <Outlet />
       </main>
-      {!isLogin && (
+      {showProductionNav && (
         <nav className="mobile-bottom-nav" aria-label="移动端导航">
           {MOBILE_V3_NAV.map((item) => {
             const current = location.pathname === item.to
