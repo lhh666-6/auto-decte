@@ -36,7 +36,7 @@
 
 - [ ] **Step 1: Write failing tests** for the green V3 hero, current factory/role, online indicator, three dashboard totals, role-aware work action, and absence of “可填写的记录类型”.
 - [ ] **Step 2: Run the test** and verify the old generic home fails the assertions.
-- [ ] **Step 3: Implement** the V3 home using `getBambooDashboard()` and session metadata; show the pending-role state when `bamboo_role` is empty. Restyle login and manifest colors to `#17653a`/`#f3f5f4`.
+- [ ] **Step 3: Implement** the V3 home using `getBambooDashboard()` and session metadata; show the pending-role state when `bamboo_role` is empty. Finance accounts must see a handoff message and link to the web approval interface, never mobile approval actions. Restyle login and manifest colors to `#17653a`/`#f3f5f4`.
 - [ ] **Step 4: Re-run the focused test** and expect PASS.
 - [ ] **Step 5: Commit** with `feat(mobile): add V3 login and role home`.
 
@@ -52,7 +52,7 @@
 - Create: `frontend/apps/web/src/mobile/v3/BambooV3Pages.test.tsx`
 - Modify: `frontend/apps/web/src/styles.css`
 
-- [ ] **Step 1: Write failing tests** for V3 work tabs/cards, record flow, current-user submission grouping, profile identity, worker role-change entry, and no links to legacy standalone drafts/outbox.
+- [ ] **Step 1: Write failing tests** for V3 work tabs/cards, record flow, current-user submission grouping, profile identity, worker role-change entry, finance exclusion from mobile approval, and no links to legacy standalone drafts/outbox.
 - [ ] **Step 2: Run the test** and verify missing V3 pages fail.
 - [ ] **Step 3: Implement** focused V3 pages. Work uses Bamboo task buckets; submissions combines waiting/completed records with IndexedDB draft/outbox counts; profile exposes identity/network/version/logout and role controls. Convert detail actions to V3 cards and bottom-sheet presentation without changing API contracts.
 - [ ] **Step 4: Re-run V3 page and existing Bamboo tests** and expect PASS.
