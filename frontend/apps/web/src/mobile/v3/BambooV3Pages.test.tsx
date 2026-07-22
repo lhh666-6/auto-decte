@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
 
@@ -10,6 +11,8 @@ const mocks = vi.hoisted(() => ({
   getBambooDashboard: vi.fn(),
   listBambooTasks: vi.fn(),
   getBambooRecord: vi.fn(),
+  getBambooRecordOptions: vi.fn(),
+  createBambooRecord: vi.fn(),
   getBambooOperations: vi.fn(),
   listSubmissions: vi.fn(),
   listDrafts: vi.fn(),
@@ -23,6 +26,8 @@ vi.mock("@form-detection/api-client", async (importOriginal) => ({
     getBambooDashboard: mocks.getBambooDashboard,
     listBambooTasks: mocks.listBambooTasks,
     getBambooRecord: mocks.getBambooRecord,
+    getBambooRecordOptions: mocks.getBambooRecordOptions,
+    createBambooRecord: mocks.createBambooRecord,
     getBambooOperations: mocks.getBambooOperations,
     listSubmissions: mocks.listSubmissions,
     listBambooRoleChanges: mocks.listBambooRoleChanges,
@@ -30,7 +35,7 @@ vi.mock("@form-detection/api-client", async (importOriginal) => ({
 }));
 vi.mock("../storage/drafts", () => ({ listDrafts: mocks.listDrafts }));
 vi.mock("../storage/outbox", () => ({ countAll: mocks.countAll }));
-vi.mock("../device", () => ({ getMobileDeviceId: () => "device-v3" }));
+vi.mock("../device", () => ({ createMobileClientId: () => "record-key", getMobileDeviceId: () => "device-v3" }));
 
 import { BambooRecordDetailPage } from "../bamboo/BambooRecordDetailPage";
 import { BambooTaskListPage } from "../bamboo/BambooTaskListPage";
@@ -84,6 +89,15 @@ beforeEach(() => {
   mocks.getBambooDashboard.mockResolvedValue({ available: 1, waiting: 2, completed: 3 });
   mocks.listBambooTasks.mockResolvedValue({ bucket: "available", tasks: [record] });
   mocks.getBambooRecord.mockResolvedValue(record);
+  mocks.getBambooRecordOptions.mockResolvedValue({
+    options_version: "factory-sort-v1",
+    special_classes: ["直装", "防霉"],
+    lengths: ["2.1", "2.3", "2.5"],
+    shades: ["深", "浅"],
+    grades: ["A", "B"],
+    weight_factors: { "2.1": "5", "2.3": "6", "2.5": "7" },
+  });
+  mocks.createBambooRecord.mockResolvedValue(record);
   mocks.getBambooOperations.mockResolvedValue({ payroll_facts: [], inspections: [], corrections: [] });
   mocks.listSubmissions.mockResolvedValue({ submissions: [
     { submission_id: "SUB-1", form_id: "ZS-18", subject_employee_code: "ZS001", status: "ACCEPTED", submitted_at: "2026-07-22T04:00:00Z", idempotency_key: "key" },
@@ -103,6 +117,41 @@ describe("V3 work and record pages", () => {
     expect(screen.getByRole("button", { name: /等待上游/ })).toBeTruthy();
     expect(screen.getByRole("button", { name: /已完成/ })).toBeTruthy();
     expect((await screen.findByText(record.display_no)).closest("a")?.getAttribute("href")).toBe("/mobile/records/BR-18");
+  });
+
+  it("creates a sort record with published picker options and a visible confirmation", async () => {
+    const user = userEvent.setup();
+    withSession(<BambooTaskListPage />);
+
+    await user.click(await screen.findByRole("button", { name: "新建竹丝记录" }));
+    expect(await screen.findByRole("dialog", { name: "新建竹丝记录" })).toBeTruthy();
+    expect(screen.getByText("预设选项由管理员后台发布；手机端只能点选，不能临时新增。")).toBeTruthy();
+
+    await user.click(screen.getByRole("button", { name: /点开选择长度/ }));
+    await user.click(await screen.findByRole("button", { name: "2.3" }));
+    await user.click(screen.getByRole("button", { name: /点开选择深浅/ }));
+    await user.click(await screen.findByRole("button", { name: "深" }));
+    await user.click(screen.getByRole("button", { name: /点开选择品级/ }));
+    await user.click(await screen.findByRole("button", { name: "A" }));
+    await user.type(screen.getByLabelText(/笼号/), "L-207");
+    await user.type(screen.getByLabelText(/把数/), "12");
+    expect(screen.getByText(/12 把 × 6/)).toBeTruthy();
+
+    await user.click(screen.getByRole("button", { name: "核对并建立" }));
+    expect(screen.getByRole("dialog", { name: "确认建立竹丝记录" })).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "确认建立" }));
+
+    await waitFor(() => expect(mocks.createBambooRecord).toHaveBeenCalledWith(
+      expect.objectContaining({
+        length: "2.3",
+        shade: "深",
+        grade: "A",
+        cage_no: "L-207",
+        bundle_count: 12,
+        options_version: "factory-sort-v1",
+      }),
+      "record-key",
+    ));
   });
 
   it("shows supervisors the opened whole electronic form and locks downstream stages", async () => {

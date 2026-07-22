@@ -83,6 +83,15 @@ export interface BambooDashboard {
   completed: number;
 }
 
+export interface BambooRecordPresetOptions {
+  options_version: string;
+  special_classes: string[];
+  lengths: string[];
+  shades: string[];
+  grades: string[];
+  weight_factors: Record<string, string>;
+}
+
 export interface SubmitBambooStageInput {
   expected_revision: number;
   device_id: string;
@@ -413,6 +422,10 @@ export class MobileApiClient {
     tasks: BambooRecord[];
   }> {
     return this.request(`/bamboo/tasks?bucket=${encodeURIComponent(bucket)}`);
+  }
+
+  getBambooRecordOptions(): Promise<BambooRecordPresetOptions> {
+    return this.request("/bamboo/record-options");
   }
 
   createBambooRecord(

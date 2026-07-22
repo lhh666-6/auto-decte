@@ -85,7 +85,15 @@ def test_complete_bamboo_operations_from_payroll_through_finance(tmp_path: Path)
     created = sort.post(
         "/api/v1/mobile/bamboo/records",
         headers=_headers(sort, "create-complete"),
-        json={"base_info": {"length": "2.3", "bundle_count": 10}},
+        json={
+            "base_info": {
+                "cage_no": "L-207",
+                "length": "2.3",
+                "shade": "深",
+                "grade": "A",
+                "bundle_count": 10,
+            }
+        },
     ).json()
     record_id = str(created["record_id"])
     _submit(sort, record_id, "SORT", 1, {"wage_amount": "80"})

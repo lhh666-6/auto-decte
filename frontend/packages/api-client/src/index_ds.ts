@@ -99,6 +99,7 @@ export {
   type BambooOperationsSummary,
   type BambooPayrollFact,
   type BambooRecord,
+  type BambooRecordPresetOptions,
   type BambooRoleChange,
   type BambooStage,
   type BambooStageSubmission,

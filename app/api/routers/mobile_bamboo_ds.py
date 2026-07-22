@@ -12,6 +12,7 @@ from openpyxl import Workbook
 from app.api.routers.mobile_auth_ds import require_csrf, require_mobile_actor
 from app.api.schemas.bamboo_process_ds import (
     BambooDashboardResponse,
+    BambooRecordOptionsResponse,
     BambooRecordResponse,
     BambooSubmissionResponse,
     BambooTaskListResponse,
@@ -118,6 +119,16 @@ def list_tasks(
     )
 
 
+@router.get("/record-options", response_model=BambooRecordOptionsResponse)
+def record_options(request: Request) -> BambooRecordOptionsResponse:
+    actor = _bamboo_actor(request)
+    try:
+        options = _services(request).bamboo_operations.record_options(actor)
+    except BambooOperationError as error:
+        raise _operation_error(error) from error
+    return BambooRecordOptionsResponse(**options)
+
+
 @router.post(
     "/records",
     response_model=BambooRecordResponse,
@@ -131,10 +142,18 @@ def create_record(
 ) -> BambooRecordResponse:
     actor = _bamboo_actor(request)
     key = _require_write_headers(request, idempotency_key, x_csrf_token)
+    services = _services(request)
+    repeated = services.bamboo_repository.find_created_result(actor.actor_id, key)
+    if repeated is not None:
+        return _response(repeated)
     try:
-        record = _services(request).bamboo_process.create_record(
+        base_info = services.bamboo_operations.validate_record_base_info(
+            actor,
+            dict(body.base_info),
+        )
+        record = services.bamboo_process.create_record(
             actor=actor,
-            base_info=dict(body.base_info),
+            base_info=base_info,
             source_type="MOBILE_CREATED",
             source_ref=key,
         )
@@ -142,6 +161,12 @@ def create_record(
         raise HTTPException(
             status_code=403,
             detail={"code": "BAMBOO_ROLE_REQUIRED", "detail": str(error)},
+        ) from error
+    except BambooOperationError as error:
+        status_code_ = 422 if error.code == "INVALID_BAMBOO_BASE_INFO" else 409
+        raise HTTPException(
+            status_code=status_code_,
+            detail={"code": error.code, "detail": str(error)},
         ) from error
     return _response(record)
 

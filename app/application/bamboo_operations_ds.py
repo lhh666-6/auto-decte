@@ -54,12 +54,67 @@ REWORK_DEPENDENCIES = {
         BambooStage.PLANT_AUDIT,
     ),
 }
+DEFAULT_SPECIAL_CLASSES = ["直装", "防霉"]
+DEFAULT_LENGTHS = ["2.1", "2.3", "2.5"]
+DEFAULT_SHADES = ["深", "浅"]
+DEFAULT_GRADES = ["A", "B"]
+DEFAULT_WEIGHT_FACTORS = {"2.1": "5", "2.3": "6", "2.5": "7"}
 
 
 class BambooOperationError(RuntimeError):
     def __init__(self, code: str, detail: str) -> None:
         self.code = code
         super().__init__(detail)
+
+
+def _string_list(value: Any) -> list[str]:
+    if value is None or value == "":
+        return []
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if str(item).strip()]
+    return [str(value).strip()]
+
+
+def _option_list(configuration: dict[str, Any], key: str, fallback: list[str]) -> list[str]:
+    value = configuration.get(key)
+    if isinstance(value, list):
+        options = [str(item).strip() for item in value if str(item).strip()]
+        if options:
+            return options
+    return fallback
+
+
+def _record_options_from_rule(configuration: dict[str, Any]) -> dict[str, Any]:
+    length_multipliers = configuration.get("length_multipliers")
+    configured_lengths = (
+        [str(key) for key in length_multipliers]
+        if isinstance(length_multipliers, dict)
+        else []
+    )
+    lengths = _option_list(configuration, "lengths", configured_lengths or DEFAULT_LENGTHS)
+    weight_factors = configuration.get("weight_factors")
+    if not isinstance(weight_factors, dict):
+        weight_factors = (
+            length_multipliers
+            if isinstance(length_multipliers, dict)
+            else DEFAULT_WEIGHT_FACTORS
+        )
+    return {
+        "special_classes": _option_list(
+            configuration,
+            "special_classes",
+            DEFAULT_SPECIAL_CLASSES,
+        ),
+        "lengths": lengths,
+        "shades": _option_list(configuration, "shades", DEFAULT_SHADES),
+        "grades": _option_list(configuration, "grades", DEFAULT_GRADES),
+        "weight_factors": {str(key): str(value) for key, value in weight_factors.items()},
+    }
+
+
+def _require_member(value: str, options: list[str], detail: str) -> None:
+    if value not in options:
+        raise BambooOperationError("INVALID_BAMBOO_BASE_INFO", detail)
 
 
 class BambooOperationsService:
@@ -163,6 +218,65 @@ class BambooOperationsService:
             session.add(row)
             session.flush()
             return self._rule(row)
+
+    def record_options(self, actor: BambooActor) -> dict[str, Any]:
+        with Session(self._engine) as session:
+            row = self._active_rule(session, "SORT", actor.factory_id)
+            options = _record_options_from_rule(row.configuration if row else {})
+            version = row.rule_version_id if row else "system-sort-v1"
+            return {"options_version": version, **options}
+
+    def validate_record_base_info(
+        self,
+        actor: BambooActor,
+        base_info: dict[str, Any],
+    ) -> dict[str, Any]:
+        if actor.role is not BambooRole.SORT_OPERATOR:
+            raise BambooOperationError("BAMBOO_ROLE_REQUIRED", "只有分选/装笼岗位可以新建竹丝记录")
+        options = self.record_options(actor)
+        cage_no = str(base_info.get("cage_no") or "").strip()
+        length = str(base_info.get("length") or "").strip()
+        shade = str(base_info.get("shade") or "").strip()
+        grade = str(base_info.get("grade") or "").strip()
+        mode = str(base_info.get("mode") or "分选").strip()
+        supplier = str(base_info.get("supplier") or "").strip()
+        special_classes = _string_list(base_info.get("special_classes"))
+        if not special_classes and base_info.get("special_class"):
+            special_classes = _string_list(base_info.get("special_class"))
+        bundle_count_raw = base_info.get("bundle_count")
+        try:
+            bundle_count = int(str(bundle_count_raw).strip())
+        except (TypeError, ValueError) as error:
+            raise BambooOperationError("INVALID_BAMBOO_BASE_INFO", "把数需填写正整数") from error
+        if not cage_no:
+            raise BambooOperationError("INVALID_BAMBOO_BASE_INFO", "请填写笼号")
+        if bundle_count <= 0:
+            raise BambooOperationError("INVALID_BAMBOO_BASE_INFO", "把数需填写正整数")
+        _require_member(length, options["lengths"], "请选择后台发布的长度")
+        _require_member(shade, options["shades"], "请选择后台发布的深浅")
+        _require_member(grade, options["grades"], "请选择后台发布的品级")
+        if mode not in {"分选", "装笼"}:
+            raise BambooOperationError("INVALID_BAMBOO_BASE_INFO", "作业模式只能选择分选或装笼")
+        invalid_special = [
+            item for item in special_classes if item not in options["special_classes"]
+        ]
+        if invalid_special:
+            raise BambooOperationError("INVALID_BAMBOO_BASE_INFO", "特殊类包含未发布选项")
+        normalized: dict[str, Any] = {
+            "mode": mode,
+            "special_classes": special_classes,
+            "length": length,
+            "shade": shade,
+            "grade": grade,
+            "supplier": supplier,
+            "cage_no": cage_no,
+            "bundle_count": bundle_count,
+            "options_version": options["options_version"],
+        }
+        factor = options["weight_factors"].get(length)
+        if factor is not None:
+            normalized["net_weight"] = str(Decimal(bundle_count) * Decimal(str(factor)))
+        return normalized
 
     def assign_employee_role(
         self,
@@ -788,6 +902,29 @@ class BambooOperationsService:
         if row is None or row.factory_id != actor.factory_id:
             raise BambooOperationError("RECORD_NOT_VISIBLE", "记录不存在或不属于当前工厂")
         return row
+
+    @staticmethod
+    def _active_rule(
+        session: Session,
+        rule_key: str,
+        factory_id: str,
+    ) -> BambooPayrollRuleVersionRow | None:
+        for scoped_factory in (factory_id, None):
+            row = session.scalar(
+                select(BambooPayrollRuleVersionRow)
+                .where(
+                    BambooPayrollRuleVersionRow.rule_key == rule_key,
+                    BambooPayrollRuleVersionRow.factory_id == scoped_factory,
+                    BambooPayrollRuleVersionRow.active.is_(True),
+                )
+                .order_by(
+                    BambooPayrollRuleVersionRow.effective_at.desc(),
+                    BambooPayrollRuleVersionRow.version.desc(),
+                )
+            )
+            if row is not None:
+                return row
+        return None
 
     def _inspection(self, session: Session, row: BambooInspectionRow) -> dict[str, Any]:
         evidence = session.scalars(

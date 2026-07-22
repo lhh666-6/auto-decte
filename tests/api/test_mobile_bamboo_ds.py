@@ -73,6 +73,7 @@ def test_bamboo_record_opens_to_each_role_only_after_previous_signature(
             "base_info": {
                 "cage_no": "3-018",
                 "length": "2.3",
+                "shade": "深",
                 "grade": "A",
                 "bundle_count": 16,
             }
@@ -165,8 +166,17 @@ def test_cross_factory_record_is_not_visible(tmp_path: Path) -> None:
     created = factory_a.post(
         "/api/v1/mobile/bamboo/records",
         headers=_write_headers(factory_a, "create-a"),
-        json={"base_info": {}},
+        json={
+            "base_info": {
+                "cage_no": "A-001",
+                "length": "2.3",
+                "shade": "深",
+                "grade": "A",
+                "bundle_count": 10,
+            }
+        },
     )
+    assert created.status_code == 201
 
     response = factory_b.get(
         f"/api/v1/mobile/bamboo/records/{created.json()['record_id']}"
@@ -184,7 +194,67 @@ def test_cross_factory_record_is_not_visible(tmp_path: Path) -> None:
     factory_b_record = factory_b.post(
         "/api/v1/mobile/bamboo/records",
         headers=_write_headers(factory_b, "create-b"),
-        json={"base_info": {"cage_no": "B-001"}},
+        json={
+            "base_info": {
+                "cage_no": "B-001",
+                "length": "2.1",
+                "shade": "浅",
+                "grade": "B",
+                "bundle_count": 8,
+            }
+        },
     )
     assert factory_b_record.status_code == 201
     assert factory_b_record.json()["display_no"] != created.json()["display_no"]
+
+
+def test_bamboo_record_options_are_published_and_enforced(tmp_path: Path) -> None:
+    services = build_services(Settings(data_root=tmp_path))
+    _add_bamboo_user(services, employee_code="E-SORT", role="SORT_OPERATOR")
+    _add_bamboo_user(services, employee_code="E-MANAGER", role="PLANT_MANAGER")
+    sort_client = _client(services, "E-SORT")
+    manager = _client(services, "E-MANAGER")
+
+    defaults = sort_client.get("/api/v1/mobile/bamboo/record-options")
+    assert defaults.status_code == 200
+    assert defaults.json()["lengths"] == ["2.1", "2.3", "2.5"]
+    assert defaults.json()["shades"] == ["深", "浅"]
+    assert defaults.json()["grades"] == ["A", "B"]
+
+    invalid = sort_client.post(
+        "/api/v1/mobile/bamboo/records",
+        headers=_write_headers(sort_client, "invalid-length"),
+        json={
+            "base_info": {
+                "cage_no": "3-099",
+                "length": "9.9",
+                "shade": "深",
+                "grade": "A",
+                "bundle_count": 16,
+            }
+        },
+    )
+    assert invalid.status_code == 422
+    assert invalid.json()["code"] == "INVALID_BAMBOO_BASE_INFO"
+
+    rule = manager.post(
+        "/api/v1/mobile/bamboo/payroll-rules",
+        headers=_write_headers(manager, "publish-options"),
+        json={
+            "rule_key": "SORT",
+            "configuration": {
+                "unit_rate": "1.00",
+                "length_multipliers": {"2.8": "9"},
+                "special_classes": ["直装", "防霉", "加急"],
+                "shades": ["深"],
+                "grades": ["A+"],
+                "weight_factors": {"2.8": "9"},
+            },
+            "system_default": False,
+        },
+    )
+    assert rule.status_code == 201
+    published = sort_client.get("/api/v1/mobile/bamboo/record-options").json()
+    assert published["lengths"] == ["2.8"]
+    assert published["special_classes"] == ["直装", "防霉", "加急"]
+    assert published["grades"] == ["A+"]

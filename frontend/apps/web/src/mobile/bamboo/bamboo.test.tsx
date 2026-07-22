@@ -21,7 +21,7 @@ vi.mock("@form-detection/api-client", async (importOriginal) => ({
   mobileApiClient: mocks,
 }));
 
-vi.mock("../device", () => ({ getMobileDeviceId: () => "device-1" }));
+vi.mock("../device", () => ({ createMobileClientId: () => "record-key", getMobileDeviceId: () => "device-1" }));
 
 import { MobileBambooProcessPage } from "../MobileBambooProcessPage";
 import { MobileSessionProvider } from "../session/MobileSessionProvider";

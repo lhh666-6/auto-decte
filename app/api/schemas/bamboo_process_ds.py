@@ -10,6 +10,15 @@ class CreateBambooRecordRequest(BaseModel):
     base_info: dict[str, Any] = Field(default_factory=dict)
 
 
+class BambooRecordOptionsResponse(BaseModel):
+    options_version: str
+    special_classes: list[str]
+    lengths: list[str]
+    shades: list[str]
+    grades: list[str]
+    weight_factors: dict[str, str]
+
+
 class SubmitBambooStageRequest(BaseModel):
     expected_revision: int = Field(ge=1)
     device_id: str = Field(min_length=1, max_length=128)
