@@ -7,8 +7,8 @@ import { MasterDataCenter } from "../MasterDataCenter_ds";
 import { TemplateStudio } from "../TemplateStudio_ds";
 import { ReviewWorkbenchPage } from "../workbench/ReviewWorkbenchPage";
 import { MobileV3Shell } from "../mobile/v3/MobileV3Shell";
+import { BambooV3HomePage } from "../mobile/v3/BambooV3HomePage";
 import { MobileLoginPage } from "../mobile/MobileLoginPage";
-import { MobileHomePage } from "../mobile/MobileHomePage";
 import { MobileBambooProcessPage } from "../mobile/MobileBambooProcessPage";
 import { MobileSheetPiecePage } from "../mobile/MobileSheetPiecePage";
 import { MobileTeamSheetPiecePage } from "../mobile/MobileTeamSheetPiecePage";
@@ -126,7 +126,7 @@ export function AppRoutes() {
         <Route path="mobile/drafts" element={<Navigate to="/mobile/submissions" replace />} />
         <Route path="mobile/outbox" element={<Navigate to="/mobile/submissions" replace />} />
         <Route element={<RequireMobileSession />}>
-          <Route path="mobile/home" element={<MobileHomePage />} />
+          <Route path="mobile/home" element={<BambooV3HomePage />} />
           <Route path="mobile/work" element={<MobileBambooProcessPage />} />
           <Route path="mobile/records/:recordId" element={<MobileBambooProcessPage />} />
           <Route path="mobile/record/sheet-piece" element={<MobileSheetPiecePage />} />
