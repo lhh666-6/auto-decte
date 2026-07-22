@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { mobileApiClient } from "@form-detection/api-client";
-import { getMobileDeviceId } from "./device";
+import { createMobileClientId, getMobileDeviceId } from "./device";
 import { MobileFormEngine } from "./MobileFormEngine";
 import { useMobileSession } from "./session/MobileSessionProvider";
 import { saveDraft } from "./storage/drafts";
@@ -22,7 +22,7 @@ export function MobileTeamSheetPiecePage() {
   const [error, setError] = useState("");
   const [formTitle, setFormTitle] = useState("班组配片记录");
   const [definitionVersionId, setDefinitionVersionId] = useState("");
-  const [localDraftId] = useState(() => crypto.randomUUID());
+  const [localDraftId] = useState(() => createMobileClientId("draft"));
   const [selectedWorker, setSelectedWorker] = useState("");
   const [teamWorkers, setTeamWorkers] = useState<
     { employee_code: string; employee_name: string }[]
@@ -82,7 +82,7 @@ export function MobileTeamSheetPiecePage() {
           subject_employee_code: selectedWorker,
           device_id: getMobileDeviceId(),
           values: editableValues,
-        }, crypto.randomUUID(), {
+        }, createMobileClientId("submission"), {
           owner: sessionMetadata.employee_code,
           deviceId: getMobileDeviceId(),
           localDraftId,

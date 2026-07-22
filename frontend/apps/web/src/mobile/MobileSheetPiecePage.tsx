@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { mobileApiClient } from "@form-detection/api-client";
-import { getMobileDeviceId } from "./device";
+import { createMobileClientId, getMobileDeviceId } from "./device";
 import { MobileFormEngine } from "./MobileFormEngine";
 import { useMobileSession } from "./session/MobileSessionProvider";
 import { saveDraft } from "./storage/drafts";
@@ -22,7 +22,7 @@ export function MobileSheetPiecePage() {
   const [error, setError] = useState("");
   const [formTitle, setFormTitle] = useState("配片工作记录");
   const [definitionVersionId, setDefinitionVersionId] = useState("");
-  const [localDraftId] = useState(() => crypto.randomUUID());
+  const [localDraftId] = useState(() => createMobileClientId("draft"));
 
   useEffect(() => {
     let cancelled = false;
@@ -73,7 +73,7 @@ export function MobileSheetPiecePage() {
           subject_employee_code: sessionMetadata.employee_code,
           device_id: getMobileDeviceId(),
           values: editableValues,
-        }, crypto.randomUUID(), {
+        }, createMobileClientId("submission"), {
           owner: sessionMetadata.employee_code,
           deviceId: getMobileDeviceId(),
           localDraftId,

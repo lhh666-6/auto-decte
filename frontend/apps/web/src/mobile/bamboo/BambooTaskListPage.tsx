@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 
 import { MobileApiError, mobileApiClient, type BambooDashboard, type BambooRecord, type BambooTaskBucket } from "@form-detection/api-client";
 import { useMobileSession } from "../session/MobileSessionProvider";
+import { createMobileClientId } from "../device";
 
 const BUCKETS: Array<{ key: BambooTaskBucket; label: string }> = [
   { key: "available", label: "可记录" }, { key: "waiting", label: "等待上游" }, { key: "completed", label: "已完成" },
@@ -33,7 +34,7 @@ export function BambooTaskListPage() {
   const createRecord = async (event: React.FormEvent) => {
     event.preventDefault(); setSaving(true); setError("");
     try {
-      const created = await mobileApiClient.createBambooRecord({ ...baseInfo, bundle_count: Number(baseInfo.bundle_count) }, crypto.randomUUID());
+      const created = await mobileApiClient.createBambooRecord({ ...baseInfo, bundle_count: Number(baseInfo.bundle_count) }, createMobileClientId("record"));
       navigate(`/mobile/records/${encodeURIComponent(created.record_id)}`);
     } catch (cause) { setError(message(cause, "新建记录失败，请重试。")); }
     finally { setSaving(false); }

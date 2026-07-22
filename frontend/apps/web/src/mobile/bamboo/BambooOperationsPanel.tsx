@@ -8,7 +8,7 @@ import {
   type BambooStage,
 } from "@form-detection/api-client";
 
-import { getMobileDeviceId } from "../device";
+import { createMobileClientId, getMobileDeviceId } from "../device";
 
 export function BambooOperationsPanel({
   record,
@@ -73,14 +73,14 @@ export function BambooOperationsPanel({
         text_evidence: note,
         device_id: getMobileDeviceId(),
       },
-      crypto.randomUUID(),
+      createMobileClientId("inspection"),
     );
     for (const file of evidenceFiles) {
       await mobileApiClient.uploadBambooEvidence(
         created.inspection_id,
         file.type.startsWith("audio/") ? "AUDIO" : "PHOTO",
         file,
-        crypto.randomUUID(),
+        createMobileClientId("evidence"),
       );
     }
   }, "检测记录及留痕已保存");

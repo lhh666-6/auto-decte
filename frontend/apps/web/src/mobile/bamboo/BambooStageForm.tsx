@@ -7,7 +7,7 @@ import {
   type BambooStage,
 } from "@form-detection/api-client";
 
-import { getMobileDeviceId } from "../device";
+import { createMobileClientId, getMobileDeviceId } from "../device";
 
 export function BambooStageForm({
   record,
@@ -47,7 +47,7 @@ export function BambooStageForm({
           device_id: getMobileDeviceId(),
           values,
         },
-        crypto.randomUUID(),
+        createMobileClientId("stage"),
       );
       onSigned(updated);
     } catch (cause) {

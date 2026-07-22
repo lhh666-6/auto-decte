@@ -261,6 +261,13 @@ export type MobileFetcher = (
 
 type CsrfTokenReader = () => string | null;
 
+function createMobileClientId(prefix = "mobile"): string {
+  const randomUuid = globalThis.crypto?.randomUUID?.();
+  if (randomUuid) return randomUuid;
+  const randomPart = Math.random().toString(36).slice(2, 12);
+  return `${prefix}-${Date.now().toString(36)}-${randomPart}`;
+}
+
 function csrfTokenFromCookie(): string | null {
   if (typeof document === "undefined") return null;
   const prefix = "mobile_csrf=";
@@ -474,7 +481,7 @@ export class MobileApiClient {
   closeBambooException(exceptionId: string, resolution: string): Promise<Record<string, unknown>> {
     return this.request(`/bamboo/inspection-exceptions/${encodeURIComponent(exceptionId)}/close`, {
       method: "POST",
-      headers: { "Idempotency-Key": crypto.randomUUID() },
+      headers: { "Idempotency-Key": createMobileClientId("inspection-exception") },
       body: JSON.stringify({ resolution }),
     });
   }
@@ -486,7 +493,7 @@ export class MobileApiClient {
   ): Promise<Record<string, unknown>> {
     return this.request(`/bamboo/records/${encodeURIComponent(recordId)}/return`, {
       method: "POST",
-      headers: { "Idempotency-Key": crypto.randomUUID() },
+      headers: { "Idempotency-Key": createMobileClientId("bamboo-return") },
       body: JSON.stringify({ target_stages: targetStages, reason, source: "SUPERVISOR" }),
     });
   }
@@ -494,7 +501,7 @@ export class MobileApiClient {
   requestBambooRoleChange(toRole: string, reason: string): Promise<BambooRoleChange> {
     return this.request("/bamboo/role-change-requests", {
       method: "POST",
-      headers: { "Idempotency-Key": crypto.randomUUID() },
+      headers: { "Idempotency-Key": createMobileClientId("role-change") },
       body: JSON.stringify({ to_role: toRole, reason }),
     });
   }
@@ -506,7 +513,7 @@ export class MobileApiClient {
   decideBambooRoleChange(requestId: string, approve: boolean, note: string): Promise<BambooRoleChange> {
     return this.request(`/bamboo/role-change-requests/${encodeURIComponent(requestId)}/decision`, {
       method: "POST",
-      headers: { "Idempotency-Key": crypto.randomUUID() },
+      headers: { "Idempotency-Key": createMobileClientId("role-change-decision") },
       body: JSON.stringify({ approve, note }),
     });
   }
@@ -518,7 +525,7 @@ export class MobileApiClient {
   decideBambooFinanceItem(itemId: string, decision: string, note: string): Promise<BambooFinanceItem> {
     return this.request(`/bamboo/finance/items/${encodeURIComponent(itemId)}/decision`, {
       method: "POST",
-      headers: { "Idempotency-Key": crypto.randomUUID() },
+      headers: { "Idempotency-Key": createMobileClientId("finance-decision") },
       body: JSON.stringify({ decision, note }),
     });
   }
@@ -526,7 +533,7 @@ export class MobileApiClient {
   createBambooFinanceInquiry(itemId: string, subject: string, body: string): Promise<Record<string, unknown>> {
     return this.request(`/bamboo/finance/items/${encodeURIComponent(itemId)}/inquiries`, {
       method: "POST",
-      headers: { "Idempotency-Key": crypto.randomUUID() },
+      headers: { "Idempotency-Key": createMobileClientId("finance-inquiry") },
       body: JSON.stringify({ subject, body }),
     });
   }
@@ -538,7 +545,7 @@ export class MobileApiClient {
   replyBambooFinanceInquiry(inquiryId: string, body: string, close = false): Promise<Record<string, unknown>> {
     return this.request(`/bamboo/finance/inquiries/${encodeURIComponent(inquiryId)}/reply`, {
       method: "POST",
-      headers: { "Idempotency-Key": crypto.randomUUID() },
+      headers: { "Idempotency-Key": createMobileClientId("finance-reply") },
       body: JSON.stringify({ body, close }),
     });
   }
@@ -546,7 +553,7 @@ export class MobileApiClient {
   createBambooPayrollRule(ruleKey: string, configuration: Record<string, unknown>): Promise<Record<string, unknown>> {
     return this.request("/bamboo/payroll-rules", {
       method: "POST",
-      headers: { "Idempotency-Key": crypto.randomUUID() },
+      headers: { "Idempotency-Key": createMobileClientId("payroll-rule") },
       body: JSON.stringify({ rule_key: ruleKey, configuration, system_default: false }),
     });
   }
@@ -554,7 +561,7 @@ export class MobileApiClient {
   assignBambooEmployeeRole(employeeCode: string, roleCode: string): Promise<Record<string, unknown>> {
     return this.request("/bamboo/admin/assignments", {
       method: "POST",
-      headers: { "Idempotency-Key": crypto.randomUUID() },
+      headers: { "Idempotency-Key": createMobileClientId("employee-role") },
       body: JSON.stringify({ employee_code: employeeCode, role_code: roleCode }),
     });
   }
