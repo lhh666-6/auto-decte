@@ -54,7 +54,26 @@ def test_alembic_upgrade_creates_persistent_mobile_identity_tables(
         "mobile_access_profiles",
     } <= tables
     with engine.connect() as connection:
-        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "014"
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "015"
+
+
+def test_alembic_upgrade_creates_bamboo_process_core_tables(tmp_path: Path) -> None:
+    database_path = tmp_path / "bamboo-core.db"
+
+    upgrade_database(database_path)
+
+    engine = create_engine(f"sqlite:///{database_path}")
+    tables = set(inspect(engine).get_table_names())
+    assert {
+        "bamboo_factories",
+        "bamboo_role_definitions",
+        "employee_bamboo_assignments",
+        "bamboo_records",
+        "bamboo_stage_submissions",
+        "bamboo_signatures",
+    } <= tables
+    with engine.connect() as connection:
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "015"
 
 
 def test_alembic_upgrade_creates_report_definition_versions(tmp_path: Path) -> None:
@@ -75,7 +94,7 @@ def test_alembic_upgrade_creates_report_definition_versions(tmp_path: Path) -> N
         "configuration",
     }
     with engine.connect() as connection:
-        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "014"
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "015"
 
 
 def test_alembic_upgrade_creates_template_version_tables(tmp_path: Path) -> None:
@@ -138,7 +157,7 @@ def test_alembic_upgrade_creates_job_profile_versions_without_changing_templates
         revision = connection.execute(
             text("SELECT version_num FROM alembic_version")
         ).scalar_one()
-        assert revision == "014"
+        assert revision == "015"
     upgraded.dispose()
 
 
@@ -227,7 +246,7 @@ def test_upgrade_007_preserves_legacy_template_and_adds_layout_storage(
         revision = connection.execute(
             text("SELECT version_num FROM alembic_version")
         ).scalar_one()
-        assert revision == "014"
+        assert revision == "015"
     upgraded.dispose()
 
 
@@ -445,7 +464,7 @@ def test_upgrade_006_export_batch_preserves_data_and_adds_snapshot_columns(
         revision = connection.execute(
             text("SELECT version_num FROM alembic_version")
         ).scalar_one()
-        assert revision == "014"
+        assert revision == "015"
     upgraded.dispose()
 
     _downgrade_to_revision(database_path, "006")
