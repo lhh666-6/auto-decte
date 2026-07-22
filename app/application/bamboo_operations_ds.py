@@ -419,6 +419,7 @@ class BambooOperationsService:
                     "干燥架号不能重复",
                 )
             normalized["rack_numbers"] = rack_numbers
+            normalized["rack_count"] = len(rack_numbers)
         return normalized
 
     def assign_employee_role(
@@ -814,6 +815,30 @@ class BambooOperationsService:
             record.status = "ACTIVE"
             record.revision += 1
             record.updated_at = now
+            if form_type is BambooFormType.SORTING:
+                linked_records = session.scalars(
+                    select(BambooRecordRow).where(
+                        BambooRecordRow.source_record_id == record_id,
+                        BambooRecordRow.form_type
+                        == BambooFormType.DIPPING_DRYING.value,
+                    )
+                ).all()
+                for linked_record in linked_records:
+                    source_snapshot = dict(linked_record.source_snapshot or {})
+                    source_snapshot.setdefault(
+                        "original_revision",
+                        source_snapshot.get("revision") or record.revision - 1,
+                    )
+                    source_snapshot.update(
+                        {
+                            "source_status": "UPSTREAM_CHANGED",
+                            "latest_revision": record.revision,
+                            "changed_at": now.isoformat(),
+                        }
+                    )
+                    linked_record.source_snapshot = source_snapshot
+                    linked_record.revision += 1
+                    linked_record.updated_at = now
             return_row = BambooReturnRow(
                 return_id=str(uuid4()),
                 record_id=record_id,

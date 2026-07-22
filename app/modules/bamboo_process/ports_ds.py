@@ -10,10 +10,14 @@ from app.modules.bamboo_process.models_ds import (
 )
 
 
+class BambooRepositoryConflict(RuntimeError):
+    """A persistence uniqueness conflict that callers may safely retry."""
+
+
 class BambooRecordRepository(Protocol):
     def next_display_sequence(self, factory_id: str, production_date: str) -> int: ...
 
-    def add(self, record: BambooRecord) -> None: ...
+    def add(self, record: BambooRecord) -> BambooRecord: ...
 
     def get(self, record_id: str) -> BambooRecord | None: ...
 

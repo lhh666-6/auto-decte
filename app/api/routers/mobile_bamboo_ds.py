@@ -45,6 +45,7 @@ from app.modules.bamboo_process.models_ds import (
     BambooStage,
     TaskBucket,
 )
+from app.modules.bamboo_process.ports_ds import BambooRepositoryConflict
 from app.services.container import Services
 
 router = APIRouter(prefix="/bamboo")
@@ -169,6 +170,11 @@ def create_record(
         raise HTTPException(
             status_code=status_code_,
             detail={"code": error.code, "detail": str(error)},
+        ) from error
+    except BambooRepositoryConflict as error:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "BAMBOO_RECORD_CONFLICT", "detail": str(error)},
         ) from error
     return _response(record)
 
@@ -619,6 +625,11 @@ def submit_stage(
         raise HTTPException(
             status_code=422,
             detail={"code": error.code, "detail": str(error)},
+        ) from error
+    except BambooRepositoryConflict as error:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "BAMBOO_RECORD_CONFLICT", "detail": str(error)},
         ) from error
     return _response(record)
 

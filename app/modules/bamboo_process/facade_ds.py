@@ -25,6 +25,8 @@ from app.modules.bamboo_process.models_ds import (
 )
 from app.modules.bamboo_process.ports_ds import BambooRecordRepository
 from app.modules.bamboo_process.state_machine_ds import (
+    FORM_STAGE_ORDER,
+    STAGE_ROLE,
     can_submit_stage,
     next_stage,
     visible_to_role,
@@ -84,8 +86,7 @@ class BambooProcessFacade:
             form_type=form_type,
             production_object_id=record_id,
         )
-        self._repository.add(record)
-        return record
+        return self._repository.add(record)
 
     def list_tasks(
         self,
@@ -94,13 +95,6 @@ class BambooProcessFacade:
         bucket: TaskBucket,
     ) -> list[BambooRecord]:
         records = self._repository.list_for_factory(actor.factory_id)
-        if bucket is TaskBucket.AVAILABLE:
-            return [
-                record
-                for record in records
-                if record.current_stage is not None
-                and can_submit_stage(actor.role, record.current_stage, record.form_type)
-            ]
         completed = {
             record.record_id
             for record in records
@@ -109,28 +103,38 @@ class BambooProcessFacade:
                 for submission in record.submissions
             )
         }
-        if bucket is TaskBucket.COMPLETED:
-            return [record for record in records if record.record_id in completed]
-        if bucket is TaskBucket.WAITING:
+        if bucket is TaskBucket.AVAILABLE:
             return [
                 record
                 for record in records
-                if record.status is BambooRecordStatus.ACTIVE
-                and record.record_id not in completed
-                and any(
-                    submission.role_code == actor.role.value
-                    and not submission.invalidated
-                    for submission in record.submissions
-                )
-                and not (
-                    record.current_stage is not None
-                    and can_submit_stage(
-                        actor.role,
-                        record.current_stage,
-                        record.form_type,
-                    )
-                )
+                if record.record_id not in completed
+                and record.status is BambooRecordStatus.ACTIVE
+                and record.current_stage is not None
+                and can_submit_stage(actor.role, record.current_stage, record.form_type)
             ]
+        if bucket is TaskBucket.COMPLETED:
+            return [record for record in records if record.record_id in completed]
+        if bucket is TaskBucket.WAITING:
+            waiting: list[BambooRecord] = []
+            for record in records:
+                if (
+                    record.status is not BambooRecordStatus.ACTIVE
+                    or record.record_id in completed
+                    or record.current_stage is None
+                ):
+                    continue
+                stage_order = FORM_STAGE_ORDER[record.form_type]
+                if record.current_stage not in stage_order:
+                    continue
+                role_stage = next(
+                    (stage for stage in stage_order if STAGE_ROLE[stage] is actor.role),
+                    None,
+                )
+                if role_stage is None:
+                    continue
+                if stage_order.index(record.current_stage) < stage_order.index(role_stage):
+                    waiting.append(record)
+            return waiting
         return []
 
     def get_visible(
@@ -275,8 +279,7 @@ class BambooProcessFacade:
             if existing is None:  # pragma: no cover - concurrent insert disappeared
                 raise RuntimeError("linked bamboo record disappeared")
             return existing
-        self._repository.add(linked)
-        return linked
+        return self._repository.add(linked)
 
     def _build_linked_record(
         self,

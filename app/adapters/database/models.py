@@ -575,6 +575,15 @@ class BambooRecordRow(Base):
             "source_record_id",
             unique=True,
         ),
+        Index(
+            "ux_bamboo_records_mobile_create_idempotency",
+            "created_by",
+            "source_type",
+            "source_ref",
+            unique=True,
+            sqlite_where=text("source_type = 'MOBILE_CREATED'"),
+            postgresql_where=text("source_type = 'MOBILE_CREATED'"),
+        ),
     )
 
     record_id: Mapped[str] = mapped_column(String, primary_key=True)

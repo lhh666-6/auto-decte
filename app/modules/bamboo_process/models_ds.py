@@ -64,11 +64,11 @@ class BambooRecord:
     created_by: str
     created_at: datetime
     updated_at: datetime
+    submissions: tuple["StageSubmission", ...] = ()
     form_type: BambooFormType = BambooFormType.SORTING
     production_object_id: str | None = None
     source_record_id: str | None = None
     source_snapshot: dict[str, object] = field(default_factory=dict)
-    submissions: tuple["StageSubmission", ...] = ()
 
 
 @dataclass(frozen=True, slots=True)

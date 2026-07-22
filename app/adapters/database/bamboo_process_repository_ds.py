@@ -32,6 +32,7 @@ from app.modules.bamboo_process.models_ds import (
     ElectronicSignature,
     StageSubmission,
 )
+from app.modules.bamboo_process.ports_ds import BambooRepositoryConflict
 
 DEFAULT_BAMBOO_PAYROLL_RULES: tuple[tuple[str, str, dict[str, object]], ...] = (
     (
@@ -79,26 +80,46 @@ class SqlAlchemyBambooProcessRepository:
         del factory_id
         date_token = production_date.replace("-", "")
         with Session(self._engine) as session:
-            count = session.scalar(
-                select(func.count())
-                .select_from(BambooRecordRow)
+            display_numbers = session.scalars(
+                select(BambooRecordRow.display_no)
                 .where(
                     BambooRecordRow.display_no.like(f"ZS-{date_token}-%"),
                 )
-            )
-        return int(count or 0) + 1
+            ).all()
+        sequences: list[int] = []
+        for display_no in display_numbers:
+            try:
+                sequences.append(int(display_no.rsplit("-", 1)[-1]))
+            except ValueError:
+                continue
+        return max(sequences, default=0) + 1
 
-    def add(self, record: BambooRecord) -> None:
+    def add(self, record: BambooRecord) -> BambooRecord:
         try:
             with Session(self._engine) as session, session.begin():
                 session.add(_record_row(record))
-        except IntegrityError:
-            if record.source_record_id is not None and self.find_linked(
-                record.form_type,
-                record.source_record_id,
-            ) is not None:
-                return
-            raise
+        except IntegrityError as error:
+            if record.source_type == "MOBILE_CREATED" and record.source_ref:
+                existing = self.find_created_result(
+                    record.created_by,
+                    record.source_ref,
+                )
+                if existing is not None:
+                    return existing
+            if record.source_record_id is not None:
+                linked = self.find_linked(
+                    record.form_type,
+                    record.source_record_id,
+                )
+                if linked is not None:
+                    return linked
+            raise BambooRepositoryConflict(
+                "bamboo record persistence conflict; retry with the same idempotency key"
+            ) from error
+        stored = self.get(record.record_id)
+        if stored is None:  # pragma: no cover - guarded by the successful insert
+            raise RuntimeError("bamboo record disappeared after insert")
+        return stored
 
     def get(self, record_id: str) -> BambooRecord | None:
         with Session(self._engine) as session:
@@ -183,6 +204,34 @@ class SqlAlchemyBambooProcessRepository:
         signature: ElectronicSignature,
         expected_revision: int,
         linked_record: BambooRecord | None = None,
+    ) -> BambooRecord:
+        try:
+            return self._append_stage_once(
+                record=record,
+                submission=submission,
+                signature=signature,
+                expected_revision=expected_revision,
+                linked_record=linked_record,
+            )
+        except IntegrityError as error:
+            repeated = self.find_idempotent_result(
+                signature.actor_id,
+                signature.idempotency_key,
+            )
+            if repeated is not None:
+                return repeated
+            raise BambooRepositoryConflict(
+                "bamboo stage persistence conflict; retry with the same idempotency key"
+            ) from error
+
+    def _append_stage_once(
+        self,
+        *,
+        record: BambooRecord,
+        submission: StageSubmission,
+        signature: ElectronicSignature,
+        expected_revision: int,
+        linked_record: BambooRecord | None,
     ) -> BambooRecord:
         with Session(self._engine) as session, session.begin():
             self._validate_stage_gate(session, submission)
@@ -392,7 +441,14 @@ class SqlAlchemyBambooProcessRepository:
             )
         drying_amount = _optional_amount(drying.values.get("wage_amount"))
         if drying_amount is None:
-            drying_amount = _decimal(drying.values.get("rack_count", 0)) * _decimal(
+            raw_racks = drying.values.get("rack_numbers")
+            rack_numbers = (
+                {str(item).strip() for item in raw_racks if str(item).strip()}
+                if isinstance(raw_racks, list)
+                else set()
+            )
+            rack_count = len(rack_numbers)
+            drying_amount = Decimal(rack_count) * _decimal(
                 rule.configuration.get("drying_rate", "1")
             )
         allocations = [

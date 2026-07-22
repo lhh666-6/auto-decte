@@ -53,9 +53,21 @@ def upgrade() -> None:
         ["form_type", "source_record_id"],
         unique=True,
     )
+    op.create_index(
+        "ux_bamboo_records_mobile_create_idempotency",
+        "bamboo_records",
+        ["created_by", "source_type", "source_ref"],
+        unique=True,
+        sqlite_where=sa.text("source_type = 'MOBILE_CREATED'"),
+        postgresql_where=sa.text("source_type = 'MOBILE_CREATED'"),
+    )
 
 
 def downgrade() -> None:
+    op.drop_index(
+        "ux_bamboo_records_mobile_create_idempotency",
+        table_name="bamboo_records",
+    )
     op.drop_index("ix_bamboo_records_source_lookup", table_name="bamboo_records")
     with op.batch_alter_table("bamboo_records") as batch_op:
         batch_op.drop_constraint(

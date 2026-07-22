@@ -113,6 +113,16 @@ def ensure_auto_created_schema_compatibility(engine: Engine) -> None:
                         "ON bamboo_records (form_type, source_record_id)"
                     )
                 )
+        if "ux_bamboo_records_mobile_create_idempotency" not in bamboo_indexes:
+            with engine.begin() as connection:
+                connection.execute(
+                    text(
+                        "CREATE UNIQUE INDEX "
+                        "ux_bamboo_records_mobile_create_idempotency "
+                        "ON bamboo_records (created_by, source_type, source_ref) "
+                        "WHERE source_type = 'MOBILE_CREATED'"
+                    )
+                )
     inspector = inspect(engine)
     if "evidence_files" in inspector.get_table_names():
         evidence_indexes = {item["name"]: item for item in inspector.get_indexes("evidence_files")}
