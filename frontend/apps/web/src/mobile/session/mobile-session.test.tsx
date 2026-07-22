@@ -35,9 +35,12 @@ function authenticatedClient(): MobileApiClient {
     team_name: "甲班",
     position: "操作工",
     roles: ["WORKER"],
-    allowed_form_types: [],
-    allowed_processes: [],
-  };
+  allowed_form_types: [],
+  allowed_processes: [],
+  factory_id: "FACTORY-A",
+  factory_name: "竹丝一厂",
+  bamboo_role: "SORT_OPERATOR",
+};
   return {
     getSession: vi.fn().mockResolvedValue(session),
   } as unknown as MobileApiClient;

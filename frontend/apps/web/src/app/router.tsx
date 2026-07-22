@@ -122,6 +122,7 @@ export function AppRoutes() {
           <Route path="mobile/home" element={<MobileHomePage />} />
           <Route path="mobile/record" element={<MobileRecordPage />} />
           <Route path="mobile/record/bamboo-process" element={<MobileBambooProcessPage />} />
+          <Route path="mobile/record/bamboo-process/:recordId" element={<MobileBambooProcessPage />} />
           <Route path="mobile/record/sheet-piece" element={<MobileSheetPiecePage />} />
           <Route path="mobile/record/team-sheet-piece" element={<MobileTeamSheetPiecePage />} />
           <Route path="mobile/drafts" element={<MobileDraftsPage />} />

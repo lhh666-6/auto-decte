@@ -1011,6 +1011,335 @@ button { cursor: pointer; }
   font-size: 16px;
 }
 
+/* Bamboo workflow V3 */
+.bamboo-work-page,
+.bamboo-detail-page {
+  --bamboo-green: #16835b;
+  --bamboo-green-dark: #0d6546;
+  --bamboo-green-soft: #e8f6ef;
+  background: #f3f7f5;
+}
+.bamboo-page-heading,
+.bamboo-section-title,
+.bamboo-task-card-top,
+.bamboo-record-hero,
+.bamboo-review-actions,
+.bamboo-point-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.bamboo-page-heading {
+  margin-bottom: 16px;
+}
+.bamboo-page-heading p,
+.bamboo-page-heading h2 {
+  margin: 0;
+}
+.bamboo-page-heading p {
+  margin-bottom: 3px;
+  color: #60756b;
+  font-size: 12px;
+}
+.bamboo-page-heading h2 {
+  color: #17392d;
+  font-size: 23px;
+}
+.bamboo-primary-action,
+.bamboo-sign-button {
+  min-height: 44px;
+  border: 0;
+  border-radius: 10px;
+  padding: 0 16px;
+  color: #fff;
+  background: var(--bamboo-green);
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.bamboo-primary-action:disabled,
+.bamboo-sign-button:disabled {
+  cursor: wait;
+  opacity: .6;
+}
+.bamboo-create-card,
+.bamboo-sheet-section,
+.bamboo-stage-form,
+.bamboo-record-hero {
+  border: 1px solid #d5e4dc;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 4px 16px rgb(30 83 61 / 6%);
+}
+.bamboo-create-card,
+.bamboo-sheet-section,
+.bamboo-stage-form {
+  padding: 16px;
+}
+.bamboo-create-card {
+  display: grid;
+  gap: 14px;
+  margin-bottom: 16px;
+}
+.bamboo-create-card h3,
+.bamboo-sheet-section h3,
+.bamboo-stage-form h3,
+.bamboo-sign-review h4 {
+  margin: 0;
+  color: #17392d;
+}
+.bamboo-task-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.bamboo-task-tabs button {
+  display: grid;
+  gap: 2px;
+  min-height: 58px;
+  border: 1px solid #d5e4dc;
+  border-radius: 11px;
+  color: #60756b;
+  background: #fff;
+  cursor: pointer;
+}
+.bamboo-task-tabs button strong {
+  color: #254f3f;
+  font-size: 17px;
+}
+.bamboo-task-tabs button.active {
+  border-color: var(--bamboo-green);
+  color: var(--bamboo-green-dark);
+  background: var(--bamboo-green-soft);
+}
+.bamboo-task-list {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.bamboo-task-card {
+  display: grid;
+  gap: 12px;
+  border: 1px solid #d5e4dc;
+  border-radius: 13px;
+  padding: 15px;
+  color: inherit;
+  background: #fff;
+  text-decoration: none;
+  box-shadow: 0 3px 12px rgb(30 83 61 / 5%);
+}
+.bamboo-task-card-top strong {
+  color: #17392d;
+  font-size: 16px;
+}
+.bamboo-task-card-top span {
+  border-radius: 999px;
+  padding: 5px 9px;
+  color: var(--bamboo-green-dark);
+  background: var(--bamboo-green-soft);
+  font-size: 12px;
+  font-weight: 700;
+}
+.bamboo-task-card dl,
+.bamboo-sheet-grid,
+.bamboo-sign-review dl {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+.bamboo-task-card dl div,
+.bamboo-sheet-grid div,
+.bamboo-sign-review dl div {
+  display: grid;
+  gap: 3px;
+}
+.bamboo-task-card dt,
+.bamboo-sheet-grid dt,
+.bamboo-sign-review dt {
+  color: #75887f;
+  font-size: 11px;
+}
+.bamboo-task-card dd,
+.bamboo-sheet-grid dd,
+.bamboo-sign-review dd {
+  margin: 0;
+  color: #243d33;
+  overflow-wrap: anywhere;
+}
+.bamboo-task-card small {
+  color: #82928a;
+  font-size: 11px;
+}
+.bamboo-record-hero {
+  padding: 15px;
+}
+.bamboo-record-hero div {
+  display: grid;
+  gap: 3px;
+}
+.bamboo-record-hero span,
+.bamboo-record-hero em {
+  color: #60756b;
+  font-size: 12px;
+  font-style: normal;
+}
+.bamboo-record-hero strong {
+  color: #17392d;
+  font-size: 18px;
+}
+.bamboo-flow-strip {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(58px, 1fr));
+  gap: 4px;
+  margin: 16px 0;
+  padding: 0 0 6px;
+  overflow-x: auto;
+  list-style: none;
+}
+.bamboo-flow-strip li {
+  display: grid;
+  justify-items: center;
+  gap: 5px;
+  min-width: 58px;
+  color: #899991;
+  font-size: 11px;
+}
+.bamboo-flow-strip i {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border: 2px solid #cfdad5;
+  border-radius: 50%;
+  background: #fff;
+  font-style: normal;
+  font-weight: 700;
+}
+.bamboo-flow-strip li.done,
+.bamboo-flow-strip li.current {
+  color: var(--bamboo-green-dark);
+}
+.bamboo-flow-strip li.done i {
+  border-color: var(--bamboo-green);
+  color: #fff;
+  background: var(--bamboo-green);
+}
+.bamboo-flow-strip li.current i {
+  border-color: var(--bamboo-green);
+  background: var(--bamboo-green-soft);
+}
+.bamboo-detail-page > .bamboo-sheet-section,
+.bamboo-detail-page > .bamboo-stage-form {
+  margin-top: 12px;
+}
+.bamboo-section-title {
+  margin-bottom: 12px;
+}
+.bamboo-section-title span {
+  color: #60756b;
+  font-size: 11px;
+}
+.bamboo-field-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.bamboo-field-grid label,
+.bamboo-moisture-grid label {
+  display: grid;
+  gap: 6px;
+  color: #536b60;
+  font-size: 12px;
+  font-weight: 700;
+}
+.bamboo-field-grid label:has(textarea) {
+  grid-column: 1 / -1;
+}
+.bamboo-field-grid input,
+.bamboo-field-grid textarea,
+.bamboo-moisture-grid input {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 44px;
+  border: 1px solid #bed1c7;
+  border-radius: 9px;
+  padding: 10px 11px;
+  color: #17392d;
+  background: #fbfdfc;
+  font: inherit;
+  font-size: 16px;
+}
+.bamboo-field-grid textarea {
+  min-height: 82px;
+  resize: vertical;
+}
+.bamboo-stage-form {
+  display: grid;
+  gap: 14px;
+  border-color: #a8d3bf;
+}
+.bamboo-moisture-fieldset {
+  margin: 0;
+  border: 1px solid #d5e4dc;
+  border-radius: 11px;
+  padding: 12px;
+}
+.bamboo-moisture-fieldset legend {
+  padding: 0 6px;
+  color: #536b60;
+  font-size: 12px;
+  font-weight: 700;
+}
+.bamboo-moisture-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.bamboo-point-actions {
+  margin-top: 10px;
+}
+.bamboo-point-actions button,
+.bamboo-review-actions > button:not(.bamboo-sign-button) {
+  min-height: 44px;
+  border: 1px solid #b8cec3;
+  border-radius: 9px;
+  padding: 0 13px;
+  color: #315b49;
+  background: #fff;
+  cursor: pointer;
+}
+.bamboo-stage-form > .bamboo-sign-button {
+  width: 100%;
+}
+.bamboo-sign-review {
+  display: grid;
+  gap: 12px;
+  border: 1px solid #9bcab4;
+  border-radius: 11px;
+  padding: 14px;
+  background: var(--bamboo-green-soft);
+}
+.bamboo-sign-review p {
+  margin: 0;
+  color: #466557;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+@media (max-width: 420px) {
+  .bamboo-field-grid,
+  .bamboo-task-card dl,
+  .bamboo-sheet-grid,
+  .bamboo-sign-review dl {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 /* ================================================================
    Draft / Submission / Outbox / Profile lists
    ================================================================ */
