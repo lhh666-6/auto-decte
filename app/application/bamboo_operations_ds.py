@@ -387,9 +387,18 @@ class BambooOperationsService:
                 ("glue_gain", "glue_amount"),
                 "上胶量",
             )
-            normalized["glue_before_weight"] = str(before) if before is not None else ""
-            normalized["glue_after_weight"] = str(after) if after is not None else ""
-            normalized["glue_gain"] = str(glue_gain) if glue_gain is not None else "0"
+            if before is not None:
+                normalized["glue_before_weight"] = str(before)
+            else:
+                normalized.pop("glue_before_weight", None)
+            if after is not None:
+                normalized["glue_after_weight"] = str(after)
+            else:
+                normalized.pop("glue_after_weight", None)
+            if glue_gain is not None:
+                normalized["glue_gain"] = str(glue_gain)
+            else:
+                normalized.pop("glue_gain", None)
             if values.get("wage_amount") is not None and values.get("wage_amount") != "":
                 wage_amount = _optional_decimal(values, ("wage_amount",), "工资金额")
                 if wage_amount is not None:
