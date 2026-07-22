@@ -15,6 +15,7 @@ from app.adapters.ai.report_assistant_ds import (
 )
 from app.adapters.database.bamboo_process_repository_ds import (
     SqlAlchemyBambooProcessRepository,
+    install_default_bamboo_payroll_rules,
 )
 from app.adapters.database.electronic_definition_repository_ds import (
     SqlAlchemyElectronicDefinitionRepository,
@@ -38,6 +39,7 @@ from app.adapters.storage.local import LocalEvidenceStorage
 from app.adapters.templates.print_renderer_ds import TemplatePrintRenderer
 from app.adapters.vector.local import LocalVectorIndex
 from app.application.ai_review_forms import AIReviewForms
+from app.application.bamboo_operations_ds import BambooOperationsService
 from app.application.electronic_submissions_ds import ElectronicFormIntegration
 from app.application.export_forms import ExportForms
 from app.application.import_forms import ImportForms
@@ -120,6 +122,7 @@ class Services:
     electronic_definitions: ElectronicDefinitionService
     bamboo_repository: SqlAlchemyBambooProcessRepository
     bamboo_process: BambooProcessFacade
+    bamboo_operations: BambooOperationsService
 
 
 def build_services(settings: Settings, *, install_seed_templates: bool = False) -> Services:
@@ -160,7 +163,11 @@ def build_services(settings: Settings, *, install_seed_templates: bool = False) 
     mobile_identity = MobileIdentityService(repository=mobile_identity_repository)
     electronic_definition_repository = SqlAlchemyElectronicDefinitionRepository(engine)
     electronic_definitions = ElectronicDefinitionService(electronic_definition_repository)
-    bamboo_repository = SqlAlchemyBambooProcessRepository(engine)
+    bamboo_repository = SqlAlchemyBambooProcessRepository(
+        engine,
+        plant_audit_wait_hours=settings.bamboo_plant_audit_wait_hours,
+    )
+    install_default_bamboo_payroll_rules(engine)
     bamboo_process = BambooProcessFacade(
         bamboo_repository,
         clock=lambda: datetime.now(UTC),
@@ -256,6 +263,7 @@ def build_services(settings: Settings, *, install_seed_templates: bool = False) 
         electronic_definitions=electronic_definitions,
         bamboo_repository=bamboo_repository,
         bamboo_process=bamboo_process,
+        bamboo_operations=BambooOperationsService(engine, storage),
     )
     tasks.recover_interrupted()
     services.export_handler.recover_prepared()

@@ -1077,6 +1077,74 @@ button { cursor: pointer; }
 .bamboo-stage-form {
   padding: 16px;
 }
+
+.bamboo-operations-panel {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.bamboo-operation-card {
+  display: grid;
+  gap: 0.45rem;
+  padding: 0.9rem;
+  border: 1px solid #d7e2ea;
+  border-radius: 0.8rem;
+  background: #f8fbfc;
+}
+
+.bamboo-operation-card > span {
+  color: #536b79;
+  font-size: 0.88rem;
+}
+
+.bamboo-operation-form {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.bamboo-operation-form label,
+.bamboo-operations-panel > label {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.bamboo-operation-form input,
+.bamboo-operation-form select,
+.bamboo-operation-form textarea,
+.bamboo-operations-panel > select,
+.bamboo-operations-panel > textarea {
+  min-height: 2.75rem;
+  padding: 0.65rem;
+  border: 1px solid #bccbd5;
+  border-radius: 0.65rem;
+  font: inherit;
+}
+
+.bamboo-return-options,
+.bamboo-inline-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+}
+
+.bamboo-return-options label {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.6rem 0.75rem;
+  border-radius: 0.65rem;
+  background: #eef4f7;
+}
+
+.bamboo-export-link {
+  display: block;
+  padding: 0.8rem;
+  border-radius: 0.65rem;
+  background: #163d59;
+  color: white;
+  text-align: center;
+  text-decoration: none;
+}
 .bamboo-create-card {
   display: grid;
   gap: 14px;

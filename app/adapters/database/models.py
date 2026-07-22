@@ -346,6 +346,7 @@ class MasterDataAuditRow(Base):
 
 # ── Electronic forms (mobile / PWA) ────────────────────────────
 
+
 class ElectronicFormDefinitionVersionRow(Base):
     __tablename__ = "electronic_form_definition_versions"
     __table_args__ = (
@@ -384,7 +385,10 @@ class ElectronicSubmissionReceiptRow(Base):
     __tablename__ = "electronic_submission_receipts"
     __table_args__ = (
         UniqueConstraint(
-            "actor_id", "device_id", "operation", "client_submission_id",
+            "actor_id",
+            "device_id",
+            "operation",
+            "client_submission_id",
             name="ux_electronic_receipts_idempotency",
         ),
         Index("ix_es_receipts_actor_submitted", "actor_id", "submitted_at"),
@@ -498,6 +502,7 @@ class MobileSessionRow(Base):
 
 
 # ── Bamboo production workflow ─────────────────────────────────
+
 
 class BambooFactoryRow(Base):
     __tablename__ = "bamboo_factories"
@@ -644,3 +649,274 @@ class BambooSignatureRow(Base):
     device_id: Mapped[str] = mapped_column(String, nullable=False)
     request_id: Mapped[str] = mapped_column(String, nullable=False)
     idempotency_key: Mapped[str] = mapped_column(String, nullable=False)
+
+
+class BambooPayrollRuleVersionRow(Base):
+    __tablename__ = "bamboo_payroll_rule_versions"
+    __table_args__ = (
+        UniqueConstraint(
+            "rule_key", "factory_id", "version", name="ux_bamboo_payroll_rule_version"
+        ),
+        Index("ix_bamboo_payroll_rule_current", "rule_key", "factory_id", "active", "effective_at"),
+    )
+
+    rule_version_id: Mapped[str] = mapped_column(String, primary_key=True)
+    rule_key: Mapped[str] = mapped_column(String, nullable=False)
+    factory_id: Mapped[str | None] = mapped_column(ForeignKey("bamboo_factories.factory_id"))
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    configuration: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    effective_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_by: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class BambooPayrollFactRow(Base):
+    __tablename__ = "bamboo_payroll_facts"
+    __table_args__ = (
+        UniqueConstraint(
+            "record_id", "fact_type", "version", name="ux_bamboo_payroll_fact_version"
+        ),
+        Index("ix_bamboo_payroll_fact_status", "record_id", "status", "fact_type"),
+    )
+
+    fact_id: Mapped[str] = mapped_column(String, primary_key=True)
+    record_id: Mapped[str] = mapped_column(
+        ForeignKey("bamboo_records.record_id", ondelete="CASCADE"), nullable=False
+    )
+    fact_type: Mapped[str] = mapped_column(String, nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String, nullable=False)
+    rule_version_id: Mapped[str] = mapped_column(
+        ForeignKey("bamboo_payroll_rule_versions.rule_version_id"), nullable=False
+    )
+    input_snapshot: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    allocations: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
+    total_amount: Mapped[str] = mapped_column(String, nullable=False)
+    source_submission_ids: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    effective_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    invalidated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class BambooInspectionRow(Base):
+    __tablename__ = "bamboo_inspections"
+    __table_args__ = (
+        UniqueConstraint("record_id", "serial_no", name="ux_bamboo_inspection_serial"),
+        UniqueConstraint("actor_id", "idempotency_key", name="ux_bamboo_inspection_idempotency"),
+        Index("ix_bamboo_inspection_record", "record_id", "signed_at"),
+    )
+
+    inspection_id: Mapped[str] = mapped_column(String, primary_key=True)
+    record_id: Mapped[str] = mapped_column(
+        ForeignKey("bamboo_records.record_id", ondelete="CASCADE"), nullable=False
+    )
+    serial_no: Mapped[str] = mapped_column(String, nullable=False)
+    target_stage: Mapped[str] = mapped_column(String, nullable=False)
+    moisture_points: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    average_value: Mapped[str] = mapped_column(String, nullable=False)
+    conclusion: Mapped[str] = mapped_column(String, nullable=False)
+    note: Mapped[str | None] = mapped_column(String)
+    actor_id: Mapped[str] = mapped_column(String, nullable=False)
+    actor_name: Mapped[str] = mapped_column(String, nullable=False)
+    factory_id: Mapped[str] = mapped_column(
+        ForeignKey("bamboo_factories.factory_id"), nullable=False
+    )
+    role_code: Mapped[str] = mapped_column(String, nullable=False)
+    signed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    payload_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    device_id: Mapped[str] = mapped_column(String, nullable=False)
+    request_id: Mapped[str] = mapped_column(String, nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String, nullable=False)
+    window_revision: Mapped[int] = mapped_column(Integer, nullable=False)
+
+
+class BambooEvidenceAssetRow(Base):
+    __tablename__ = "bamboo_evidence_assets"
+
+    asset_id: Mapped[str] = mapped_column(String, primary_key=True)
+    inspection_id: Mapped[str] = mapped_column(
+        ForeignKey("bamboo_inspections.inspection_id", ondelete="CASCADE"), nullable=False
+    )
+    evidence_type: Mapped[str] = mapped_column(String, nullable=False)
+    file_id: Mapped[str | None] = mapped_column(String)
+    uri: Mapped[str | None] = mapped_column(String)
+    mime_type: Mapped[str | None] = mapped_column(String)
+    size_bytes: Mapped[int | None] = mapped_column(Integer)
+    sha256: Mapped[str | None] = mapped_column(String(64))
+    text_content: Mapped[str | None] = mapped_column(String)
+    actor_id: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class BambooInspectionExceptionRow(Base):
+    __tablename__ = "bamboo_inspection_exceptions"
+
+    exception_id: Mapped[str] = mapped_column(String, primary_key=True)
+    inspection_id: Mapped[str] = mapped_column(
+        ForeignKey("bamboo_inspections.inspection_id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+    )
+    record_id: Mapped[str] = mapped_column(
+        ForeignKey("bamboo_records.record_id", ondelete="CASCADE"), nullable=False
+    )
+    status: Mapped[str] = mapped_column(String, nullable=False)
+    resolution: Mapped[str | None] = mapped_column(String)
+    closed_by: Mapped[str | None] = mapped_column(String)
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+
+
+class BambooReturnRow(Base):
+    __tablename__ = "bamboo_returns"
+
+    return_id: Mapped[str] = mapped_column(String, primary_key=True)
+    record_id: Mapped[str] = mapped_column(
+        ForeignKey("bamboo_records.record_id", ondelete="CASCADE"), nullable=False
+    )
+    requested_by: Mapped[str] = mapped_column(String, nullable=False)
+    requested_role: Mapped[str] = mapped_column(String, nullable=False)
+    target_stages: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    reason: Mapped[str] = mapped_column(String, nullable=False)
+    source: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    record_revision: Mapped[int] = mapped_column(Integer, nullable=False)
+
+
+class BambooPlantAuditRow(Base):
+    __tablename__ = "bamboo_plant_audits"
+
+    audit_id: Mapped[str] = mapped_column(String, primary_key=True)
+    record_id: Mapped[str] = mapped_column(
+        ForeignKey("bamboo_records.record_id", ondelete="CASCADE"), nullable=False
+    )
+    submission_id: Mapped[str | None] = mapped_column(
+        ForeignKey("bamboo_stage_submissions.submission_id")
+    )
+    earliest_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    audited_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    actor_id: Mapped[str | None] = mapped_column(String)
+    result: Mapped[str] = mapped_column(String, nullable=False)
+    revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+
+
+class BambooRoleChangeRequestRow(Base):
+    __tablename__ = "bamboo_role_change_requests"
+    __table_args__ = (
+        Index("ix_bamboo_role_change_pending", "factory_id", "status", "requested_at"),
+    )
+
+    request_id: Mapped[str] = mapped_column(String, primary_key=True)
+    employee_code: Mapped[str] = mapped_column(String, nullable=False)
+    factory_id: Mapped[str] = mapped_column(
+        ForeignKey("bamboo_factories.factory_id"), nullable=False
+    )
+    from_role: Mapped[str] = mapped_column(String, nullable=False)
+    to_role: Mapped[str] = mapped_column(String, nullable=False)
+    reason: Mapped[str] = mapped_column(String, nullable=False)
+    status: Mapped[str] = mapped_column(String, nullable=False)
+    requested_by: Mapped[str] = mapped_column(String, nullable=False)
+    requested_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    decided_by: Mapped[str | None] = mapped_column(String)
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    decision_note: Mapped[str | None] = mapped_column(String)
+    revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+
+
+class BambooDailyExportBatchRow(Base):
+    __tablename__ = "bamboo_daily_export_batches"
+    __table_args__ = (
+        UniqueConstraint(
+            "factory_id", "business_date", "version", name="ux_bamboo_daily_batch_version"
+        ),
+    )
+
+    batch_id: Mapped[str] = mapped_column(String, primary_key=True)
+    factory_id: Mapped[str] = mapped_column(
+        ForeignKey("bamboo_factories.factory_id"), nullable=False
+    )
+    business_date: Mapped[str] = mapped_column(String, nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String, nullable=False)
+    supplemental: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    source_batch_id: Mapped[str | None] = mapped_column(
+        ForeignKey("bamboo_daily_export_batches.batch_id")
+    )
+    created_by: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class BambooDailyExportItemRow(Base):
+    __tablename__ = "bamboo_daily_export_items"
+    __table_args__ = (
+        UniqueConstraint(
+            "batch_id", "payroll_fact_id", "employee_code", name="ux_bamboo_daily_fact_employee"
+        ),
+        Index("ix_bamboo_daily_item_status", "batch_id", "status"),
+    )
+
+    item_id: Mapped[str] = mapped_column(String, primary_key=True)
+    batch_id: Mapped[str] = mapped_column(
+        ForeignKey("bamboo_daily_export_batches.batch_id", ondelete="CASCADE"), nullable=False
+    )
+    payroll_fact_id: Mapped[str] = mapped_column(
+        ForeignKey("bamboo_payroll_facts.fact_id"), nullable=False
+    )
+    record_id: Mapped[str] = mapped_column(ForeignKey("bamboo_records.record_id"), nullable=False)
+    employee_code: Mapped[str] = mapped_column(String, nullable=False)
+    amount: Mapped[str] = mapped_column(String, nullable=False)
+    status: Mapped[str] = mapped_column(String, nullable=False)
+    decision_by: Mapped[str | None] = mapped_column(String)
+    decision_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    decision_note: Mapped[str | None] = mapped_column(String)
+    source_snapshot: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+
+
+class BambooFinanceInquiryRow(Base):
+    __tablename__ = "bamboo_finance_inquiries"
+
+    inquiry_id: Mapped[str] = mapped_column(String, primary_key=True)
+    item_id: Mapped[str] = mapped_column(
+        ForeignKey("bamboo_daily_export_items.item_id"), nullable=False
+    )
+    factory_id: Mapped[str] = mapped_column(
+        ForeignKey("bamboo_factories.factory_id"), nullable=False
+    )
+    subject: Mapped[str] = mapped_column(String, nullable=False)
+    status: Mapped[str] = mapped_column(String, nullable=False)
+    created_by: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class BambooFinanceInquiryMessageRow(Base):
+    __tablename__ = "bamboo_finance_inquiry_messages"
+
+    message_id: Mapped[str] = mapped_column(String, primary_key=True)
+    inquiry_id: Mapped[str] = mapped_column(
+        ForeignKey("bamboo_finance_inquiries.inquiry_id", ondelete="CASCADE"), nullable=False
+    )
+    actor_id: Mapped[str] = mapped_column(String, nullable=False)
+    actor_name: Mapped[str] = mapped_column(String, nullable=False)
+    role_code: Mapped[str] = mapped_column(String, nullable=False)
+    body: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class BambooCorrectionCaseRow(Base):
+    __tablename__ = "bamboo_correction_cases"
+
+    case_id: Mapped[str] = mapped_column(String, primary_key=True)
+    item_id: Mapped[str] = mapped_column(
+        ForeignKey("bamboo_daily_export_items.item_id"), nullable=False
+    )
+    record_id: Mapped[str] = mapped_column(ForeignKey("bamboo_records.record_id"), nullable=False)
+    status: Mapped[str] = mapped_column(String, nullable=False)
+    reason: Mapped[str] = mapped_column(String, nullable=False)
+    created_by: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    supplement_batch_id: Mapped[str | None] = mapped_column(
+        ForeignKey("bamboo_daily_export_batches.batch_id")
+    )

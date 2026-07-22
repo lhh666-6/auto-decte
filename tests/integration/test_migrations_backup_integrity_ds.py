@@ -54,7 +54,7 @@ def test_alembic_upgrade_creates_persistent_mobile_identity_tables(
         "mobile_access_profiles",
     } <= tables
     with engine.connect() as connection:
-        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "015"
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "016"
 
 
 def test_alembic_upgrade_creates_bamboo_process_core_tables(tmp_path: Path) -> None:
@@ -73,7 +73,33 @@ def test_alembic_upgrade_creates_bamboo_process_core_tables(tmp_path: Path) -> N
         "bamboo_signatures",
     } <= tables
     with engine.connect() as connection:
-        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "015"
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "016"
+
+
+def test_alembic_upgrade_creates_complete_bamboo_operations_tables(tmp_path: Path) -> None:
+    database_path = tmp_path / "bamboo-operations.db"
+
+    upgrade_database(database_path)
+
+    engine = create_engine(f"sqlite:///{database_path}")
+    tables = set(inspect(engine).get_table_names())
+    assert {
+        "bamboo_payroll_rule_versions",
+        "bamboo_payroll_facts",
+        "bamboo_inspections",
+        "bamboo_evidence_assets",
+        "bamboo_inspection_exceptions",
+        "bamboo_returns",
+        "bamboo_plant_audits",
+        "bamboo_role_change_requests",
+        "bamboo_daily_export_batches",
+        "bamboo_daily_export_items",
+        "bamboo_finance_inquiries",
+        "bamboo_finance_inquiry_messages",
+        "bamboo_correction_cases",
+    } <= tables
+    with engine.connect() as connection:
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "016"
 
 
 def test_alembic_upgrade_creates_report_definition_versions(tmp_path: Path) -> None:
@@ -94,7 +120,7 @@ def test_alembic_upgrade_creates_report_definition_versions(tmp_path: Path) -> N
         "configuration",
     }
     with engine.connect() as connection:
-        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "015"
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "016"
 
 
 def test_alembic_upgrade_creates_template_version_tables(tmp_path: Path) -> None:
@@ -154,10 +180,8 @@ def test_alembic_upgrade_creates_job_profile_versions_without_changing_templates
     assert ("profile_key", "version") in unique_columns
     assert SqlAlchemyTemplateRepository(upgraded).get_version("TPL-KEEP") is not None
     with upgraded.connect() as connection:
-        revision = connection.execute(
-            text("SELECT version_num FROM alembic_version")
-        ).scalar_one()
-        assert revision == "015"
+        revision = connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
+        assert revision == "016"
     upgraded.dispose()
 
 
@@ -232,9 +256,7 @@ def test_upgrade_007_preserves_legacy_template_and_adds_layout_storage(
     upgrade_database(database_path)
 
     upgraded = create_engine(f"sqlite:///{database_path}")
-    columns = {
-        column["name"] for column in inspect(upgraded).get_columns("template_versions")
-    }
+    columns = {column["name"] for column in inspect(upgraded).get_columns("template_versions")}
     assert {"static_elements", "print_imposition"} <= columns
     loaded = SqlAlchemyTemplateRepository(upgraded).get_version("TPL-LEGACY")
     assert loaded is not None
@@ -243,10 +265,8 @@ def test_upgrade_007_preserves_legacy_template_and_adds_layout_storage(
     assert loaded.fields[0].paper_entry_mode.value == "HANDWRITTEN_TEXT"
     assert loaded.fields[0].recognition_mode.value == "NONE"
     with upgraded.connect() as connection:
-        revision = connection.execute(
-            text("SELECT version_num FROM alembic_version")
-        ).scalar_one()
-        assert revision == "015"
+        revision = connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
+        assert revision == "016"
     upgraded.dispose()
 
 
@@ -268,9 +288,7 @@ def test_alembic_upgrade_creates_master_data_and_audit_tables(tmp_path: Path) ->
 
     engine = create_engine(f"sqlite:///{database_path}")
     inspector = inspect(engine)
-    assert {"master_data_records", "master_data_audits"} <= set(
-        inspector.get_table_names()
-    )
+    assert {"master_data_records", "master_data_audits"} <= set(inspector.get_table_names())
     record_indexes = {item["name"] for item in inspector.get_indexes("master_data_records")}
     assert "ix_master_data_records_catalog_active_name" in record_indexes
 
@@ -368,9 +386,7 @@ def test_interrupted_empty_alembic_ledger_recovers_as_legacy_schema(
                 "'NOT_EXPORTED', 0, CURRENT_TIMESTAMP)"
             )
         )
-        connection.execute(
-            text("CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL)")
-        )
+        connection.execute(text("CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL)"))
     engine.dispose()
 
     services = build_services(Settings(data_root=tmp_path))
@@ -461,10 +477,8 @@ def test_upgrade_006_export_batch_preserves_data_and_adds_snapshot_columns(
     assert len(batch.mapping_hash) == 64
     assert batch.download_name == "export.xlsx"
     with upgraded.connect() as connection:
-        revision = connection.execute(
-            text("SELECT version_num FROM alembic_version")
-        ).scalar_one()
-        assert revision == "015"
+        revision = connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
+        assert revision == "016"
     upgraded.dispose()
 
     _downgrade_to_revision(database_path, "006")
@@ -473,17 +487,23 @@ def test_upgrade_006_export_batch_preserves_data_and_adds_snapshot_columns(
     downgraded_columns = {
         item["name"] for item in inspect(downgraded).get_columns("export_batches")
     }
-    assert not {
-        "task_id",
-        "template_snapshot",
-        "mapping_snapshot",
-        "mapping_hash",
-        "download_name",
-    } & downgraded_columns
+    assert (
+        not {
+            "task_id",
+            "template_snapshot",
+            "mapping_snapshot",
+            "mapping_hash",
+            "download_name",
+        }
+        & downgraded_columns
+    )
     with downgraded.connect() as connection:
-        assert connection.execute(
-            text("SELECT file_path FROM export_batches WHERE export_batch_id = 'EXPORT-LEGACY'")
-        ).scalar_one() == "internal/legacy.xlsx"
+        assert (
+            connection.execute(
+                text("SELECT file_path FROM export_batches WHERE export_batch_id = 'EXPORT-LEGACY'")
+            ).scalar_one()
+            == "internal/legacy.xlsx"
+        )
 
 
 def test_auto_created_legacy_export_batches_gain_snapshot_columns_without_data_loss(
@@ -538,10 +558,7 @@ def test_auto_created_legacy_export_batches_gain_snapshot_columns_without_data_l
         "mapping_snapshot",
         "mapping_hash",
         "download_name",
-    } <= {
-        item["name"]
-        for item in inspect(services.engine).get_columns("export_batches")
-    }
+    } <= {item["name"] for item in inspect(services.engine).get_columns("export_batches")}
 
 
 def test_partial_export_batch_schema_backfills_actual_mapping_hash_idempotently(
@@ -605,10 +622,7 @@ def test_partial_export_batch_schema_backfills_actual_mapping_hash_idempotently(
     assert batch.mapping_hash == expected_hash
     with services.engine.connect() as connection:
         persisted_hash = connection.execute(
-            text(
-                "SELECT mapping_hash FROM export_batches "
-                "WHERE export_batch_id = 'EXPORT-PARTIAL'"
-            )
+            text("SELECT mapping_hash FROM export_batches WHERE export_batch_id = 'EXPORT-PARTIAL'")
         ).scalar_one()
     assert persisted_hash == expected_hash
     services.engine.dispose()
@@ -672,8 +686,7 @@ def test_partial_schema_replaces_empty_hash_placeholder_only_when_snapshot_nonem
                 "sha256_one": "3" * 64,
                 "sha256_two": "4" * 64,
                 "mapping_snapshot": (
-                    '[{"field_key":"employee_id",'
-                    '"target":{"worksheet":"employees"}}]'
+                    '[{"field_key":"employee_id","target":{"worksheet":"employees"}}]'
                 ),
                 "empty_hash": empty_hash,
             },
@@ -685,8 +698,7 @@ def test_partial_schema_replaces_empty_hash_placeholder_only_when_snapshot_nonem
     with services.engine.connect() as connection:
         rows = connection.execute(
             text(
-                "SELECT export_batch_id, mapping_hash FROM export_batches "
-                "ORDER BY export_batch_id"
+                "SELECT export_batch_id, mapping_hash FROM export_batches ORDER BY export_batch_id"
             )
         ).all()
         hashes = {batch_id: mapping_hash for batch_id, mapping_hash in rows}

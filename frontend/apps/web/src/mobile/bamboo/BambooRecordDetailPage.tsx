@@ -10,6 +10,7 @@ import {
 
 import { useMobileSession } from "../session/MobileSessionProvider";
 import { BambooStageForm } from "./BambooStageForm";
+import { BambooOperationsPanel } from "./BambooOperationsPanel";
 
 const FLOW: Array<{ stage: BambooStage; label: string }> = [
   { stage: "SORT", label: "分选" },
@@ -103,6 +104,12 @@ export function BambooRecordDetailPage({ recordId }: { recordId: string }) {
           </dl>
         </section>
       ))}
+
+      <BambooOperationsPanel
+        record={record}
+        role={session?.bamboo_role ?? ""}
+        onRefresh={load}
+      />
 
       {canSign && record.current_stage && (
         <BambooStageForm

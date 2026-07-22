@@ -138,11 +138,11 @@ function stageTitle(stage: BambooStage): string {
 function stageFields(stage: BambooStage): Array<{ key: string; label: string; kind: "text" | "number" | "datetime-local" | "textarea" }> {
   switch (stage) {
     case "SORT":
-      return [{ key: "sort_quantity", label: "分选数量", kind: "number" }, { key: "note", label: "分选备注", kind: "textarea" }];
+      return [{ key: "sort_quantity", label: "分选数量", kind: "number" }, { key: "wage_amount", label: "分选工资（签字后锁定）", kind: "number" }, { key: "note", label: "分选备注", kind: "textarea" }];
     case "DIPPING":
-      return [{ key: "glue_batch", label: "胶液批次", kind: "text" }, { key: "started_at", label: "浸胶开始时间", kind: "datetime-local" }, { key: "ended_at", label: "浸胶结束时间", kind: "datetime-local" }, { key: "note", label: "浸胶备注", kind: "textarea" }];
+      return [{ key: "glue_batch", label: "胶液批次", kind: "text" }, { key: "glue_gain", label: "浸胶计件量", kind: "number" }, { key: "wage_amount", label: "浸胶工资分配", kind: "number" }, { key: "started_at", label: "浸胶开始时间", kind: "datetime-local" }, { key: "ended_at", label: "浸胶结束时间", kind: "datetime-local" }, { key: "note", label: "浸胶备注", kind: "textarea" }];
     case "DRYING":
-      return [{ key: "rack_no", label: "干燥架号", kind: "text" }, { key: "started_at", label: "干燥开始时间", kind: "datetime-local" }, { key: "ended_at", label: "干燥结束时间", kind: "datetime-local" }, { key: "note", label: "干燥备注", kind: "textarea" }];
+      return [{ key: "rack_no", label: "干燥架号", kind: "text" }, { key: "rack_count", label: "干燥计件量", kind: "number" }, { key: "wage_amount", label: "干燥工资分配（与浸胶联合生效）", kind: "number" }, { key: "started_at", label: "干燥开始时间", kind: "datetime-local" }, { key: "ended_at", label: "干燥结束时间", kind: "datetime-local" }, { key: "note", label: "干燥备注", kind: "textarea" }];
     case "SUPERVISOR":
       return [{ key: "conclusion", label: "主管审核结论", kind: "text" }, { key: "note", label: "审核说明", kind: "textarea" }];
     case "PLANT_AUDIT":

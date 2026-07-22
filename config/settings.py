@@ -29,6 +29,7 @@ class Settings(BaseSettings):
     task_max_workers: int = 2
     task_queue_capacity: int = 32
     review_lease_seconds: int = 300
+    bamboo_plant_audit_wait_hours: float = Field(default=12.0, ge=0, le=168)
     api_host: str = "127.0.0.1"
     api_port: int = 8000
     app_auth_mode: Literal["local_full_access", "authenticated"] = Field(

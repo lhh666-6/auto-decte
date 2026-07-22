@@ -1,8 +1,13 @@
 """Authenticated, factory-scoped bamboo workflow routes."""
 
-from typing import cast
+from decimal import Decimal
+from io import BytesIO
+from typing import Annotated, cast
+from urllib.parse import quote
 
-from fastapi import APIRouter, Header, HTTPException, Request, status
+from fastapi import APIRouter, File, Form, Header, HTTPException, Request, UploadFile, status
+from fastapi.responses import StreamingResponse
+from openpyxl import Workbook
 
 from app.api.routers.mobile_auth_ds import require_csrf, require_mobile_actor
 from app.api.schemas.bamboo_process_ds import (
@@ -10,9 +15,21 @@ from app.api.schemas.bamboo_process_ds import (
     BambooRecordResponse,
     BambooSubmissionResponse,
     BambooTaskListResponse,
+    CloseInspectionExceptionRequest,
     CreateBambooRecordRequest,
+    CreateFactoryRequest,
+    CreateInspectionRequest,
+    EmployeeRoleAssignmentRequest,
+    FinanceDecisionRequest,
+    FinanceInquiryReplyRequest,
+    FinanceInquiryRequest,
+    PayrollRuleRequest,
+    RoleChangeDecisionRequest,
+    RoleChangeRequest,
+    SelectiveReturnRequest,
     SubmitBambooStageRequest,
 )
+from app.application.bamboo_operations_ds import BambooOperationError
 from app.application.mobile_identity_ds import MobileActor
 from app.modules.bamboo_process.errors_ds import (
     BambooPermissionDenied,
@@ -127,6 +144,367 @@ def create_record(
             detail={"code": "BAMBOO_ROLE_REQUIRED", "detail": str(error)},
         ) from error
     return _response(record)
+
+
+def _operation_error(error: BambooOperationError) -> HTTPException:
+    return HTTPException(
+        status_code=409,
+        detail={"code": error.code, "detail": str(error)},
+    )
+
+
+@router.get("/payroll-rules")
+def list_payroll_rules(request: Request) -> list[dict[str, object]]:
+    actor = _bamboo_actor(request)
+    try:
+        return _services(request).bamboo_operations.list_payroll_rules(actor)
+    except BambooOperationError as error:
+        raise _operation_error(error) from error
+
+
+@router.post("/payroll-rules", status_code=status.HTTP_201_CREATED)
+def create_payroll_rule(
+    body: PayrollRuleRequest,
+    request: Request,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token"),
+) -> dict[str, object]:
+    actor = _bamboo_actor(request)
+    _require_write_headers(request, idempotency_key, x_csrf_token)
+    try:
+        return _services(request).bamboo_operations.create_payroll_rule(
+            actor=actor,
+            rule_key=body.rule_key,
+            configuration=body.configuration,
+            system_default=body.system_default,
+        )
+    except BambooOperationError as error:
+        raise _operation_error(error) from error
+
+
+@router.post("/admin/assignments", status_code=status.HTTP_201_CREATED)
+def assign_employee_role(
+    body: EmployeeRoleAssignmentRequest,
+    request: Request,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token"),
+) -> dict[str, object]:
+    actor = _bamboo_actor(request)
+    _require_write_headers(request, idempotency_key, x_csrf_token)
+    try:
+        return _services(request).bamboo_operations.assign_employee_role(
+            actor=actor,
+            employee_code=body.employee_code,
+            role_code=body.role_code,
+            factory_id=body.factory_id,
+        )
+    except BambooOperationError as error:
+        raise _operation_error(error) from error
+
+
+@router.post("/admin/factories", status_code=status.HTTP_201_CREATED)
+def create_factory(
+    body: CreateFactoryRequest,
+    request: Request,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token"),
+) -> dict[str, object]:
+    actor = _bamboo_actor(request)
+    _require_write_headers(request, idempotency_key, x_csrf_token)
+    try:
+        return _services(request).bamboo_operations.create_factory(
+            actor=actor, code=body.code, name=body.name
+        )
+    except BambooOperationError as error:
+        raise _operation_error(error) from error
+
+
+@router.get("/records/{record_id}/operations")
+def record_operations(record_id: str, request: Request) -> dict[str, object]:
+    actor = _bamboo_actor(request)
+    try:
+        return _services(request).bamboo_operations.record_summary(record_id, actor)
+    except BambooOperationError as error:
+        raise _operation_error(error) from error
+
+
+@router.post("/records/{record_id}/inspections", status_code=status.HTTP_201_CREATED)
+def create_inspection(
+    record_id: str,
+    body: CreateInspectionRequest,
+    request: Request,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token"),
+) -> dict[str, object]:
+    actor = _bamboo_actor(request)
+    key = _require_write_headers(request, idempotency_key, x_csrf_token)
+    try:
+        target_stage = BambooStage(body.target_stage)
+    except ValueError as error:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "INVALID_INSPECTION_STAGE", "detail": "无效的检测流程"},
+        ) from error
+    try:
+        return _services(request).bamboo_operations.create_inspection(
+            record_id,
+            actor=actor,
+            serial_no=body.serial_no,
+            target_stage=target_stage,
+            moisture_points=[Decimal(str(value)) for value in body.moisture_points],
+            conclusion=body.conclusion,
+            note=body.note,
+            text_evidence=body.text_evidence,
+            device_id=body.device_id,
+            request_id=str(getattr(request.state, "request_id", "unknown")),
+            idempotency_key=key,
+        )
+    except BambooOperationError as error:
+        raise _operation_error(error) from error
+
+
+@router.post("/inspections/{inspection_id}/evidence", status_code=status.HTTP_201_CREATED)
+async def upload_inspection_evidence(
+    inspection_id: str,
+    request: Request,
+    evidence_type: Annotated[str, Form()],
+    file: Annotated[UploadFile, File()],
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token"),
+) -> dict[str, object]:
+    actor = _bamboo_actor(request)
+    _require_write_headers(request, idempotency_key, x_csrf_token)
+    content = await file.read()
+    try:
+        return _services(request).bamboo_operations.add_file_evidence(
+            inspection_id,
+            actor=actor,
+            evidence_type=evidence_type,
+            content=content,
+            filename=file.filename or "evidence.bin",
+            mime_type=file.content_type or "application/octet-stream",
+        )
+    except BambooOperationError as error:
+        raise _operation_error(error) from error
+
+
+@router.post("/inspection-exceptions/{exception_id}/close")
+def close_inspection_exception(
+    exception_id: str,
+    body: CloseInspectionExceptionRequest,
+    request: Request,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token"),
+) -> dict[str, object]:
+    actor = _bamboo_actor(request)
+    _require_write_headers(request, idempotency_key, x_csrf_token)
+    try:
+        return _services(request).bamboo_operations.close_exception(
+            exception_id, actor=actor, resolution=body.resolution
+        )
+    except BambooOperationError as error:
+        raise _operation_error(error) from error
+
+
+@router.post("/records/{record_id}/return")
+def selective_return(
+    record_id: str,
+    body: SelectiveReturnRequest,
+    request: Request,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token"),
+) -> dict[str, object]:
+    actor = _bamboo_actor(request)
+    _require_write_headers(request, idempotency_key, x_csrf_token)
+    try:
+        stages = [BambooStage(value) for value in body.target_stages]
+        return _services(request).bamboo_operations.selective_return(
+            record_id,
+            actor=actor,
+            target_stages=stages,
+            reason=body.reason,
+            source=body.source,
+        )
+    except ValueError as error:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "INVALID_RETURN_STAGES", "detail": "无效的回退流程"},
+        ) from error
+    except BambooOperationError as error:
+        raise _operation_error(error) from error
+
+
+@router.post("/role-change-requests", status_code=status.HTTP_201_CREATED)
+def request_role_change(
+    body: RoleChangeRequest,
+    request: Request,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token"),
+) -> dict[str, object]:
+    actor = _bamboo_actor(request)
+    _require_write_headers(request, idempotency_key, x_csrf_token)
+    try:
+        return _services(request).bamboo_operations.request_role_change(
+            actor=actor, to_role=body.to_role, reason=body.reason
+        )
+    except BambooOperationError as error:
+        raise _operation_error(error) from error
+
+
+@router.get("/role-change-requests")
+def list_role_changes(request: Request) -> list[dict[str, object]]:
+    actor = _bamboo_actor(request)
+    try:
+        return _services(request).bamboo_operations.list_role_changes(actor)
+    except BambooOperationError as error:
+        raise _operation_error(error) from error
+
+
+@router.post("/role-change-requests/{role_request_id}/decision")
+def decide_role_change(
+    role_request_id: str,
+    body: RoleChangeDecisionRequest,
+    request: Request,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token"),
+) -> dict[str, object]:
+    actor = _bamboo_actor(request)
+    _require_write_headers(request, idempotency_key, x_csrf_token)
+    try:
+        return _services(request).bamboo_operations.decide_role_change(
+            role_request_id, actor=actor, approve=body.approve, note=body.note
+        )
+    except BambooOperationError as error:
+        raise _operation_error(error) from error
+
+
+@router.get("/finance/daily-batches")
+def list_daily_batches(request: Request) -> list[dict[str, object]]:
+    actor = _bamboo_actor(request)
+    try:
+        return _services(request).bamboo_operations.list_daily_batches(actor)
+    except BambooOperationError as error:
+        raise _operation_error(error) from error
+
+
+@router.post("/finance/items/{item_id}/decision")
+def decide_finance_item(
+    item_id: str,
+    body: FinanceDecisionRequest,
+    request: Request,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token"),
+) -> dict[str, object]:
+    actor = _bamboo_actor(request)
+    _require_write_headers(request, idempotency_key, x_csrf_token)
+    try:
+        return _services(request).bamboo_operations.decide_daily_item(
+            item_id, actor=actor, decision=body.decision, note=body.note
+        )
+    except BambooOperationError as error:
+        raise _operation_error(error) from error
+
+
+@router.post("/finance/items/{item_id}/inquiries", status_code=status.HTTP_201_CREATED)
+def create_finance_inquiry(
+    item_id: str,
+    body: FinanceInquiryRequest,
+    request: Request,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token"),
+) -> dict[str, object]:
+    actor = _bamboo_actor(request)
+    _require_write_headers(request, idempotency_key, x_csrf_token)
+    try:
+        return _services(request).bamboo_operations.create_inquiry(
+            item_id, actor=actor, subject=body.subject, body=body.body
+        )
+    except BambooOperationError as error:
+        raise _operation_error(error) from error
+
+
+@router.post("/finance/inquiries/{inquiry_id}/reply")
+def reply_finance_inquiry(
+    inquiry_id: str,
+    body: FinanceInquiryReplyRequest,
+    request: Request,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token"),
+) -> dict[str, object]:
+    actor = _bamboo_actor(request)
+    _require_write_headers(request, idempotency_key, x_csrf_token)
+    try:
+        return _services(request).bamboo_operations.reply_inquiry(
+            inquiry_id, actor=actor, body=body.body, close=body.close
+        )
+    except BambooOperationError as error:
+        raise _operation_error(error) from error
+
+
+@router.get("/finance/inquiries")
+def list_finance_inquiries(request: Request) -> list[dict[str, object]]:
+    actor = _bamboo_actor(request)
+    try:
+        return _services(request).bamboo_operations.list_inquiries(actor)
+    except BambooOperationError as error:
+        raise _operation_error(error) from error
+
+
+@router.get("/finance/monthly-summary")
+def finance_monthly_summary(month: str, request: Request) -> dict[str, object]:
+    actor = _bamboo_actor(request)
+    try:
+        return _services(request).bamboo_operations.monthly_summary(actor, month)
+    except BambooOperationError as error:
+        raise _operation_error(error) from error
+
+
+@router.get("/finance/export.xlsx")
+def export_finance_xlsx(
+    request: Request,
+    month: str | None = None,
+) -> StreamingResponse:
+    actor = _bamboo_actor(request)
+    try:
+        if month:
+            summary = _services(request).bamboo_operations.monthly_summary(actor, month)
+            rows = [[item["employee_code"], item["amount"]] for item in summary["items"]]
+            title = f"竹丝工资月汇总-{month}"
+            headers = ["工号", "已审批工资"]
+        else:
+            batches = _services(request).bamboo_operations.list_daily_batches(actor)
+            rows = [
+                [
+                    batch["business_date"],
+                    item["employee_code"],
+                    item["amount"],
+                    item["status"],
+                    item["record_id"],
+                ]
+                for batch in batches
+                for item in batch["items"]
+            ]
+            title = "竹丝工资单日审计明细"
+            headers = ["日期", "工号", "金额", "财务状态", "原始表单ID"]
+    except BambooOperationError as error:
+        raise _operation_error(error) from error
+    workbook = Workbook()
+    sheet = workbook.active
+    if sheet is None:  # pragma: no cover - a new workbook always has one sheet
+        raise RuntimeError("XLSX workbook did not create an active sheet")
+    sheet.title = "工资审计"
+    sheet.append(headers)
+    for row in rows:
+        sheet.append(row)
+    stream = BytesIO()
+    workbook.save(stream)
+    stream.seek(0)
+    filename = f"{title}.xlsx"
+    return StreamingResponse(
+        stream,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"},
+    )
 
 
 @router.get("/records/{record_id}", response_model=BambooRecordResponse)

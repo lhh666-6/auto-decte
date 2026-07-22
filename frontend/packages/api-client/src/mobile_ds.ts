@@ -89,6 +89,73 @@ export interface SubmitBambooStageInput {
   values: Record<string, unknown>;
 }
 
+export interface BambooEvidence {
+  asset_id: string;
+  evidence_type: "PHOTO" | "AUDIO" | "TEXT";
+  uri: string | null;
+  text_content: string | null;
+}
+
+export interface BambooInspection {
+  inspection_id: string;
+  serial_no: string;
+  target_stage: BambooStage;
+  moisture_points: string[];
+  average_value: string;
+  conclusion: string;
+  note: string | null;
+  actor_name: string;
+  evidence: BambooEvidence[];
+  exception: null | {
+    exception_id: string;
+    status: "OPEN" | "CLOSED";
+    resolution: string | null;
+  };
+}
+
+export interface BambooPayrollFact {
+  fact_id: string;
+  fact_type: "SORT" | "DIPPING_DRYING_JOINT";
+  version: number;
+  status: "PENDING_EFFECTIVE" | "EFFECTIVE" | "INVALIDATED";
+  rule_version_id: string;
+  allocations: Array<{ employee_code: string; role: string; amount: string }>;
+  total_amount: string;
+}
+
+export interface BambooOperationsSummary {
+  payroll_facts: BambooPayrollFact[];
+  inspections: BambooInspection[];
+  corrections: Array<{ case_id: string; status: string; reason: string }>;
+}
+
+export interface BambooFinanceItem {
+  item_id: string;
+  record_id: string;
+  employee_code: string;
+  amount: string;
+  status: string;
+  revision: number;
+}
+
+export interface BambooDailyBatch {
+  batch_id: string;
+  business_date: string;
+  version: number;
+  status: string;
+  supplemental: boolean;
+  items: BambooFinanceItem[];
+}
+
+export interface BambooRoleChange {
+  request_id: string;
+  employee_code: string;
+  from_role: string;
+  to_role: string;
+  reason: string;
+  status: string;
+}
+
 export interface MobileAvailableForm {
   form_type: string;
   title: string;
@@ -370,6 +437,126 @@ export class MobileApiClient {
         body: JSON.stringify(input),
       },
     );
+  }
+
+  getBambooOperations(recordId: string): Promise<BambooOperationsSummary> {
+    return this.request(`/bamboo/records/${encodeURIComponent(recordId)}/operations`);
+  }
+
+  createBambooInspection(
+    recordId: string,
+    input: Record<string, unknown>,
+    idempotencyKey: string,
+  ): Promise<BambooInspection> {
+    return this.request(`/bamboo/records/${encodeURIComponent(recordId)}/inspections`, {
+      method: "POST",
+      headers: { "Idempotency-Key": idempotencyKey },
+      body: JSON.stringify(input),
+    });
+  }
+
+  uploadBambooEvidence(
+    inspectionId: string,
+    evidenceType: "PHOTO" | "AUDIO",
+    file: File,
+    idempotencyKey: string,
+  ): Promise<BambooEvidence> {
+    const body = new FormData();
+    body.set("evidence_type", evidenceType);
+    body.set("file", file);
+    return this.request(`/bamboo/inspections/${encodeURIComponent(inspectionId)}/evidence`, {
+      method: "POST",
+      headers: { "Idempotency-Key": idempotencyKey },
+      body,
+    });
+  }
+
+  closeBambooException(exceptionId: string, resolution: string): Promise<Record<string, unknown>> {
+    return this.request(`/bamboo/inspection-exceptions/${encodeURIComponent(exceptionId)}/close`, {
+      method: "POST",
+      headers: { "Idempotency-Key": crypto.randomUUID() },
+      body: JSON.stringify({ resolution }),
+    });
+  }
+
+  returnBambooRecord(
+    recordId: string,
+    targetStages: BambooStage[],
+    reason: string,
+  ): Promise<Record<string, unknown>> {
+    return this.request(`/bamboo/records/${encodeURIComponent(recordId)}/return`, {
+      method: "POST",
+      headers: { "Idempotency-Key": crypto.randomUUID() },
+      body: JSON.stringify({ target_stages: targetStages, reason, source: "SUPERVISOR" }),
+    });
+  }
+
+  requestBambooRoleChange(toRole: string, reason: string): Promise<BambooRoleChange> {
+    return this.request("/bamboo/role-change-requests", {
+      method: "POST",
+      headers: { "Idempotency-Key": crypto.randomUUID() },
+      body: JSON.stringify({ to_role: toRole, reason }),
+    });
+  }
+
+  listBambooRoleChanges(): Promise<BambooRoleChange[]> {
+    return this.request("/bamboo/role-change-requests");
+  }
+
+  decideBambooRoleChange(requestId: string, approve: boolean, note: string): Promise<BambooRoleChange> {
+    return this.request(`/bamboo/role-change-requests/${encodeURIComponent(requestId)}/decision`, {
+      method: "POST",
+      headers: { "Idempotency-Key": crypto.randomUUID() },
+      body: JSON.stringify({ approve, note }),
+    });
+  }
+
+  listBambooDailyBatches(): Promise<BambooDailyBatch[]> {
+    return this.request("/bamboo/finance/daily-batches");
+  }
+
+  decideBambooFinanceItem(itemId: string, decision: string, note: string): Promise<BambooFinanceItem> {
+    return this.request(`/bamboo/finance/items/${encodeURIComponent(itemId)}/decision`, {
+      method: "POST",
+      headers: { "Idempotency-Key": crypto.randomUUID() },
+      body: JSON.stringify({ decision, note }),
+    });
+  }
+
+  createBambooFinanceInquiry(itemId: string, subject: string, body: string): Promise<Record<string, unknown>> {
+    return this.request(`/bamboo/finance/items/${encodeURIComponent(itemId)}/inquiries`, {
+      method: "POST",
+      headers: { "Idempotency-Key": crypto.randomUUID() },
+      body: JSON.stringify({ subject, body }),
+    });
+  }
+
+  listBambooFinanceInquiries(): Promise<Array<Record<string, unknown>>> {
+    return this.request("/bamboo/finance/inquiries");
+  }
+
+  replyBambooFinanceInquiry(inquiryId: string, body: string, close = false): Promise<Record<string, unknown>> {
+    return this.request(`/bamboo/finance/inquiries/${encodeURIComponent(inquiryId)}/reply`, {
+      method: "POST",
+      headers: { "Idempotency-Key": crypto.randomUUID() },
+      body: JSON.stringify({ body, close }),
+    });
+  }
+
+  createBambooPayrollRule(ruleKey: string, configuration: Record<string, unknown>): Promise<Record<string, unknown>> {
+    return this.request("/bamboo/payroll-rules", {
+      method: "POST",
+      headers: { "Idempotency-Key": crypto.randomUUID() },
+      body: JSON.stringify({ rule_key: ruleKey, configuration, system_default: false }),
+    });
+  }
+
+  assignBambooEmployeeRole(employeeCode: string, roleCode: string): Promise<Record<string, unknown>> {
+    return this.request("/bamboo/admin/assignments", {
+      method: "POST",
+      headers: { "Idempotency-Key": crypto.randomUUID() },
+      body: JSON.stringify({ employee_code: employeeCode, role_code: roleCode }),
+    });
   }
 }
 
