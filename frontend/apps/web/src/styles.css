@@ -1010,6 +1010,22 @@ button { cursor: pointer; }
   padding: 14px;
   font-size: 16px;
 }
+.mobile-v3-shell {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 520px;
+  min-height: 100dvh;
+  margin: 0 auto;
+  padding-top: env(safe-area-inset-top);
+}
+.mobile-v3-shell .mobile-bottom-nav {
+  grid-template-columns: repeat(4, 1fr);
+}
+.mobile-v3-shell .mobile-nav-icon svg {
+  display: block;
+  width: 22px;
+  height: 22px;
+}
 
 /* Bamboo workflow V3 */
 .bamboo-work-page,
