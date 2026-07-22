@@ -8,6 +8,8 @@
 
 **Tech Stack:** Python 3.11, FastAPI, Pydantic v2, SQLAlchemy 2, Alembic, pytest, React 18, TypeScript, React Router, Vitest.
 
+**Completed:** 2026-07-22. Fresh verification: backend 468 tests passed; Ruff and Mypy passed; frontend 47 test files / 239 tests passed; API client and PWA production builds passed; a temporary SQLite database upgraded through Alembic revision `015` with all bamboo core tables present.
+
 ---
 
 ## File map
@@ -60,7 +62,7 @@ Modified frontend files:
 - Create: `app/modules/bamboo_process/state_machine_ds.py`
 - Test: `tests/modules/test_bamboo_process_state_machine_ds.py`
 
-- [ ] **Step 1: Write failing stage-order and visibility tests**
+- [x] **Step 1: Write failing stage-order and visibility tests**
 
 ```python
 from app.modules.bamboo_process.models_ds import BambooRole, BambooStage, StageSubmission
@@ -88,12 +90,12 @@ def test_record_is_hidden_until_role_stage_is_open() -> None:
     assert not visible_to_role(submissions, BambooRole.SUPERVISOR)
 ```
 
-- [ ] **Step 2: Run the test and verify missing module failure**
+- [x] **Step 2: Run the test and verify missing module failure**
 
 Run: `.venv\Scripts\python.exe -m pytest tests/modules/test_bamboo_process_state_machine_ds.py -q`  
 Expected: FAIL with `ModuleNotFoundError: app.modules.bamboo_process`.
 
-- [ ] **Step 3: Implement stable enums, immutable submission and pure state machine**
+- [x] **Step 3: Implement stable enums, immutable submission and pure state machine**
 
 ```python
 class BambooStage(StrEnum):
@@ -126,12 +128,12 @@ STAGE_ROLE = {
 
 `next_stage()` must ignore invalidated submissions, return the first unsigned stage, and return `None` after plant audit. `visible_to_role()` must admit inspectors and supervisors only after drying, plant managers only after supervisor, finance only after plant audit, and system administrators for read-only audit.
 
-- [ ] **Step 4: Run domain tests**
+- [x] **Step 4: Run domain tests**
 
 Run: `.venv\Scripts\python.exe -m pytest tests/modules/test_bamboo_process_state_machine_ds.py -q`  
 Expected: all tests PASS.
 
-- [ ] **Step 5: Commit domain state machine**
+- [x] **Step 5: Commit domain state machine**
 
 ```powershell
 git add app/modules/bamboo_process tests/modules/test_bamboo_process_state_machine_ds.py
@@ -146,7 +148,7 @@ git commit -m "feat(bamboo): add core stage state machine"
 - Modify: `app/infrastructure/database/migrations.py`
 - Modify: `tests/integration/test_migrations_backup_integrity_ds.py`
 
-- [ ] **Step 1: Add a failing migration test**
+- [x] **Step 1: Add a failing migration test**
 
 ```python
 def test_alembic_upgrade_creates_bamboo_process_core_tables(tmp_path: Path) -> None:
@@ -166,12 +168,12 @@ def test_alembic_upgrade_creates_bamboo_process_core_tables(tmp_path: Path) -> N
         assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "015"
 ```
 
-- [ ] **Step 2: Run the migration test and verify failure**
+- [x] **Step 2: Run the migration test and verify failure**
 
 Run: `.venv\Scripts\python.exe -m pytest tests/integration/test_migrations_backup_integrity_ds.py::test_alembic_upgrade_creates_bamboo_process_core_tables -q`  
 Expected: FAIL because required tables do not exist and head is `014`.
 
-- [ ] **Step 3: Create migration 015 and matching ORM rows**
+- [x] **Step 3: Create migration 015 and matching ORM rows**
 
 The migration must create the six tables from the test. `bamboo_records` includes `record_id`, `display_no`, `factory_id`, `source_type`, optional `source_ref`, `base_info` JSON, `current_stage`, `status`, `revision`, `created_by`, `created_at`, and `updated_at`. `bamboo_stage_submissions` has a unique `(record_id, stage_key, version)` constraint. `bamboo_signatures` stores actor/factory/role snapshots, `payload_hash`, service time, device ID, request ID and idempotency key.
 
@@ -181,12 +183,12 @@ Update:
 HEAD_REVISION = "015"
 ```
 
-- [ ] **Step 4: Run migration and metadata tests**
+- [x] **Step 4: Run migration and metadata tests**
 
 Run: `.venv\Scripts\python.exe -m pytest tests/integration/test_migrations_backup_integrity_ds.py -q`  
 Expected: all migration tests PASS and existing upgrade scenarios now end at `015`.
 
-- [ ] **Step 5: Commit schema**
+- [x] **Step 5: Commit schema**
 
 ```powershell
 git add alembic/versions/015_bamboo_process_core_ds.py app/adapters/database/models.py app/infrastructure/database/migrations.py tests/integration/test_migrations_backup_integrity_ds.py
@@ -203,7 +205,7 @@ git commit -m "feat(bamboo): persist factories roles and workflow records"
 - Modify: `tests/application/test_mobile_identity_ds.py`
 - Modify: `tests/api/test_mobile_auth_ds.py`
 
-- [ ] **Step 1: Add failing actor/session tests**
+- [x] **Step 1: Add failing actor/session tests**
 
 ```python
 assert actor.factory_id == "FACTORY-A"
@@ -215,12 +217,12 @@ assert session.json()["factory_id"] == "FACTORY-A"
 assert session.json()["bamboo_role"] == "SORT_OPERATOR"
 ```
 
-- [ ] **Step 2: Run identity tests and verify missing fields**
+- [x] **Step 2: Run identity tests and verify missing fields**
 
 Run: `.venv\Scripts\python.exe -m pytest tests/application/test_mobile_identity_ds.py tests/api/test_mobile_auth_ds.py -q`  
 Expected: FAIL because actor/profile/session do not expose bamboo assignment fields.
 
-- [ ] **Step 3: Extend profile and actor with one current assignment**
+- [x] **Step 3: Extend profile and actor with one current assignment**
 
 Add fields with safe empty defaults to preserve existing callers:
 
@@ -232,12 +234,12 @@ bamboo_role: str = ""
 
 `set_access_profile()` receives the same keyword fields and persists them in the assignment table, while existing generic `roles` and allowed-form lists remain compatible. Login/session responses expose the three fields.
 
-- [ ] **Step 4: Run identity tests**
+- [x] **Step 4: Run identity tests**
 
 Run: `.venv\Scripts\python.exe -m pytest tests/application/test_mobile_identity_ds.py tests/api/test_mobile_auth_ds.py -q`  
 Expected: PASS.
 
-- [ ] **Step 5: Commit factory-aware identity**
+- [x] **Step 5: Commit factory-aware identity**
 
 ```powershell
 git add app/application/mobile_identity_ds.py app/adapters/database/mobile_identity_repository_ds.py app/api/schemas/mobile_ds.py app/api/routers/mobile_auth_ds.py tests/application/test_mobile_identity_ds.py tests/api/test_mobile_auth_ds.py
@@ -253,7 +255,7 @@ git commit -m "feat(mobile): expose factory bamboo assignment"
 - Test: `tests/integration/test_bamboo_process_repository_ds.py`
 - Test: `tests/modules/test_bamboo_process_facade_ds.py`
 
-- [ ] **Step 1: Write failing persistence and service tests**
+- [x] **Step 1: Write failing persistence and service tests**
 
 ```python
 record = service.create_record(
@@ -278,12 +280,12 @@ assert repository.get(record.record_id).revision == 2
 
 Also assert duplicate idempotency keys return the original result, stale revisions raise `StaleBambooRevision`, wrong roles raise `BambooPermissionDenied`, and cross-factory access returns no visible record.
 
-- [ ] **Step 2: Run tests and verify missing service/repository**
+- [x] **Step 2: Run tests and verify missing service/repository**
 
 Run: `.venv\Scripts\python.exe -m pytest tests/modules/test_bamboo_process_facade_ds.py tests/integration/test_bamboo_process_repository_ds.py -q`  
 Expected: FAIL with missing imports.
 
-- [ ] **Step 3: Implement repository protocol, SQL adapter and facade**
+- [x] **Step 3: Implement repository protocol, SQL adapter and facade**
 
 The facade methods are:
 
@@ -296,12 +298,12 @@ def submit_stage(self, record_id: str, *, actor: BambooActor, stage: BambooStage
 
 The repository saves the stage submission, signature and aggregate revision in one SQLAlchemy transaction. The payload hash uses canonical `json.dumps(..., sort_keys=True, separators=(",", ":"), ensure_ascii=False)` and SHA-256.
 
-- [ ] **Step 4: Run service and repository tests**
+- [x] **Step 4: Run service and repository tests**
 
 Run: `.venv\Scripts\python.exe -m pytest tests/modules/test_bamboo_process_facade_ds.py tests/integration/test_bamboo_process_repository_ds.py -q`  
 Expected: PASS.
 
-- [ ] **Step 5: Commit core persistence behavior**
+- [x] **Step 5: Commit core persistence behavior**
 
 ```powershell
 git add app/modules/bamboo_process app/adapters/database/bamboo_process_repository_ds.py tests/modules/test_bamboo_process_facade_ds.py tests/integration/test_bamboo_process_repository_ds.py
@@ -317,7 +319,7 @@ git commit -m "feat(bamboo): add persistent signed workflow service"
 - Modify: `app/services/container.py`
 - Test: `tests/api/test_mobile_bamboo_ds.py`
 
-- [ ] **Step 1: Write failing API tests**
+- [x] **Step 1: Write failing API tests**
 
 Cover:
 
@@ -343,12 +345,12 @@ assert dipping_client.get(f"/api/v1/mobile/bamboo/records/{record_id}").status_c
 
 Also cover CSRF, missing idempotency key, cross-factory access, wrong role, stale revision and dashboard bucket counts.
 
-- [ ] **Step 2: Run API tests and verify 404 route failure**
+- [x] **Step 2: Run API tests and verify 404 route failure**
 
 Run: `.venv\Scripts\python.exe -m pytest tests/api/test_mobile_bamboo_ds.py -q`  
 Expected: FAIL because `/api/v1/mobile/bamboo` routes do not exist.
 
-- [ ] **Step 3: Implement schemas, router and service wiring**
+- [x] **Step 3: Implement schemas, router and service wiring**
 
 Routes:
 
@@ -362,12 +364,12 @@ POST /api/v1/mobile/bamboo/records/{record_id}/stages/{stage_key}/submit
 
 Map domain errors to stable problem codes: `RECORD_NOT_VISIBLE`, `STAGE_NOT_AVAILABLE`, `BAMBOO_ROLE_REQUIRED`, and `STALE_REVISION`.
 
-- [ ] **Step 4: Run API tests and mobile regression tests**
+- [x] **Step 4: Run API tests and mobile regression tests**
 
 Run: `.venv\Scripts\python.exe -m pytest tests/api/test_mobile_bamboo_ds.py tests/api/test_mobile_auth_ds.py tests/api/test_mobile_submissions_ds.py -q`  
 Expected: PASS.
 
-- [ ] **Step 5: Commit mobile API**
+- [x] **Step 5: Commit mobile API**
 
 ```powershell
 git add app/api/schemas/bamboo_process_ds.py app/api/routers/mobile_bamboo_ds.py app/api/routers/mobile_ds.py app/services/container.py tests/api/test_mobile_bamboo_ds.py
@@ -380,7 +382,7 @@ git commit -m "feat(api): expose bamboo mobile workflow"
 - Modify: `frontend/packages/api-client/src/mobile_ds.ts`
 - Modify: `frontend/packages/api-client/src/mobile_ds.test.ts`
 
-- [ ] **Step 1: Add failing client request tests**
+- [x] **Step 1: Add failing client request tests**
 
 ```typescript
 await client.listBambooTasks("available");
@@ -400,21 +402,21 @@ expect(fetcher).toHaveBeenLastCalledWith(
 );
 ```
 
-- [ ] **Step 2: Run client tests and verify missing methods**
+- [x] **Step 2: Run client tests and verify missing methods**
 
 Run: `npm.cmd test -w packages/api-client` from `frontend`  
 Expected: FAIL with TypeScript errors for missing bamboo methods.
 
-- [ ] **Step 3: Add typed session, task, record and submission contracts**
+- [x] **Step 3: Add typed session, task, record and submission contracts**
 
 Add `factory_id`, `factory_name`, `bamboo_role` to `MobileSession` and implement `getBambooDashboard`, `listBambooTasks`, `createBambooRecord`, `getBambooRecord`, and `submitBambooStage`. All writes use existing CSRF handling and pass `Idempotency-Key`.
 
-- [ ] **Step 4: Run client tests**
+- [x] **Step 4: Run client tests**
 
 Run: `npm.cmd test -w packages/api-client` from `frontend`  
 Expected: PASS.
 
-- [ ] **Step 5: Commit client contract**
+- [x] **Step 5: Commit client contract**
 
 ```powershell
 git add frontend/packages/api-client/src/mobile_ds.ts frontend/packages/api-client/src/mobile_ds.test.ts
@@ -432,7 +434,7 @@ git commit -m "feat(api-client): add bamboo workflow contracts"
 - Modify: `frontend/apps/web/src/app/router.tsx`
 - Modify: `frontend/apps/web/src/styles.css`
 
-- [ ] **Step 1: Write failing UI tests**
+- [x] **Step 1: Write failing UI tests**
 
 Render the pages with mocked client responses and assert:
 
@@ -448,23 +450,23 @@ expect(screen.getAllByLabelText(/含水率检测点/)).toHaveLength(8);
 
 ```
 
-- [ ] **Step 2: Run UI tests and verify missing components**
+- [x] **Step 2: Run UI tests and verify missing components**
 
 Run: `npm.cmd test -w apps/web -- bamboo.test.tsx` from `frontend`  
 Expected: FAIL because bamboo pages do not exist.
 
-- [ ] **Step 3: Implement V3 task list, detail skeleton and stage forms**
+- [x] **Step 3: Implement V3 task list, detail skeleton and stage forms**
 
 Use the approved green V3 mobile style, four-tab shell, horizontal flow strip, 44px controls, 16px inputs and a confirmation summary. `MobileBambooProcessPage` becomes the `/mobile/record/bamboo-process` entry and renders/redirects to task list; detail actions appear only for the stage returned by the server.
 
-- [ ] **Step 4: Run UI and full frontend tests**
+- [x] **Step 4: Run UI and full frontend tests**
 
 Run: `npm.cmd test -w apps/web -- bamboo.test.tsx` from `frontend`  
 Expected: PASS.  
 Run: `npm.cmd test` from `frontend`  
 Expected: all frontend tests PASS.
 
-- [ ] **Step 5: Commit mobile UI**
+- [x] **Step 5: Commit mobile UI**
 
 ```powershell
 git add frontend/apps/web/src/mobile/bamboo frontend/apps/web/src/mobile/MobileBambooProcessPage.tsx frontend/apps/web/src/app/router.tsx frontend/apps/web/src/styles.css
@@ -477,7 +479,7 @@ git commit -m "feat(mobile): replace bamboo wizard with workflow tasks"
 - Modify: `docs/acceptance-report.md` only if it has no unrelated user changes in this worktree.
 - Modify: `docs/superpowers/plans/2026-07-22-bamboo-process-v3-phase-1-core.md`
 
-- [ ] **Step 1: Run backend focused suite**
+- [x] **Step 1: Run backend focused suite**
 
 Run:
 
@@ -487,7 +489,7 @@ Run:
 
 Expected: PASS.
 
-- [ ] **Step 2: Run backend full suite and static checks**
+- [x] **Step 2: Run backend full suite and static checks**
 
 Run:
 
@@ -499,7 +501,7 @@ Run:
 
 Expected: all commands exit 0.
 
-- [ ] **Step 3: Run frontend full suite and build**
+- [x] **Step 3: Run frontend full suite and build**
 
 Run:
 
@@ -511,11 +513,11 @@ npm.cmd run build -w apps/web
 
 Expected: all commands exit 0.
 
-- [ ] **Step 4: Run database upgrade smoke test**
+- [x] **Step 4: Run database upgrade smoke test**
 
 Create a temporary SQLite database, run `upgrade_database`, and assert Alembic revision `015`; never migrate `data/database/demo.db` during automated verification.
 
-- [ ] **Step 5: Mark completed plan checkboxes and commit verification notes**
+- [x] **Step 5: Mark completed plan checkboxes and commit verification notes**
 
 ```powershell
 git add docs/superpowers/plans/2026-07-22-bamboo-process-v3-phase-1-core.md
