@@ -8,6 +8,7 @@ import {
 } from "@form-detection/api-client";
 
 import { createMobileClientId, getMobileDeviceId } from "../device";
+import { useMobileSession } from "../session/MobileSessionProvider";
 
 export function BambooStageForm({
   record,
@@ -18,22 +19,49 @@ export function BambooStageForm({
   stage: BambooStage;
   onSigned(updated: BambooRecord): void;
 }) {
+  const { sessionMetadata: session } = useMobileSession();
   const [moisture, setMoisture] = useState(() => Array.from({ length: 8 }, () => ""));
   const [fields, setFields] = useState<Record<string, string>>({});
+  const [rackNumbers, setRackNumbers] = useState([""]);
   const [reviewing, setReviewing] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [idempotencyKey] = useState(() => createMobileClientId(`stage-${stage.toLowerCase()}`));
 
+  const moistureValues = useMemo(
+    () => moisture.filter((value) => value.trim() !== "").map(Number),
+    [moisture],
+  );
+  const moistureAverage = useMemo(
+    () => moistureValues.length
+      ? (moistureValues.reduce((total, value) => total + value, 0) / moistureValues.length).toFixed(1)
+      : null,
+    [moistureValues],
+  );
+  const normalizedRacks = useMemo(
+    () => rackNumbers.map((value) => value.trim()).filter(Boolean),
+    [rackNumbers],
+  );
   const values = useMemo<Record<string, unknown>>(() => ({
-    ...(stage === "SORT" || stage === "DRYING"
-      ? { moisture: moisture.filter((value) => value !== "").map(Number) }
-      : {}),
-    ...Object.fromEntries(Object.entries(fields).filter(([, value]) => value !== "")),
-  }), [fields, moisture, stage]);
+    ...(isProductionStage(stage) ? { moisture: moistureValues } : { conclusion: "APPROVED" }),
+    ...(stage === "DRYING" ? { rack_numbers: normalizedRacks } : {}),
+    ...Object.fromEntries(Object.entries(fields).filter(([, value]) => value.trim() !== "")),
+  }), [fields, moistureValues, normalizedRacks, stage]);
+
+  const requestReview = () => {
+    const validation = validate(stage, moisture, normalizedRacks, fields);
+    if (validation) {
+      setError(validation);
+      return;
+    }
+    setError("");
+    setReviewing(true);
+  };
 
   const confirm = async () => {
     if (!navigator.onLine) {
       setError("正式签字需要联网，请恢复网络后重试。");
+      setReviewing(false);
       return;
     }
     setSubmitting(true);
@@ -47,11 +75,13 @@ export function BambooStageForm({
           device_id: getMobileDeviceId(),
           values,
         },
-        createMobileClientId("stage"),
+        idempotencyKey,
       );
+      setReviewing(false);
       onSigned(updated);
     } catch (cause) {
       setError(cause instanceof MobileApiError ? cause.problem.detail : "签字提交失败，请重试。" );
+      setReviewing(false);
     } finally {
       setSubmitting(false);
     }
@@ -63,61 +93,87 @@ export function BambooStageForm({
         <h3>{stageTitle(stage)}</h3>
         <span>第 {record.revision} 版</span>
       </div>
+      <div className="bamboo-sign-identity">
+        <strong>{session?.employee_name || "当前登录人员"}</strong>
+        <span>{session?.team_name || "当前班组"} · {session?.position || roleLabel(session?.bamboo_role)}</span>
+        <small>身份、班组、工厂和服务器签字时间由系统带出并绑定，不可代签。</small>
+      </div>
       {error && <div className="error-banner" role="alert">{error}</div>}
 
-      {!reviewing ? (
-        <>
-          {(stage === "SORT" || stage === "DRYING") && (
-            <fieldset className="bamboo-moisture-fieldset">
-              <legend>含水率检测点（%）</legend>
-              <div className="bamboo-moisture-grid">
-                {moisture.map((value, index) => (
-                  <label key={index}>
-                    <span>含水率检测点 {index + 1}</span>
-                    <input
-                      aria-label={`含水率检测点 ${index + 1}`}
-                      type="number"
-                      inputMode="decimal"
-                      step="0.1"
-                      value={value}
-                      onChange={(event) => setMoisture(moisture.map((item, itemIndex) => itemIndex === index ? event.target.value : item))}
-                    />
-                  </label>
-                ))}
-              </div>
-              <div className="bamboo-point-actions">
-                <button type="button" onClick={() => setMoisture([...moisture, ""])}>增加检测点</button>
-                <button type="button" disabled={moisture.length <= 1} onClick={() => setMoisture(moisture.slice(0, -1))}>删除最后一个</button>
-              </div>
-            </fieldset>
-          )}
-
-          <div className="bamboo-field-grid">
-            {stageFields(stage).map((field) => (
-              <label key={field.key}>
-                {field.label}
-                {field.kind === "textarea" ? (
-                  <textarea value={fields[field.key] ?? ""} onChange={(event) => setFields({ ...fields, [field.key]: event.target.value })} />
-                ) : (
-                  <input type={field.kind} inputMode={field.kind === "number" ? "decimal" : undefined} value={fields[field.key] ?? ""} onChange={(event) => setFields({ ...fields, [field.key]: event.target.value })} />
-                )}
+      {isProductionStage(stage) && (
+        <fieldset className="bamboo-moisture-fieldset">
+          <legend>含水率检测点（%）</legend>
+          <div className="bamboo-moisture-grid">
+            {moisture.map((value, index) => (
+              <label key={index}>
+                <span>检测点 {index + 1}</span>
+                <input
+                  aria-label={`含水率检测点 ${index + 1}`}
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  placeholder="1-100"
+                  value={value}
+                  onChange={(event) => setMoisture(moisture.map((item, itemIndex) => itemIndex === index ? event.target.value : item))}
+                />
               </label>
             ))}
           </div>
-          <button type="button" className="bamboo-sign-button" onClick={() => setReviewing(true)}>核对并签字</button>
-        </>
-      ) : (
-        <div className="bamboo-sign-review">
-          <h4>签字前核对</h4>
-          <p>{stage === "DIPPING" ? "本次为浸胶作业确认，干燥完成后将两道工序组合签字。" : stage === "DRYING" ? "确认后将浸胶与干燥作为一组联合作业签字，并生成联合工资事实。" : "签字后，本工序数据将进入下一层处理。签字记录会绑定当前账号、工厂、职务、服务器时间和数据摘要。"}</p>
-          <dl>
-            {Object.entries(values).map(([key, value]) => (
-              <div key={key}><dt>{key}</dt><dd>{Array.isArray(value) ? value.join("、") || "—" : String(value)}</dd></div>
-            ))}
-          </dl>
-          <div className="bamboo-review-actions">
-            <button type="button" onClick={() => setReviewing(false)}>返回修改</button>
-            <button type="button" className="bamboo-sign-button" disabled={submitting} onClick={() => void confirm()}>{submitting ? "签字中…" : "确认签字"}</button>
+          <div className="bamboo-point-actions">
+            <button type="button" disabled={moisture.length >= 20} onClick={() => setMoisture([...moisture, ""])}>增加检测点</button>
+            <button type="button" disabled={moisture.length <= 1} onClick={() => setMoisture(moisture.slice(0, -1))}>删除最后一个</button>
+          </div>
+          <p className="bamboo-moisture-average">已填写 {moistureValues.length} 点 · 平均值 {moistureAverage ?? "—"}%</p>
+        </fieldset>
+      )}
+
+      {stage === "DRYING" && (
+        <fieldset className="bamboo-moisture-fieldset bamboo-rack-fieldset">
+          <legend>干燥架号</legend>
+          <div className="bamboo-rack-list">
+            {rackNumbers.map((rack, index) => <label key={index}><span>架号 {index + 1}</span><input value={rack} placeholder="如：G-01" onChange={(event) => setRackNumbers(rackNumbers.map((item, itemIndex) => itemIndex === index ? event.target.value : item))} /></label>)}
+          </div>
+          <div className="bamboo-point-actions">
+            <button type="button" onClick={() => setRackNumbers([...rackNumbers, ""])}>添加架号</button>
+            <button type="button" disabled={rackNumbers.length <= 1} onClick={() => setRackNumbers(rackNumbers.slice(0, -1))}>删除最后一个</button>
+          </div>
+        </fieldset>
+      )}
+
+      {isReviewStage(stage) && (
+        <div className="bamboo-upstream-review">
+          <strong>已展示完整上游记录</strong>
+          <p>请核对本页基础字段、来源快照、所有生产提交及检测留痕后再签字。主管评价可选填。</p>
+        </div>
+      )}
+
+      <div className="bamboo-field-grid">
+        {stageFields(stage).map((field) => (
+          <label key={field.key}>
+            {field.label}{field.optional && <small>（选填）</small>}
+            {field.kind === "textarea" ? (
+              <textarea value={fields[field.key] ?? ""} onChange={(event) => setFields({ ...fields, [field.key]: event.target.value })} />
+            ) : (
+              <input type={field.kind} inputMode={field.numeric ? "decimal" : undefined} value={fields[field.key] ?? ""} onChange={(event) => setFields({ ...fields, [field.key]: event.target.value })} />
+            )}
+          </label>
+        ))}
+      </div>
+      <button type="button" className="bamboo-sign-button" onClick={requestReview}>{primaryLabel(stage)}</button>
+
+      {reviewing && (
+        <div className="bamboo-v3-sheet-backdrop" role="presentation">
+          <div className="bamboo-v3-bottom-sheet bamboo-stage-confirm-sheet" role="dialog" aria-modal="true" aria-labelledby="stageConfirmTitle">
+            <div className="bamboo-v3-sheet-handle" />
+            <header><h3 id="stageConfirmTitle">签字前核对</h3><button type="button" aria-label="关闭" onClick={() => setReviewing(false)} disabled={submitting}>×</button></header>
+            <div className="banner info">本次签字将绑定 {session?.employee_name || "当前账号"}、{session?.factory_name || "当前工厂"}、职务、服务器时间和数据摘要。</div>
+            <dl className="bamboo-sheet-grid bamboo-confirm-values">
+              {Object.entries(values).map(([key, value]) => <div key={key}><dt>{valueLabel(key)}</dt><dd>{formatValue(value)}</dd></div>)}
+            </dl>
+            <div className="btnrow">
+              <button type="button" className="btn secondary" onClick={() => setReviewing(false)} disabled={submitting}>返回修改</button>
+              <button type="button" className="btn primary" onClick={() => void confirm()} disabled={submitting}>{submitting ? "签字中…" : confirmLabel(stage)}</button>
+            </div>
           </div>
         </div>
       )}
@@ -125,27 +181,57 @@ export function BambooStageForm({
   );
 }
 
-function stageTitle(stage: BambooStage): string {
-  return ({
-    SORT: "填写分选记录",
-    DIPPING: "浸胶与干燥联合作业 · 浸胶",
-    DRYING: "浸胶与干燥联合作业 · 干燥签字",
-    SUPERVISOR: "主管审核与签字",
-    PLANT_AUDIT: "厂长审核与签字",
-  })[stage];
-}
+type StageField = { key: string; label: string; kind: "text" | "datetime-local" | "textarea"; numeric?: boolean; optional?: boolean };
 
-function stageFields(stage: BambooStage): Array<{ key: string; label: string; kind: "text" | "number" | "datetime-local" | "textarea" }> {
+function stageTitle(stage: BambooStage): string {
+  return ({ SORT: "重填分选记录", DIPPING: "填写浸胶记录", DRYING: "填写干燥并联合签字", SUPERVISOR: "主管审核", PLANT_AUDIT: "厂长审核" })[stage];
+}
+function stageFields(stage: BambooStage): StageField[] {
   switch (stage) {
-    case "SORT":
-      return [{ key: "sort_quantity", label: "分选数量", kind: "number" }, { key: "wage_amount", label: "分选工资（签字后锁定）", kind: "number" }, { key: "note", label: "分选备注", kind: "textarea" }];
-    case "DIPPING":
-      return [{ key: "glue_batch", label: "胶液批次", kind: "text" }, { key: "glue_gain", label: "浸胶计件量", kind: "number" }, { key: "wage_amount", label: "浸胶工资分配", kind: "number" }, { key: "started_at", label: "浸胶开始时间", kind: "datetime-local" }, { key: "ended_at", label: "浸胶结束时间", kind: "datetime-local" }, { key: "note", label: "浸胶备注", kind: "textarea" }];
-    case "DRYING":
-      return [{ key: "rack_no", label: "干燥架号", kind: "text" }, { key: "rack_count", label: "干燥计件量", kind: "number" }, { key: "wage_amount", label: "干燥工资分配（与浸胶联合生效）", kind: "number" }, { key: "started_at", label: "干燥开始时间", kind: "datetime-local" }, { key: "ended_at", label: "干燥结束时间", kind: "datetime-local" }, { key: "note", label: "干燥备注", kind: "textarea" }];
-    case "SUPERVISOR":
-      return [{ key: "conclusion", label: "主管审核结论", kind: "text" }, { key: "note", label: "审核说明", kind: "textarea" }];
-    case "PLANT_AUDIT":
-      return [{ key: "conclusion", label: "厂长审核结论", kind: "text" }, { key: "note", label: "审核说明", kind: "textarea" }];
+    case "SORT": return [{ key: "note", label: "分选备注", kind: "textarea", optional: true }];
+    case "DIPPING": return [
+      { key: "glue_before_weight", label: "胶前重", kind: "text", numeric: true, optional: true },
+      { key: "glue_after_weight", label: "胶后重", kind: "text", numeric: true, optional: true },
+      { key: "glue_gain", label: "上胶量", kind: "text", numeric: true, optional: true },
+      { key: "glue_batch", label: "胶液批次", kind: "text", optional: true },
+      { key: "started_at", label: "浸胶开始时间", kind: "datetime-local", optional: true },
+      { key: "ended_at", label: "浸胶结束时间", kind: "datetime-local", optional: true },
+      { key: "note", label: "浸胶备注", kind: "textarea", optional: true },
+    ];
+    case "DRYING": return [
+      { key: "started_at", label: "干燥开始时间", kind: "datetime-local", optional: true },
+      { key: "ended_at", label: "干燥结束时间", kind: "datetime-local", optional: true },
+      { key: "note", label: "干燥备注", kind: "textarea", optional: true },
+    ];
+    case "SUPERVISOR": return [{ key: "note", label: "主管评价", kind: "textarea", optional: true }];
+    case "PLANT_AUDIT": return [{ key: "note", label: "厂长审核说明", kind: "textarea", optional: true }];
   }
 }
+function validate(stage: BambooStage, moisture: string[], racks: string[], fields: Record<string, string>): string {
+  if (isProductionStage(stage)) {
+    const filled = moisture.filter((value) => value.trim() !== "");
+    if (!filled.length) return "请至少填写一个含水率检测点";
+    if (filled.some((value) => !/^\d+$/.test(value.trim()) || Number(value) < 1 || Number(value) > 100)) return "含水率需填写 1 至 100 的正整数";
+  }
+  if (stage === "DRYING") {
+    if (!racks.length) return "请至少填写一个干燥架号";
+    if (new Set(racks).size !== racks.length) return "干燥架号不能重复";
+  }
+  if (stage === "DIPPING") {
+    for (const key of ["glue_before_weight", "glue_after_weight", "glue_gain"]) {
+      const value = fields[key]?.trim();
+      if (value && (!Number.isFinite(Number(value)) || Number(value) < 0)) return "浸胶重量和上胶量需填写非负数字";
+    }
+    const before = fields.glue_before_weight?.trim();
+    const after = fields.glue_after_weight?.trim();
+    if (before && after && Number(after) < Number(before)) return "胶后重不能小于胶前重";
+  }
+  return "";
+}
+function isProductionStage(stage: BambooStage): boolean { return stage === "SORT" || stage === "DIPPING" || stage === "DRYING"; }
+function isReviewStage(stage: BambooStage): boolean { return stage === "SUPERVISOR" || stage === "PLANT_AUDIT"; }
+function primaryLabel(stage: BambooStage): string { return isReviewStage(stage) ? "通过并签字" : stage === "DRYING" ? "核对并提交干燥联合签字" : `核对并提交${stage === "SORT" ? "分选" : "浸胶"}记录`; }
+function confirmLabel(stage: BambooStage): string { return isReviewStage(stage) ? "通过并签字" : "确认提交"; }
+function roleLabel(role = ""): string { return ({ SORT_OPERATOR: "分选工", DIPPING_OPERATOR: "浸胶工", DRYING_RACK_OPERATOR: "干燥工", SUPERVISOR: "主管", PLANT_MANAGER: "厂长" } as Record<string, string>)[role] ?? role; }
+function valueLabel(key: string): string { return ({ moisture: "含水率检测点", conclusion: "审核结论", note: "备注/评价", glue_before_weight: "胶前重", glue_after_weight: "胶后重", glue_gain: "上胶量", glue_batch: "胶液批次", rack_numbers: "干燥架号", started_at: "开始时间", ended_at: "结束时间" } as Record<string, string>)[key] ?? key; }
+function formatValue(value: unknown): string { return Array.isArray(value) ? value.join("、") || "—" : String(value ?? "—"); }

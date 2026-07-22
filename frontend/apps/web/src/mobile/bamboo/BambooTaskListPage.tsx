@@ -10,7 +10,7 @@ import {
   type BambooTaskBucket,
 } from "@form-detection/api-client";
 
-import { createMobileClientId } from "../device";
+import { createMobileClientId, getMobileDeviceId } from "../device";
 import { useMobileSession } from "../session/MobileSessionProvider";
 
 const BUCKETS: Array<{ key: BambooTaskBucket; label: string }> = [
@@ -30,7 +30,7 @@ const DEFAULT_PRESETS: BambooRecordPresetOptions = {
 
 type PickerKey = "special_classes" | "length" | "shade" | "grade";
 type BaseInfoDraft = {
-  mode: "分选" | "装笼";
+  mode: "分选" | "分选+装笼";
   special_classes: string[];
   length: string;
   shade: string;
@@ -66,6 +66,10 @@ export function BambooTaskListPage() {
   const [confirming, setConfirming] = useState(false);
   const [presets, setPresets] = useState<BambooRecordPresetOptions>(DEFAULT_PRESETS);
   const [baseInfo, setBaseInfo] = useState<BaseInfoDraft>(EMPTY_DRAFT);
+  const [moisture, setMoisture] = useState(() => Array.from({ length: 8 }, () => ""));
+  const [createIdempotencyKey, setCreateIdempotencyKey] = useState("");
+  const [stageIdempotencyKey, setStageIdempotencyKey] = useState("");
+  const [createdRecord, setCreatedRecord] = useState<BambooRecord | null>(null);
 
   const netWeight = useMemo(() => {
     const bundles = Number(baseInfo.bundle_count);
@@ -73,6 +77,17 @@ export function BambooTaskListPage() {
     if (!Number.isFinite(bundles) || bundles <= 0 || !Number.isFinite(factor)) return null;
     return { value: bundles * factor, factor };
   }, [baseInfo.bundle_count, baseInfo.length, presets.weight_factors]);
+
+  const moistureValues = useMemo(
+    () => moisture.filter((value) => value.trim() !== "").map(Number),
+    [moisture],
+  );
+  const moistureAverage = useMemo(
+    () => moistureValues.length > 0
+      ? (moistureValues.reduce((total, value) => total + value, 0) / moistureValues.length).toFixed(1)
+      : null,
+    [moistureValues],
+  );
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -105,6 +120,11 @@ export function BambooTaskListPage() {
 
   const openCreateSheet = () => {
     setBaseInfo(EMPTY_DRAFT);
+    setMoisture(Array.from({ length: 8 }, () => ""));
+    setCreateIdempotencyKey(createMobileClientId("sorting-record"));
+    setStageIdempotencyKey(createMobileClientId("sorting-stage"));
+    setCreatedRecord(null);
+    setFormError("");
     setConfirming(false);
     setPicker(null);
     setCreating(true);
@@ -113,7 +133,7 @@ export function BambooTaskListPage() {
 
   const requestConfirm = (event: React.FormEvent) => {
     event.preventDefault();
-    const validation = validateDraft(baseInfo);
+    const validation = validateDraft(baseInfo, moisture);
     if (validation) {
       setFormError(validation);
       return;
@@ -126,26 +146,40 @@ export function BambooTaskListPage() {
     setSaving(true);
     setFormError("");
     try {
-      const created = await mobileApiClient.createBambooRecord(
+      let created = createdRecord;
+      if (!created) {
+        created = await mobileApiClient.createBambooRecord(
+          {
+            mode: baseInfo.mode,
+            special_classes: baseInfo.special_classes,
+            length: baseInfo.length,
+            shade: baseInfo.shade,
+            grade: baseInfo.grade,
+            supplier: baseInfo.supplier.trim(),
+            cage_no: baseInfo.cage_no.trim(),
+            bundle_count: Number(baseInfo.bundle_count),
+            net_weight: netWeight?.value,
+            options_version: presets.options_version,
+          },
+          createIdempotencyKey,
+          "SORTING",
+        );
+        setCreatedRecord(created);
+      }
+      await mobileApiClient.submitBambooStage(
+        created.record_id,
+        "SORT",
         {
-          mode: baseInfo.mode,
-          special_classes: baseInfo.special_classes,
-          length: baseInfo.length,
-          shade: baseInfo.shade,
-          grade: baseInfo.grade,
-          supplier: baseInfo.supplier.trim(),
-          cage_no: baseInfo.cage_no.trim(),
-          bundle_count: Number(baseInfo.bundle_count),
-          net_weight: netWeight?.value,
-          options_version: presets.options_version,
+          expected_revision: created.revision,
+          device_id: getMobileDeviceId(),
+          values: { moisture: moistureValues },
         },
-        createMobileClientId("record"),
+        stageIdempotencyKey,
       );
       setCreating(false);
       navigate(`/mobile/records/${encodeURIComponent(created.record_id)}`);
     } catch (cause) {
-      setConfirming(false);
-      setFormError(message(cause, "新建记录失败，请重试。"));
+      setFormError(message(cause, createdRecord ? "分选签字失败，请重试；系统不会重复建表。" : "新建或签字失败，请重试。"));
     } finally {
       setSaving(false);
     }
@@ -197,9 +231,11 @@ export function BambooTaskListPage() {
                 <div>
                   <div className="record-no">{record.display_no}</div>
                   <div className="record-meta">
+                    {formTypeLabel(record.form_type)} · {recordState(record)}
+                    <br />
                     竹笼号 {String(record.base_info.cage_no || "—")} · 等级 {String(record.base_info.grade || "—")} · 把数 {String(record.base_info.bundle_count || "—")}
                     <br />
-                    当前流程：{stageLabel(record.current_stage)} · 更新于 {formatTime(record.updated_at)}
+                    当前表内状态：{stageLabel(record.current_stage)} · 更新于 {formatTime(record.updated_at)}
                   </div>
                 </div>
                 <span className={`chip ${bucket === "available" ? "info" : bucket === "waiting" ? "wait" : "ok"}`}>{bucketLabel(bucket)}</span>
@@ -222,7 +258,7 @@ export function BambooTaskListPage() {
             <div className="field">
               <span className="field-label">作业模式</span>
               <div className="mode-toggle" aria-label="作业模式">
-                {(["分选", "装笼"] as const).map((mode) => (
+                {(["分选", "分选+装笼"] as const).map((mode) => (
                   <button
                     key={mode}
                     type="button"
@@ -265,9 +301,32 @@ export function BambooTaskListPage() {
                 <span className="v muted">填完把数和长度后自动计算</span>
               )}
             </div>
+            <fieldset className="bamboo-moisture-fieldset bamboo-create-moisture">
+              <legend>含水率检测点（%）<em>*</em></legend>
+              <div className="bamboo-moisture-grid">
+                {moisture.map((value, index) => (
+                  <label key={index}>
+                    <span>检测点 {index + 1}</span>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      value={value}
+                      placeholder="1-100"
+                      onChange={(event) => setMoisture(moisture.map((item, itemIndex) => itemIndex === index ? event.target.value : item))}
+                    />
+                  </label>
+                ))}
+              </div>
+              <div className="bamboo-point-actions">
+                <button type="button" disabled={moisture.length >= 20} onClick={() => setMoisture([...moisture, ""])}>增加检测点</button>
+                <button type="button" disabled={moisture.length <= 1} onClick={() => setMoisture(moisture.slice(0, -1))}>删除最后一个</button>
+              </div>
+              <p className="bamboo-moisture-average">已填写 {moistureValues.length} 点 · 平均值 {moistureAverage ?? "—"}%</p>
+            </fieldset>
             <div className="bamboo-v3-form-actions">
               <button type="button" className="btn secondary" onClick={() => setCreating(false)}>取消</button>
-              <button type="submit" className="btn primary" disabled={saving}>核对并建立</button>
+              <button type="submit" className="btn primary" disabled={saving}>核对并提交分选/装笼记录</button>
             </div>
           </form>
           {picker && (
@@ -283,6 +342,10 @@ export function BambooTaskListPage() {
             <ConfirmCreateModal
               draft={baseInfo}
               netWeight={netWeight?.value ?? null}
+              moisture={moistureValues}
+              average={moistureAverage}
+              error={formError}
+              recordCreated={createdRecord !== null}
               saving={saving}
               onCancel={() => setConfirming(false)}
               onConfirm={() => { void createRecord(); }}
@@ -379,12 +442,20 @@ function PickerModal({
 function ConfirmCreateModal({
   draft,
   netWeight,
+  moisture,
+  average,
+  error,
+  recordCreated,
   saving,
   onCancel,
   onConfirm,
 }: {
   draft: BaseInfoDraft;
   netWeight: number | null;
+  moisture: number[];
+  average: string | null;
+  error: string;
+  recordCreated: boolean;
   saving: boolean;
   onCancel: () => void;
   onConfirm: () => void;
@@ -393,20 +464,23 @@ function ConfirmCreateModal({
     <div className="modal open" role="dialog" aria-modal="true" aria-labelledby="confirmCreateTitle">
       <div className="modal-sheet">
         <div className="modal-head">
-          <div className="modal-title" id="confirmCreateTitle">确认建立竹丝记录</div>
-          <button type="button" className="modal-close" aria-label="关闭" onClick={onCancel}>×</button>
+          <div className="modal-title" id="confirmCreateTitle">核对分选/装笼记录</div>
+          <button type="button" className="modal-close" aria-label="关闭" onClick={onCancel} disabled={recordCreated}>×</button>
         </div>
-        <div className="banner info">提交前请再次核对，确认后将进入下一流程。</div>
+        <div className="banner info">确认后将建立分选表并绑定当前身份完成分选签字。</div>
+        {recordCreated && <div className="banner info">分选表已建立；本次重试只继续签字，不会重复创建。</div>}
+        {error && <div className="banner danger" role="alert">{error}</div>}
         <div className="confirm-summary">
           <b>{draft.mode}</b><br />
           {draft.grade}级 · {draft.length} m · {draft.shade} · {draft.bundle_count} 把 · 笼号 {draft.cage_no.trim()}<br />
           特殊类：{draft.special_classes.length ? draft.special_classes.join("、") : "—"}<br />
           供应商：{draft.supplier.trim() || "—"}<br />
           净重：{netWeight != null ? `${netWeight} kg` : "—"}
+          <br />含水率：{moisture.join("、")}（平均 {average ?? "—"}%）
         </div>
         <div className="btnrow">
-          <button type="button" className="btn secondary" onClick={onCancel} disabled={saving}>返回修改</button>
-          <button type="button" className="btn primary" onClick={onConfirm} disabled={saving}>{saving ? "建立中…" : "确认建立"}</button>
+          <button type="button" className="btn secondary" onClick={onCancel} disabled={saving || recordCreated}>返回修改</button>
+          <button type="button" className="btn primary" onClick={onConfirm} disabled={saving}>{saving ? "提交中…" : "确认提交"}</button>
         </div>
       </div>
     </div>
@@ -420,12 +494,15 @@ function pickerConfig(picker: PickerKey, presets: BambooRecordPresetOptions): { 
   return { title: "品级", options: presets.grades };
 }
 
-function validateDraft(draft: BaseInfoDraft): string {
+function validateDraft(draft: BaseInfoDraft, moisture: string[]): string {
   if (!draft.length) return "请选择长度";
   if (!draft.shade) return "请选择深浅";
   if (!draft.grade) return "请选择品级";
   if (!draft.cage_no.trim()) return "请填写笼号";
   if (!/^\d+$/.test(draft.bundle_count) || Number(draft.bundle_count) <= 0) return "把数需填写正整数";
+  const filled = moisture.filter((value) => value.trim() !== "");
+  if (filled.length === 0) return "请至少填写一个含水率检测点";
+  if (filled.some((value) => !/^\d+$/.test(value.trim()) || Number(value) < 1 || Number(value) > 100)) return "含水率需填写 1 至 100 的正整数";
   return "";
 }
 
@@ -442,7 +519,7 @@ function workDescription(role = ""): string {
 }
 
 function roleStageLabel(role = ""): string {
-  return ({ SORT_OPERATOR: "分选/装笼", DIPPING_OPERATOR: "浸胶", DRYING_RACK_OPERATOR: "干燥装架" } as Record<string, string>)[role] ?? "";
+  return ({ SORT_OPERATOR: "分选/分选+装笼", DIPPING_OPERATOR: "浸胶", DRYING_RACK_OPERATOR: "干燥装架" } as Record<string, string>)[role] ?? "";
 }
 
 function bucketLabel(bucket: BambooTaskBucket): string {
@@ -451,6 +528,17 @@ function bucketLabel(bucket: BambooTaskBucket): string {
 
 function stageLabel(stage: BambooRecord["current_stage"]): string {
   return ({ SORT: "待分选", DIPPING: "待浸胶", DRYING: "待干燥", SUPERVISOR: "待主管审核", PLANT_AUDIT: "待厂长签字" } as Record<string, string>)[stage ?? ""] ?? "流程完成";
+}
+
+function formTypeLabel(formType: BambooRecord["form_type"]): string {
+  return formType === "DIPPING_DRYING" ? "浸胶+干燥联合表" : "分选表";
+}
+
+function recordState(record: BambooRecord): string {
+  if (record.status === "COMPLETED") return "已生效";
+  if (record.form_type === "DIPPING_DRYING" && record.current_stage === "SUPERVISOR") return "联合作业已完成";
+  if (record.current_stage === "SUPERVISOR") return "分选已完成";
+  return stageLabel(record.current_stage);
 }
 
 function roleLabel(role = ""): string {

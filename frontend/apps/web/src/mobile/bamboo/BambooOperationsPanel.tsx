@@ -22,7 +22,8 @@ export function BambooOperationsPanel({
   const [summary, setSummary] = useState<BambooOperationsSummary | null>(null);
   const [inquiries, setInquiries] = useState<Array<{ inquiry_id: string; subject: string; status: string; messages: Array<{ actor_name: string; body: string }> }>>([]);
   const [serialNo, setSerialNo] = useState("");
-  const [targetStage, setTargetStage] = useState<BambooStage>("DRYING");
+  const productionStages: BambooStage[] = record.form_type === "DIPPING_DRYING" ? ["DIPPING", "DRYING"] : ["SORT"];
+  const [targetStage, setTargetStage] = useState<BambooStage>(() => record.form_type === "DIPPING_DRYING" ? "DIPPING" : "SORT");
   const [points, setPoints] = useState("");
   const [conclusion, setConclusion] = useState("CONFORMING");
   const [note, setNote] = useState("");
@@ -94,7 +95,7 @@ export function BambooOperationsPanel({
 
       <section className="bamboo-sheet-section bamboo-operations-panel">
         <h3>工资事实</h3>
-        {payrollFacts.length === 0 ? <p>工资将在分选签字、浸胶与干燥共同签字后生成。</p> : payrollFacts.map((fact) => (
+        {payrollFacts.length === 0 ? <p>{record.form_type === "DIPPING_DRYING" ? "本联合表在浸胶记录与干燥联合签字完成后生成工资事实。" : "本分选表签字后生成独立工资事实，厂长审核后生效。"}</p> : payrollFacts.map((fact) => (
           <article className="bamboo-operation-card" key={fact.fact_id}>
             <strong>{fact.fact_type === "SORT" ? "分选工资" : "浸胶＋干燥联合工资"}：¥{fact.total_amount}</strong>
             <span>{fact.status === "EFFECTIVE" ? "厂长审核后已生效" : fact.status === "INVALIDATED" ? "已因回退作废" : "待厂长审核生效"}</span>
@@ -123,7 +124,7 @@ export function BambooOperationsPanel({
           {role === "INSPECTOR" && record.current_stage === "SUPERVISOR" && (
             <div className="bamboo-operation-form">
               <label>检测序号<input value={serialNo} onChange={(event) => setSerialNo(event.target.value)} /></label>
-              <label>检测流程<select value={targetStage} onChange={(event) => setTargetStage(event.target.value as BambooStage)}><option value="SORT">分选</option><option value="DIPPING">浸胶</option><option value="DRYING">干燥</option></select></label>
+              <label>检测目标<select value={targetStage} onChange={(event) => setTargetStage(event.target.value as BambooStage)}>{productionStages.map((stage) => <option value={stage} key={stage}>{stageLabel(stage)}</option>)}</select></label>
               <label>检测数值（逗号分隔）<input inputMode="decimal" value={points} onChange={(event) => setPoints(event.target.value)} /></label>
               <label>结论<select value={conclusion} onChange={(event) => setConclusion(event.target.value)}><option value="CONFORMING">合格</option><option value="NONCONFORMING">不合格</option></select></label>
               <label>文字留痕<textarea value={note} onChange={(event) => setNote(event.target.value)} /></label>
@@ -140,8 +141,8 @@ export function BambooOperationsPanel({
           {(summary?.corrections ?? []).filter((item) => item.status === "OPEN").map((item) => <div className="error-banner" key={item.case_id}>财务要求纠错：{item.reason}</div>)}
           <p>只勾选确实需要重写的工序，系统会自动作废其下游签字，旧版本仍保留用于审计。</p>
           <div className="bamboo-return-options">
-            {(["SORT", "DIPPING", "DRYING"] as BambooStage[]).map((stage) => (
-              <label key={stage}><input type="checkbox" checked={returnStages.includes(stage)} onChange={(event) => setReturnStages(event.target.checked ? [...returnStages, stage] : returnStages.filter((item) => item !== stage))} />{stage === "SORT" ? "分选" : stage === "DIPPING" ? "浸胶" : "干燥"}</label>
+            {productionStages.map((stage) => (
+              <label key={stage}><input type="checkbox" checked={returnStages.includes(stage)} onChange={(event) => setReturnStages(event.target.checked ? [...returnStages, stage] : returnStages.filter((item) => item !== stage))} />{stageLabel(stage)}</label>
             ))}
           </div>
           <label>回退原因<textarea value={returnReason} onChange={(event) => setReturnReason(event.target.value)} /></label>
@@ -159,4 +160,8 @@ export function BambooOperationsPanel({
       )}
     </>
   );
+}
+
+function stageLabel(stage: BambooStage): string {
+  return ({ SORT: "分选", DIPPING: "浸胶", DRYING: "干燥", SUPERVISOR: "主管审核", PLANT_AUDIT: "厂长审核" })[stage];
 }
