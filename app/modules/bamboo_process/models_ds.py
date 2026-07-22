@@ -1,6 +1,7 @@
 """Core value objects for the bamboo production workflow."""
 
 from dataclasses import dataclass, field
+from datetime import datetime
 from enum import StrEnum
 
 
@@ -23,6 +24,38 @@ class BambooRole(StrEnum):
     SYSTEM_ADMIN = "SYSTEM_ADMIN"
 
 
+class BambooRecordStatus(StrEnum):
+    ACTIVE = "ACTIVE"
+    COMPLETED = "COMPLETED"
+
+
+@dataclass(frozen=True, slots=True)
+class BambooActor:
+    actor_id: str
+    employee_code: str
+    employee_name: str
+    factory_id: str
+    factory_name: str
+    role: BambooRole
+
+
+@dataclass(frozen=True, slots=True)
+class BambooRecord:
+    record_id: str
+    display_no: str
+    factory_id: str
+    source_type: str
+    source_ref: str | None
+    base_info: dict[str, object]
+    current_stage: BambooStage | None
+    status: BambooRecordStatus
+    revision: int
+    created_by: str
+    created_at: datetime
+    updated_at: datetime
+    submissions: tuple["StageSubmission", ...] = ()
+
+
 @dataclass(frozen=True, slots=True)
 class StageSubmission:
     submission_id: str
@@ -34,5 +67,21 @@ class StageSubmission:
     actor_name: str = ""
     role_code: str = ""
     factory_id: str = ""
-    submitted_at: str = ""
+    submitted_at: datetime | None = None
     invalidated: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class ElectronicSignature:
+    signature_id: str
+    submission_id: str
+    actor_id: str
+    employee_code: str
+    actor_name: str
+    factory_id: str
+    role_code: str
+    payload_hash: str
+    signed_at: datetime
+    device_id: str
+    request_id: str
+    idempotency_key: str
