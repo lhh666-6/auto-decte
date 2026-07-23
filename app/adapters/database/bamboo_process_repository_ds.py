@@ -12,6 +12,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.adapters.database.models import (
+    BambooCageOccupancyRow,
     BambooCorrectionCaseRow,
     BambooDailyExportBatchRow,
     BambooDailyExportItemRow,
@@ -32,7 +33,10 @@ from app.modules.bamboo_process.models_ds import (
     ElectronicSignature,
     StageSubmission,
 )
-from app.modules.bamboo_process.ports_ds import BambooRepositoryConflict
+from app.modules.bamboo_process.ports_ds import (
+    BambooCageOccupied,
+    BambooRepositoryConflict,
+)
 
 DEFAULT_BAMBOO_PAYROLL_RULES: tuple[tuple[str, str, dict[str, object]], ...] = (
     (
@@ -120,6 +124,63 @@ class SqlAlchemyBambooProcessRepository:
         if stored is None:  # pragma: no cover - guarded by the successful insert
             raise RuntimeError("bamboo record disappeared after insert")
         return stored
+
+    def add_sorting_with_cage_occupancy(
+        self,
+        record: BambooRecord,
+        cage_no: str,
+    ) -> BambooRecord:
+        cage_no = cage_no.strip()
+        cage_no_key = cage_no.casefold()
+        try:
+            with Session(self._engine) as session, session.begin():
+                session.add(_record_row(record))
+                session.flush()
+                session.add(
+                    BambooCageOccupancyRow(
+                        occupancy_id=str(uuid4()),
+                        factory_id=record.factory_id,
+                        cage_no=cage_no,
+                        cage_no_key=cage_no_key,
+                        sorting_record_id=record.record_id,
+                        acquired_at=record.created_at,
+                        released_at=None,
+                        released_by_submission_id=None,
+                    )
+                )
+                session.flush()
+        except IntegrityError as error:
+            if record.source_type == "MOBILE_CREATED" and record.source_ref:
+                repeated = self.find_created_result(record.created_by, record.source_ref)
+                if repeated is not None:
+                    return repeated
+            active = self._active_cage_occupancy(record.factory_id, cage_no_key)
+            if active is not None:
+                raise BambooCageOccupied(
+                    active.cage_no,
+                    active.sorting_record_id,
+                ) from error
+            raise BambooRepositoryConflict(
+                "bamboo sorting persistence conflict; retry with the same idempotency key"
+            ) from error
+        stored = self.get(record.record_id)
+        if stored is None:  # pragma: no cover - guarded by the successful insert
+            raise RuntimeError("bamboo record disappeared after cage acquisition")
+        return stored
+
+    def _active_cage_occupancy(
+        self,
+        factory_id: str,
+        cage_no_key: str,
+    ) -> BambooCageOccupancyRow | None:
+        with Session(self._engine) as session:
+            return session.scalar(
+                select(BambooCageOccupancyRow).where(
+                    BambooCageOccupancyRow.factory_id == factory_id,
+                    BambooCageOccupancyRow.cage_no_key == cage_no_key,
+                    BambooCageOccupancyRow.released_at.is_(None),
+                )
+            )
 
     def get(self, record_id: str) -> BambooRecord | None:
         with Session(self._engine) as session:
@@ -333,6 +394,23 @@ class SqlAlchemyBambooProcessRepository:
             self._create_joint_fact(session, record, submission, signature)
         elif submission.stage is BambooStage.PLANT_AUDIT:
             self._activate_payroll_and_export(session, record, submission, signature)
+        if (
+            record.form_type is BambooFormType.DIPPING_DRYING
+            and submission.stage is BambooStage.SUPERVISOR
+            and record.production_object_id
+        ):
+            session.execute(
+                update(BambooCageOccupancyRow)
+                .where(
+                    BambooCageOccupancyRow.sorting_record_id
+                    == record.production_object_id,
+                    BambooCageOccupancyRow.released_at.is_(None),
+                )
+                .values(
+                    released_at=submission.submitted_at,
+                    released_by_submission_id=submission.submission_id,
+                )
+            )
 
     def _rule(
         self,

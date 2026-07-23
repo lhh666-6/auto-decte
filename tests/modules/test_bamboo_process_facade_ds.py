@@ -36,6 +36,14 @@ class _MemoryBambooRepository:
         self.records[record.record_id] = record
         return record
 
+    def add_sorting_with_cage_occupancy(
+        self,
+        record: BambooRecord,
+        cage_no: str,
+    ) -> BambooRecord:
+        del cage_no
+        return self.add(record)
+
     def get(self, record_id: str) -> BambooRecord | None:
         return self.records.get(record_id)
 

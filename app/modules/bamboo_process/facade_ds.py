@@ -86,6 +86,9 @@ class BambooProcessFacade:
             form_type=form_type,
             production_object_id=record_id,
         )
+        cage_no = str(base_info.get("cage_no") or "").strip()
+        if cage_no:
+            return self._repository.add_sorting_with_cage_occupancy(record, cage_no)
         return self._repository.add(record)
 
     def list_tasks(

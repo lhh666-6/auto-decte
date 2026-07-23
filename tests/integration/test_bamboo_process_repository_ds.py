@@ -1,6 +1,8 @@
 from datetime import UTC, datetime
+from itertools import count
 from pathlib import Path
 
+import pytest
 from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import Session
 
@@ -22,6 +24,7 @@ from app.modules.bamboo_process.models_ds import (
     BambooRole,
     BambooStage,
 )
+from app.modules.bamboo_process.ports_ds import BambooRepositoryConflict
 
 
 def _actor(role: BambooRole) -> BambooActor:
@@ -155,3 +158,118 @@ def test_independent_forms_metadata_and_payroll_facts_survive_restart(
             (restored_linked.record_id, "DIPPING_DRYING_JOINT"),
             (restored_sorting.record_id, "SORT"),
         ]
+
+
+def test_cage_occupancy_blocks_until_linked_supervisor_approval(tmp_path: Path) -> None:
+    engine = create_engine(f"sqlite:///{(tmp_path / 'cage-lock.db').as_posix()}")
+    Base.metadata.create_all(engine)
+    now = datetime(2026, 7, 23, 8, 0, tzinfo=UTC)
+    with Session(engine) as session, session.begin():
+        for factory_id in ("FACTORY-A", "FACTORY-B"):
+            session.add(
+                BambooFactoryRow(
+                    factory_id=factory_id,
+                    code=factory_id,
+                    name=factory_id,
+                    active=True,
+                    revision=1,
+                    created_at=now,
+                    updated_at=now,
+                )
+            )
+    identifiers = count(1)
+    repository = SqlAlchemyBambooProcessRepository(engine)
+    service = BambooProcessFacade(
+        repository,
+        clock=lambda: now,
+        id_factory=lambda: f"ID-{next(identifiers)}",
+    )
+    sort_actor = _actor(BambooRole.SORT_OPERATOR)
+    base_info = {"cage_no": " Cage-01 ", "length": "2.3", "bundle_count": 10}
+    sorting = service.create_record(
+        actor=sort_actor,
+        base_info=base_info,
+        source_type="MOBILE_CREATED",
+        source_ref="first",
+    )
+
+    with pytest.raises(BambooRepositoryConflict):
+        service.create_record(
+            actor=sort_actor,
+            base_info={**base_info, "cage_no": "cage-01"},
+            source_type="MOBILE_CREATED",
+            source_ref="duplicate-active",
+        )
+
+    other_factory = BambooActor(
+        actor_id="E-SORT-B",
+        employee_code="E-SORT-B",
+        employee_name="E-SORT-B",
+        factory_id="FACTORY-B",
+        factory_name="FACTORY-B",
+        role=BambooRole.SORT_OPERATOR,
+    )
+    assert service.create_record(
+        actor=other_factory,
+        base_info={**base_info, "cage_no": "CAGE-01"},
+        source_type="MOBILE_CREATED",
+        source_ref="other-factory",
+    ).factory_id == "FACTORY-B"
+
+    sorting = service.submit_stage(
+        sorting.record_id,
+        actor=sort_actor,
+        stage=BambooStage.SORT,
+        values={"moisture": [12]},
+        expected_revision=1,
+        idempotency_key="sort",
+        device_id="phone",
+        request_id="request-sort",
+    )
+    linked = repository.find_linked(BambooFormType.DIPPING_DRYING, sorting.record_id)
+    assert linked is not None
+    linked = service.submit_stage(
+        linked.record_id,
+        actor=_actor(BambooRole.DIPPING_OPERATOR),
+        stage=BambooStage.DIPPING,
+        values={"moisture": [11]},
+        expected_revision=1,
+        idempotency_key="dip",
+        device_id="phone",
+        request_id="request-dip",
+    )
+    linked = service.submit_stage(
+        linked.record_id,
+        actor=_actor(BambooRole.DRYING_RACK_OPERATOR),
+        stage=BambooStage.DRYING,
+        values={"moisture": [9], "rack_numbers": ["R-1"]},
+        expected_revision=2,
+        idempotency_key="dry",
+        device_id="phone",
+        request_id="request-dry",
+    )
+    with pytest.raises(BambooRepositoryConflict):
+        service.create_record(
+            actor=sort_actor,
+            base_info={**base_info, "cage_no": "CAGE-01"},
+            source_type="MOBILE_CREATED",
+            source_ref="before-supervisor",
+        )
+
+    service.submit_stage(
+        linked.record_id,
+        actor=_actor(BambooRole.SUPERVISOR),
+        stage=BambooStage.SUPERVISOR,
+        values={},
+        expected_revision=3,
+        idempotency_key="supervisor",
+        device_id="phone",
+        request_id="request-supervisor",
+    )
+    reused = service.create_record(
+        actor=sort_actor,
+        base_info={**base_info, "cage_no": "cage-01"},
+        source_type="MOBILE_CREATED",
+        source_ref="after-supervisor",
+    )
+    assert reused.record_id != sorting.record_id

@@ -14,10 +14,23 @@ class BambooRepositoryConflict(RuntimeError):
     """A persistence uniqueness conflict that callers may safely retry."""
 
 
+class BambooCageOccupied(BambooRepositoryConflict):
+    def __init__(self, cage_no: str, sorting_record_id: str) -> None:
+        self.cage_no = cage_no
+        self.sorting_record_id = sorting_record_id
+        super().__init__(f"cage {cage_no!r} is already used by {sorting_record_id}")
+
+
 class BambooRecordRepository(Protocol):
     def next_display_sequence(self, factory_id: str, production_date: str) -> int: ...
 
     def add(self, record: BambooRecord) -> BambooRecord: ...
+
+    def add_sorting_with_cage_occupancy(
+        self,
+        record: BambooRecord,
+        cage_no: str,
+    ) -> BambooRecord: ...
 
     def get(self, record_id: str) -> BambooRecord | None: ...
 
