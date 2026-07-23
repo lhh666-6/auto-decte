@@ -353,6 +353,7 @@ def test_complete_bamboo_operations_from_payroll_through_finance(tmp_path: Path)
         ("SUP-1", "SUPERVISOR"),
         ("MANAGER-1", "PLANT_MANAGER"),
         ("FIN-1", "FINANCE_APPROVER"),
+        ("ADMIN-1", "SYSTEM_ADMIN"),
     ):
         _add_user(services, code, role)
 
@@ -363,6 +364,7 @@ def test_complete_bamboo_operations_from_payroll_through_finance(tmp_path: Path)
     supervisor = _client(services, "SUP-1")
     manager = _client(services, "MANAGER-1")
     finance = _client(services, "FIN-1")
+    admin = _client(services, "ADMIN-1")
 
     created = sort.post(
         "/api/v1/mobile/bamboo/records",
@@ -499,6 +501,46 @@ def test_complete_bamboo_operations_from_payroll_through_finance(tmp_path: Path)
     ]
     assert sorting_operations["payroll_facts"][0]["status"] == "EFFECTIVE"
     assert linked_operations["payroll_facts"][0]["status"] == "EFFECTIVE"
+    sort_payroll = sort.get(
+        f"/api/v1/mobile/bamboo/records/{sorting_id}/operations"
+    ).json()["payroll_facts"]
+    dipping_payroll = dipping.get(
+        f"/api/v1/mobile/bamboo/records/{linked_id}/operations"
+    ).json()["payroll_facts"]
+    drying_payroll = drying.get(
+        f"/api/v1/mobile/bamboo/records/{linked_id}/operations"
+    ).json()["payroll_facts"]
+    inspector_payroll = inspector.get(
+        f"/api/v1/mobile/bamboo/records/{linked_id}/operations"
+    ).json()["payroll_facts"]
+    assert sort_payroll[0]["allocations"] == [
+        {"employee_code": "SORT-1", "role": "SORT_OPERATOR", "amount": "80.00"}
+    ]
+    assert dipping_payroll[0]["total_amount"] == "30.00"
+    assert drying_payroll[0]["total_amount"] == "20.00"
+    assert inspector_payroll == []
+    assert len(admin.get(
+        f"/api/v1/mobile/bamboo/records/{linked_id}/operations"
+    ).json()["payroll_facts"][0]["allocations"]) == 2
+
+    inspector_record = inspector.get(
+        f"/api/v1/mobile/bamboo/records/{linked_id}"
+    ).json()
+    assert all(
+        "wage_amount" not in submission["values"]
+        for submission in inspector_record["submissions"]
+    )
+    dipping_record = dipping.get(
+        f"/api/v1/mobile/bamboo/records/{linked_id}"
+    ).json()
+    assert "wage_amount" in next(
+        item for item in dipping_record["submissions"] if item["role_code"] == "DIPPING_OPERATOR"
+    )["values"]
+    assert "wage_amount" not in next(
+        item
+        for item in dipping_record["submissions"]
+        if item["role_code"] == "DRYING_RACK_OPERATOR"
+    )["values"]
 
     batches = finance.get("/api/v1/mobile/bamboo/finance/daily-batches").json()
     assert len(batches) == 1
@@ -530,6 +572,16 @@ def test_complete_bamboo_operations_from_payroll_through_finance(tmp_path: Path)
         "/api/v1/mobile/bamboo/finance/monthly-summary", params={"month": month}
     ).json()
     assert summary["total_amount"] == "130.00"
+    assert manager.get(
+        "/api/v1/mobile/bamboo/finance/monthly-summary", params={"month": month}
+    ).json()["total_amount"] == "130.00"
+    assert admin.get(
+        "/api/v1/mobile/bamboo/finance/monthly-summary", params={"month": month}
+    ).json()["total_amount"] == "130.00"
+    worker_summary = sort.get(
+        "/api/v1/mobile/bamboo/finance/monthly-summary", params={"month": month}
+    ).json()
+    assert worker_summary["items"] == [{"employee_code": "SORT-1", "amount": "80.00"}]
     exported = finance.get("/api/v1/mobile/bamboo/finance/export.xlsx", params={"month": month})
     assert exported.status_code == 200
     assert exported.content.startswith(b"PK")

@@ -137,6 +137,7 @@ def list_tasks(
         tasks=[
             _response(
                 record,
+                actor=actor,
                 upstream_record=service.get_upstream(record, actor=actor),
             )
             for record in records
@@ -170,7 +171,7 @@ def create_record(
     services = _services(request)
     repeated = services.bamboo_repository.find_created_result(actor.actor_id, key)
     if repeated is not None:
-        return _response(repeated)
+        return _response(repeated, actor=actor)
     try:
         base_info = services.bamboo_operations.validate_record_base_info(
             actor,
@@ -209,7 +210,7 @@ def create_record(
             status_code=409,
             detail={"code": "BAMBOO_RECORD_CONFLICT", "detail": str(error)},
         ) from error
-    return _response(record)
+    return _response(record, actor=actor)
 
 
 def _operation_error(error: BambooOperationError) -> HTTPException:
@@ -924,6 +925,7 @@ def get_record(record_id: str, request: Request) -> BambooRecordResponse:
         )
     return _response(
         record,
+        actor=actor,
         upstream_record=service.get_upstream(record, actor=actor),
     )
 
@@ -995,16 +997,31 @@ def submit_stage(
         ) from error
     return _response(
         record,
+        actor=actor,
         upstream_record=service.get_upstream(record, actor=actor),
     )
 
 
-def _submission_response(submission: StageSubmission) -> BambooSubmissionResponse:
+def _submission_response(
+    submission: StageSubmission,
+    actor: BambooActor,
+) -> BambooSubmissionResponse:
+    values = dict(submission.values)
+    if (
+        actor.role
+        not in {
+            BambooRole.PLANT_MANAGER,
+            BambooRole.FINANCE_APPROVER,
+            BambooRole.SYSTEM_ADMIN,
+        }
+        and submission.actor_id != actor.actor_id
+    ):
+        values.pop("wage_amount", None)
     return BambooSubmissionResponse(
         submission_id=submission.submission_id,
         stage=submission.stage.value,
         version=submission.version,
-        values=submission.values,
+        values=values,
         actor_id=submission.actor_id,
         actor_name=submission.actor_name,
         role_code=submission.role_code,
@@ -1012,7 +1029,10 @@ def _submission_response(submission: StageSubmission) -> BambooSubmissionRespons
     )
 
 
-def _upstream_response(record: BambooRecord) -> BambooUpstreamRecordResponse:
+def _upstream_response(
+    record: BambooRecord,
+    actor: BambooActor,
+) -> BambooUpstreamRecordResponse:
     return BambooUpstreamRecordResponse(
         record_id=record.record_id,
         display_no=record.display_no,
@@ -1023,7 +1043,7 @@ def _upstream_response(record: BambooRecord) -> BambooUpstreamRecordResponse:
         status=record.status.value,
         revision=record.revision,
         submissions=[
-            _submission_response(submission)
+            _submission_response(submission, actor)
             for submission in record.submissions
             if not submission.invalidated
         ],
@@ -1033,6 +1053,7 @@ def _upstream_response(record: BambooRecord) -> BambooUpstreamRecordResponse:
 def _response(
     record: BambooRecord,
     *,
+    actor: BambooActor,
     upstream_record: BambooRecord | None = None,
 ) -> BambooRecordResponse:
     return BambooRecordResponse(
@@ -1053,11 +1074,13 @@ def _response(
         created_at=record.created_at,
         updated_at=record.updated_at,
         submissions=[
-            _submission_response(submission)
+            _submission_response(submission, actor)
             for submission in record.submissions
             if not submission.invalidated
         ],
         upstream_record=(
-            _upstream_response(upstream_record) if upstream_record is not None else None
+            _upstream_response(upstream_record, actor)
+            if upstream_record is not None
+            else None
         ),
     )

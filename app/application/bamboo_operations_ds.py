@@ -216,7 +216,11 @@ class BambooOperationsService:
                 .order_by(BambooCorrectionCaseRow.created_at.desc())
             ).all()
             return {
-                "payroll_facts": [self._fact(row) for row in facts],
+                "payroll_facts": [
+                    projection
+                    for row in facts
+                    if (projection := self._payroll_fact_for_actor(row, actor)) is not None
+                ],
                 "inspections": [self._inspection(session, row) for row in inspections],
                 "corrections": [
                     {
@@ -1825,17 +1829,20 @@ class BambooOperationsService:
             return self._role_request(row)
 
     def list_daily_batches(self, actor: BambooActor) -> list[dict[str, Any]]:
-        if actor.role not in {BambooRole.FINANCE_APPROVER, BambooRole.PLANT_MANAGER}:
+        if actor.role not in {
+            BambooRole.FINANCE_APPROVER,
+            BambooRole.PLANT_MANAGER,
+            BambooRole.SYSTEM_ADMIN,
+        }:
             raise BambooOperationError("FINANCE_REQUIRED", "当前职务无权查看财务批次")
         with Session(self._engine) as session:
-            rows = session.scalars(
-                select(BambooDailyExportBatchRow)
-                .where(BambooDailyExportBatchRow.factory_id == actor.factory_id)
-                .order_by(
-                    BambooDailyExportBatchRow.business_date.desc(),
-                    BambooDailyExportBatchRow.version.desc(),
-                )
-            ).all()
+            query = select(BambooDailyExportBatchRow)
+            if actor.role is BambooRole.PLANT_MANAGER:
+                query = query.where(BambooDailyExportBatchRow.factory_id == actor.factory_id)
+            rows = session.scalars(query.order_by(
+                BambooDailyExportBatchRow.business_date.desc(),
+                BambooDailyExportBatchRow.version.desc(),
+            )).all()
             return [self._batch(session, row) for row in rows]
 
     def decide_daily_item(
@@ -1926,22 +1933,29 @@ class BambooOperationsService:
             return [self._inquiry(session, row) for row in rows]
 
     def monthly_summary(self, actor: BambooActor, month: str) -> dict[str, Any]:
-        if actor.role not in {BambooRole.FINANCE_APPROVER, BambooRole.PLANT_MANAGER}:
-            raise BambooOperationError("FINANCE_REQUIRED", "当前职务无权查看月汇总")
         totals: defaultdict[str, Decimal] = defaultdict(lambda: Decimal("0"))
         with Session(self._engine) as session:
-            rows = session.execute(
+            query = (
                 select(BambooDailyExportItemRow, BambooDailyExportBatchRow)
                 .join(
                     BambooDailyExportBatchRow,
                     BambooDailyExportBatchRow.batch_id == BambooDailyExportItemRow.batch_id,
                 )
                 .where(
-                    BambooDailyExportBatchRow.factory_id == actor.factory_id,
                     BambooDailyExportBatchRow.business_date.like(f"{month}%"),
                     BambooDailyExportItemRow.status == "APPROVED",
                 )
-            ).all()
+            )
+            if actor.role is BambooRole.PLANT_MANAGER:
+                query = query.where(BambooDailyExportBatchRow.factory_id == actor.factory_id)
+            elif actor.role not in {
+                BambooRole.FINANCE_APPROVER,
+                BambooRole.SYSTEM_ADMIN,
+            }:
+                query = query.where(
+                    BambooDailyExportItemRow.employee_code == actor.employee_code
+                )
+            rows = session.execute(query).all()
             for item, _batch in rows:
                 totals[item.employee_code] += Decimal(item.amount)
         items = [
@@ -1949,7 +1963,9 @@ class BambooOperationsService:
             for code, amount in sorted(totals.items())
         ]
         return {
-            "factory_id": actor.factory_id,
+            "factory_id": (
+                actor.factory_id if actor.role is BambooRole.PLANT_MANAGER else None
+            ),
             "month": month,
             "items": items,
             "total_amount": str(sum(totals.values(), Decimal("0")).quantize(Decimal("0.01"))),
@@ -1972,7 +1988,10 @@ class BambooOperationsService:
     @staticmethod
     def _record(session: Session, record_id: str, actor: BambooActor) -> BambooRecordRow:
         row = session.get(BambooRecordRow, record_id)
-        if row is None or row.factory_id != actor.factory_id:
+        global_roles = {BambooRole.FINANCE_APPROVER, BambooRole.SYSTEM_ADMIN}
+        if row is None or (
+            row.factory_id != actor.factory_id and actor.role not in global_roles
+        ):
             raise BambooOperationError("RECORD_NOT_VISIBLE", "记录不存在或不属于当前工厂")
         return row
 
@@ -2188,6 +2207,33 @@ class BambooOperationsService:
             "decision_note": row.decision_note,
             "revision": row.revision,
         }
+
+    def _payroll_fact_for_actor(
+        self,
+        row: BambooPayrollFactRow,
+        actor: BambooActor,
+    ) -> dict[str, Any] | None:
+        if actor.role in {
+            BambooRole.PLANT_MANAGER,
+            BambooRole.FINANCE_APPROVER,
+            BambooRole.SYSTEM_ADMIN,
+        }:
+            return self._fact(row)
+        allocations = [
+            item
+            for item in row.allocations
+            if str(item.get("employee_code")) == actor.employee_code
+        ]
+        if not allocations:
+            return None
+        result = self._fact(row)
+        result["allocations"] = allocations
+        total = sum(
+            (Decimal(str(item["amount"])) for item in allocations),
+            Decimal("0"),
+        )
+        result["total_amount"] = str(total.quantize(Decimal("0.01")))
+        return result
 
     @staticmethod
     def _personnel_transfer(row: BambooPersonnelTransferRow) -> dict[str, Any]:
