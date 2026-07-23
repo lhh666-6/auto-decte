@@ -57,3 +57,7 @@ uv run --frozen python scripts/retire_legacy_recognition.py `
 - 前端全量：通过
 - 移动端边界检查：通过
 - 迁移后生产模式启动：通过
+
+## 历史本地库接管
+
+早期由 `create_all` 建立且没有 Alembic 版本号的数据库，会在启动时先完成兼容结构检查，安全标记为 `026`，再执行 `027` 归档。全新数据库直接执行完整 Alembic 迁移链。

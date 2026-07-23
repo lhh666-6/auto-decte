@@ -4,7 +4,9 @@ from pathlib import Path
 
 from sqlalchemy import create_engine, inspect, text
 
+from app.adapters.database.models import Base
 from app.infrastructure.database.migrations import HEAD_REVISION, upgrade_database
+from app.infrastructure.database.sqlite_ds import create_sqlite_engine
 from app.services.container import build_services
 from config.settings import Settings
 
@@ -41,3 +43,23 @@ def test_head_archives_legacy_tables_and_records_counts(tmp_path: Path) -> None:
         Settings(data_root=data_root, auto_create_schema=False)
     )
     services.engine.dispose()
+
+
+def test_build_services_adopts_unversioned_legacy_database(tmp_path: Path) -> None:
+    data_root = tmp_path / "data"
+    database_path = data_root / "database" / "demo.db"
+    database_path.parent.mkdir(parents=True)
+    legacy_engine = create_sqlite_engine(database_path)
+    Base.metadata.create_all(legacy_engine)
+    legacy_engine.dispose()
+
+    services = build_services(Settings(data_root=data_root))
+    tables = set(inspect(services.engine).get_table_names())
+    with services.engine.connect() as connection:
+        revision = connection.scalar(text("SELECT version_num FROM alembic_version"))
+    services.engine.dispose()
+
+    assert revision == HEAD_REVISION
+    assert "recognition_attempts" not in tables
+    assert "legacy_archive_recognition_attempts" in tables
+    assert "legacy_retirement_manifest" in tables

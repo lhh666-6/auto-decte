@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import uuid4
 
-from sqlalchemy import Engine
+from sqlalchemy import Engine, inspect
 
 from app.adapters.ai.deepseek_ds import DeepSeekCompletion
 from app.adapters.ai.disabled import DisabledAIReview
@@ -54,8 +54,12 @@ from app.infrastructure.database.electronic_submission_uow_ds import (
     SqlAlchemyElectronicSubmissionUnitOfWork,
 )
 from app.infrastructure.database.migrations import (
+    LEGACY_RETIREMENT_SOURCE_REVISION,
+    LEGACY_RETIREMENT_TABLES,
+    SchemaRevisionError,
     ensure_auto_created_schema_compatibility,
     is_alembic_managed,
+    stamp_database,
     upgrade_database,
     verify_database_revision,
 )
@@ -134,9 +138,26 @@ def build_services(settings: Settings, *, install_seed_templates: bool = False) 
             upgrade_database(settings.database_path)
             engine = create_sqlite_engine(settings.database_path)
         else:
-            ensure_auto_created_schema_compatibility(engine)
-            Base.metadata.create_all(engine)
-            ensure_auto_created_schema_compatibility(engine)
+            existing_tables = set(inspect(engine).get_table_names())
+            if existing_tables:
+                if not LEGACY_RETIREMENT_TABLES <= existing_tables:
+                    missing = sorted(LEGACY_RETIREMENT_TABLES - existing_tables)
+                    raise SchemaRevisionError(
+                        "Cannot adopt unversioned database; missing legacy tables: "
+                        + ", ".join(missing)
+                    )
+                ensure_auto_created_schema_compatibility(engine)
+                Base.metadata.create_all(engine)
+                ensure_auto_created_schema_compatibility(engine)
+                engine.dispose()
+                stamp_database(
+                    settings.database_path,
+                    LEGACY_RETIREMENT_SOURCE_REVISION,
+                )
+            else:
+                engine.dispose()
+            upgrade_database(settings.database_path)
+            engine = create_sqlite_engine(settings.database_path)
     else:
         verify_database_revision(engine)
     repository = SqlAlchemyFormRepository(engine)

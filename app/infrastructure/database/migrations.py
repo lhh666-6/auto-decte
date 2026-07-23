@@ -10,6 +10,19 @@ from alembic import command
 from app.domain.models import stable_json_sha256
 
 HEAD_REVISION = "027"
+LEGACY_RETIREMENT_SOURCE_REVISION = "026"
+LEGACY_RETIREMENT_TABLES = frozenset(
+    {
+        "recognition_attempts",
+        "evidence_files",
+        "ai_reviews",
+        "review_leases",
+        "review_drafts",
+        "task_events",
+        "tasks",
+        "export_batches",
+    }
+)
 
 _EMPTY_MAPPING_HASH = "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
 
@@ -344,10 +357,19 @@ def ensure_auto_created_schema_compatibility(engine: Engine) -> None:
 def upgrade_database(database_path: Path) -> None:
     """Upgrade an explicit SQLite database to the current schema revision."""
     database_path.parent.mkdir(parents=True, exist_ok=True)
+    command.upgrade(_alembic_config(database_path), "head")
+
+
+def stamp_database(database_path: Path, revision: str) -> None:
+    """Adopt a schema created by the pre-Alembic local runtime."""
+    command.stamp(_alembic_config(database_path), revision)
+
+
+def _alembic_config(database_path: Path) -> Config:
     project_root = Path(__file__).resolve().parents[3]
     config = Config(str(project_root / "alembic.ini"))
     config.attributes["database_path"] = database_path.resolve()
-    command.upgrade(config, "head")
+    return config
 
 
 def verify_database_revision(engine: Engine) -> None:
