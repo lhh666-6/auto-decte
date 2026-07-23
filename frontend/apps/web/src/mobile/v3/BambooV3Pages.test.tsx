@@ -23,6 +23,12 @@ const mocks = vi.hoisted(() => ({
   listBambooRoleOptions: vi.fn(),
   listBambooFactoryEmployees: vi.fn(),
   listBambooRoleChanges: vi.fn(),
+  listBambooFactories: vi.fn(),
+  listBambooPersonnelTransfers: vi.fn(),
+  createBambooPersonnelTransfer: vi.fn(),
+  decideBambooPersonnelTransferAsManager: vi.fn(),
+  executeBambooPersonnelTransfer: vi.fn(),
+  createBambooFactoryEmployee: vi.fn(),
 }));
 
 vi.mock("@form-detection/api-client", async (importOriginal) => ({
@@ -43,12 +49,19 @@ vi.mock("@form-detection/api-client", async (importOriginal) => ({
     listBambooRoleOptions: mocks.listBambooRoleOptions,
     listBambooFactoryEmployees: mocks.listBambooFactoryEmployees,
     listBambooRoleChanges: mocks.listBambooRoleChanges,
+    listBambooFactories: mocks.listBambooFactories,
+    listBambooPersonnelTransfers: mocks.listBambooPersonnelTransfers,
+    createBambooPersonnelTransfer: mocks.createBambooPersonnelTransfer,
+    decideBambooPersonnelTransferAsManager: mocks.decideBambooPersonnelTransferAsManager,
+    executeBambooPersonnelTransfer: mocks.executeBambooPersonnelTransfer,
+    createBambooFactoryEmployee: mocks.createBambooFactoryEmployee,
   },
 }));
 vi.mock("../device", () => ({ createMobileClientId: (prefix: string) => `${prefix}-key`, getMobileDeviceId: () => "device-v3" }));
 
 import { BambooRecordDetailPage } from "../bamboo/BambooRecordDetailPage";
 import { BambooTaskListPage } from "../bamboo/BambooTaskListPage";
+import { BambooPersonnelPage } from "../personnel/BambooPersonnelPage";
 import { MobileSessionProvider } from "../session/MobileSessionProvider";
 import { BambooV3ProfilePage } from "./BambooV3ProfilePage";
 import { BambooV3SubmissionsPage } from "./BambooV3SubmissionsPage";
@@ -175,6 +188,15 @@ beforeEach(() => {
   ]);
   mocks.listBambooFactoryEmployees.mockResolvedValue([]);
   mocks.listBambooRoleChanges.mockResolvedValue([]);
+  mocks.listBambooFactories.mockResolvedValue([
+    { factory_id: "FACTORY-A", code: "A", name: "竹丝示范一厂" },
+    { factory_id: "FACTORY-B", code: "B", name: "竹丝二厂" },
+  ]);
+  mocks.listBambooPersonnelTransfers.mockResolvedValue([]);
+  mocks.createBambooPersonnelTransfer.mockResolvedValue({});
+  mocks.decideBambooPersonnelTransferAsManager.mockResolvedValue({});
+  mocks.executeBambooPersonnelTransfer.mockResolvedValue({});
+  mocks.createBambooFactoryEmployee.mockResolvedValue({ employee_code: "ZS009" });
 });
 
 afterEach(cleanup);
@@ -335,11 +357,39 @@ describe("V3 submissions and profile", () => {
     expect(screen.getByText(/分选签字/)).toBeTruthy();
   });
 
-  it("keeps identity controls free of finance approval", async () => {
+  it("does not expose worker self-service role changes", async () => {
     withSession(<BambooV3ProfilePage />);
     expect(await screen.findByRole("heading", { name: "我的" })).toBeTruthy();
     expect(screen.getByText("竹丝示范一厂")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "申请换岗" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "申请换岗" })).toBeNull();
+    expect(screen.getByText(/员工端不提供自行申请入口/)).toBeTruthy();
     expect(screen.queryByRole("button", { name: /财务审批/ })).toBeNull();
+  });
+
+  it("gives managers an independent responsive personnel workspace", async () => {
+    mocks.listBambooFactoryEmployees.mockResolvedValue([
+      { employee_code: "ZS001", employee_name: "王分选", factory_id: "FACTORY-A", role_code: "SORT_OPERATOR", role_name: "分选工" },
+    ]);
+    mocks.listBambooRoleOptions.mockResolvedValue([
+      { role_code: "DIPPING_OPERATOR", display_name: "浸胶工", category: "PRODUCTION", self_requestable: false },
+    ]);
+    withSession(<BambooPersonnelPage />, { ...worker, bamboo_role: "PLANT_MANAGER", position: "厂长" });
+
+    expect(await screen.findByRole("heading", { name: "人员调度中心" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "发起人员调动" })).toBeTruthy();
+    expect(await screen.findByRole("option", { name: /王分选/ })).toBeTruthy();
+    expect(screen.getByRole("option", { name: "竹丝二厂" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "申请换岗" })).toBeNull();
+  });
+
+  it("keeps new employee enrollment in the manager workspace", async () => {
+    mocks.listBambooRoleOptions.mockResolvedValue([
+      { role_code: "SORT_OPERATOR", display_name: "分选工", category: "PRODUCTION", self_requestable: false },
+    ]);
+    withSession(<BambooPersonnelPage />, { ...worker, bamboo_role: "PLANT_MANAGER", position: "厂长" });
+
+    expect(await screen.findByRole("heading", { name: "添加本厂新员工" })).toBeTruthy();
+    expect(screen.getByLabelText("员工姓名")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "添加到本厂" })).toBeTruthy();
   });
 });

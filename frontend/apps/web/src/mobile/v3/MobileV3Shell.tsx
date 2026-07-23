@@ -16,6 +16,7 @@ const PAGE_COPY: Array<{ match: (path: string) => boolean; title: string; sub: s
   { match: (path) => path.startsWith("/mobile/records/"), title: "竹丝流程详情", sub: "查看整张电子表单并完成当前签字" },
   { match: (path) => path === "/mobile/submissions", title: "提交记录", sub: "查看本人提交与后续流转状态" },
   { match: (path) => path === "/mobile/profile", title: "我的", sub: "账号、班组与应用状态" },
+  { match: (path) => path === "/mobile/personnel", title: "人员调度", sub: "厂长审批与管理员执行" },
 ];
 
 export function MobileV3Shell() {

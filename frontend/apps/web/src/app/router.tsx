@@ -12,6 +12,7 @@ import { MobileLoginPage } from "../mobile/MobileLoginPage";
 import { MobileBambooProcessPage } from "../mobile/MobileBambooProcessPage";
 import { BambooV3SubmissionsPage } from "../mobile/v3/BambooV3SubmissionsPage";
 import { BambooV3ProfilePage } from "../mobile/v3/BambooV3ProfilePage";
+import { BambooPersonnelPage } from "../mobile/personnel/BambooPersonnelPage";
 import { MobileSessionProvider } from "../mobile/session/MobileSessionProvider";
 import { RequireMobileSession } from "../mobile/session/RequireMobileSession";
 import { AppShell } from "./AppShell";
@@ -131,6 +132,7 @@ export function AppRoutes() {
           <Route path="mobile/record/team-sheet-piece" element={<Navigate to="/mobile/work" replace />} />
           <Route path="mobile/submissions" element={<BambooV3SubmissionsPage />} />
           <Route path="mobile/profile" element={<BambooV3ProfilePage />} />
+          <Route path="mobile/personnel" element={<BambooPersonnelPage />} />
         </Route>
       </Route>
     </Routes>

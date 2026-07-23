@@ -287,6 +287,15 @@ def list_factory_employees(request: Request) -> list[dict[str, object]]:
         raise _operation_error(error) from error
 
 
+@router.get("/factories")
+def list_factories(request: Request) -> list[dict[str, object]]:
+    actor = _bamboo_actor(request)
+    try:
+        return _services(request).bamboo_operations.list_factories(actor)
+    except BambooOperationError as error:
+        raise _operation_error(error) from error
+
+
 @router.post("/admin/employees", status_code=status.HTTP_201_CREATED)
 def create_factory_employee(
     body: CreateFactoryEmployeeRequest,

@@ -928,13 +928,15 @@ class BambooOperationsService:
         if actor.role not in {BambooRole.PLANT_MANAGER, BambooRole.SYSTEM_ADMIN}:
             raise BambooOperationError("MANAGER_REQUIRED", "仅厂长或管理员可查看人员")
         with Session(self._engine) as session:
-            assignments = session.scalars(
-                select(EmployeeBambooAssignmentRow)
-                .where(
-                    EmployeeBambooAssignmentRow.factory_id == actor.factory_id,
-                    EmployeeBambooAssignmentRow.status == "ACTIVE",
+            query = select(EmployeeBambooAssignmentRow).where(
+                EmployeeBambooAssignmentRow.status == "ACTIVE",
+            )
+            if actor.role is BambooRole.PLANT_MANAGER:
+                query = query.where(
+                    EmployeeBambooAssignmentRow.factory_id == actor.factory_id
                 )
-                .order_by(EmployeeBambooAssignmentRow.effective_at.desc())
+            assignments = session.scalars(
+                query.order_by(EmployeeBambooAssignmentRow.effective_at.desc())
             ).all()
             people: list[dict[str, Any]] = []
             for assignment in assignments:
@@ -949,6 +951,7 @@ class BambooOperationsService:
                     {
                         "employee_code": employee.code,
                         "employee_name": employee.display_name,
+                        "factory_id": assignment.factory_id,
                         "role_code": assignment.role_code,
                         "role_name": (
                             role.display_name if role is not None else assignment.role_code
@@ -959,6 +962,20 @@ class BambooOperationsService:
                 people,
                 key=lambda item: (item["employee_name"], item["employee_code"]),
             )
+
+    def list_factories(self, actor: BambooActor) -> list[dict[str, Any]]:
+        if actor.role not in {BambooRole.PLANT_MANAGER, BambooRole.SYSTEM_ADMIN}:
+            raise BambooOperationError("MANAGER_REQUIRED", "当前职务不能查看工厂列表")
+        with Session(self._engine) as session:
+            rows = session.scalars(
+                select(BambooFactoryRow)
+                .where(BambooFactoryRow.active.is_(True))
+                .order_by(BambooFactoryRow.name)
+            ).all()
+            return [
+                {"factory_id": row.factory_id, "code": row.code, "name": row.name}
+                for row in rows
+            ]
 
     def create_factory_employee(
         self,

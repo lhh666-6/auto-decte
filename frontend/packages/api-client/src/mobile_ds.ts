@@ -244,8 +244,32 @@ export interface BambooRoleOption {
 export interface BambooFactoryEmployee {
   employee_code: string;
   employee_name: string;
+  factory_id: string;
   role_code: string;
   role_name: string;
+}
+
+export interface BambooFactory {
+  factory_id: string;
+  code: string;
+  name: string;
+}
+
+export interface BambooPersonnelTransfer {
+  transfer_id: string;
+  employee_code: string;
+  transfer_type: "INTERNAL" | "CROSS_FACTORY" | "MANAGER_REPLACEMENT";
+  source_factory_id: string;
+  target_factory_id: string;
+  from_role: string;
+  to_role: string;
+  reason: string;
+  status: string;
+  source_manager_decision: string | null;
+  target_manager_decision: string | null;
+  admin_decision: string | null;
+  executed_at: string | null;
+  revision: number;
 }
 
 export interface BambooHistoryItem {
@@ -767,6 +791,51 @@ export class MobileApiClient {
 
   listBambooFactoryEmployees(): Promise<BambooFactoryEmployee[]> {
     return this.request("/bamboo/admin/employees");
+  }
+
+  listBambooFactories(): Promise<BambooFactory[]> {
+    return this.request("/bamboo/factories");
+  }
+
+  listBambooPersonnelTransfers(): Promise<BambooPersonnelTransfer[]> {
+    return this.request("/bamboo/personnel-transfers");
+  }
+
+  createBambooPersonnelTransfer(input: {
+    employee_code: string;
+    to_role: string;
+    target_factory_id: string;
+    reason: string;
+  }): Promise<BambooPersonnelTransfer> {
+    return this.request("/bamboo/personnel-transfers", {
+      method: "POST",
+      headers: { "Idempotency-Key": createMobileClientId("personnel-transfer") },
+      body: JSON.stringify(input),
+    });
+  }
+
+  decideBambooPersonnelTransferAsManager(
+    transferId: string,
+    approve: boolean,
+    note: string,
+  ): Promise<BambooPersonnelTransfer> {
+    return this.request(`/bamboo/personnel-transfers/${encodeURIComponent(transferId)}/manager-decision`, {
+      method: "POST",
+      headers: { "Idempotency-Key": createMobileClientId("transfer-manager-decision") },
+      body: JSON.stringify({ approve, note }),
+    });
+  }
+
+  executeBambooPersonnelTransfer(
+    transferId: string,
+    approve: boolean,
+    note: string,
+  ): Promise<BambooPersonnelTransfer> {
+    return this.request(`/bamboo/personnel-transfers/${encodeURIComponent(transferId)}/execute`, {
+      method: "POST",
+      headers: { "Idempotency-Key": createMobileClientId("transfer-admin-execute") },
+      body: JSON.stringify({ approve, note }),
+    });
   }
 
   createBambooFactoryEmployee(
