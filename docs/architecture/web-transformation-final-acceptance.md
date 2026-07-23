@@ -17,8 +17,8 @@
 
 ## 最终门禁
 
-- 后端新主线与冻结移动端组合验收：`90 passed`
-- 前端全量 Vitest：通过
+- 后端新主线与冻结移动端组合验收：`111 passed`
+- 前端全量 Vitest：`291 passed`
 - Ruff：通过
 - Mypy strict：通过
 - Web TypeScript typecheck：通过
