@@ -1,5 +1,6 @@
 """Plant Web must expose the same Bamboo records and notifications."""
 
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -158,3 +159,52 @@ def test_plant_web_reads_shared_bamboo_records_and_notifications(tmp_path: Path)
     mobile_dashboard = manager_mobile.get("/api/v1/mobile/bamboo/dashboard")
     assert mobile_dashboard.status_code == 403
     assert mobile_dashboard.json()["code"] == "PLANT_MANAGER_WEB_ONLY"
+
+
+def test_two_plant_web_returns_cannot_both_commit(tmp_path: Path) -> None:
+    services = build_services(Settings(data_root=tmp_path))
+    _add_user(services, "SORT-1", "SORT_OPERATOR")
+    _add_user(services, "MANAGER-1", "PLANT_MANAGER")
+    sort = _mobile(services, "SORT-1")
+    created = sort.post(
+        "/api/v1/mobile/bamboo/records",
+        headers={
+            "X-CSRF-Token": sort.cookies["mobile_csrf"],
+            "Idempotency-Key": "concurrent-record",
+        },
+        json={
+            "base_info": {
+                "cage_no": "CONCURRENT-01",
+                "length": "2.3",
+                "shade": "深",
+                "grade": "A",
+                "bundle_count": 8,
+            }
+        },
+    ).json()
+    first = _web(services, "MANAGER-1")
+    second = _web(services, "MANAGER-1")
+
+    def submit(client: TestClient, key: str) -> tuple[int, str]:
+        response = client.post(
+            f"/api/v1/plant/records/{created['record_id']}/return",
+            headers={
+                "X-CSRF-Token": client.cookies["web_csrf"],
+                "Idempotency-Key": key,
+            },
+            json={
+                "target_stages": ["SORT"],
+                "reason": key,
+                "expected_revision": created["revision"],
+            },
+        )
+        return response.status_code, response.json().get("code", "")
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(
+            lambda args: submit(*args),
+            [(first, "concurrent-a"), (second, "concurrent-b")],
+        ))
+
+    assert sorted(status for status, _ in results) == [200, 409]
+    assert "REVISION_CONFLICT" in {code for _, code in results}

@@ -8,7 +8,7 @@ from decimal import Decimal
 from typing import Any, cast
 from uuid import uuid4
 
-from sqlalchemy import Engine, func, select, update
+from sqlalchemy import Engine, func, select, text, update
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.orm import Session
 
@@ -1436,6 +1436,10 @@ class BambooOperationsService:
         ).encode()
         payload_hash = hashlib.sha256(canonical).hexdigest()
         with Session(self._engine) as session, session.begin():
+            if self._engine.dialect.name == "sqlite":
+                # SQLite has no row-level FOR UPDATE. Acquire the write lock before
+                # reading either the idempotency row or record revision.
+                session.execute(text("BEGIN IMMEDIATE"))
             existing = session.scalar(
                 select(BambooReturnRow).where(
                     BambooReturnRow.actor_id == actor.actor_id,
@@ -1449,6 +1453,25 @@ class BambooOperationsService:
                         "幂等键已用于其他打回请求",
                     )
                 return dict(existing.result_payload)
+            if self._engine.dialect.name != "sqlite":
+                session.execute(
+                    select(BambooRecordRow.record_id)
+                    .where(BambooRecordRow.record_id == record_id)
+                    .with_for_update()
+                )
+                existing = session.scalar(
+                    select(BambooReturnRow).where(
+                        BambooReturnRow.actor_id == actor.actor_id,
+                        BambooReturnRow.idempotency_key == idempotency_key,
+                    )
+                )
+                if existing is not None:
+                    if existing.payload_hash != payload_hash:
+                        raise BambooOperationError(
+                            "IDEMPOTENCY_CONFLICT",
+                            "幂等键已用于其他打回请求",
+                        )
+                    return dict(existing.result_payload)
             record = self._record(session, record_id, actor)
             if record.revision != expected_revision:
                 raise BambooOperationError(
