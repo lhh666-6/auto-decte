@@ -113,6 +113,7 @@ class SelectiveReturnRequest(BaseModel):
     target_stages: list[str] = Field(min_length=1, max_length=3)
     reason: str = Field(min_length=1, max_length=2000)
     source: str = Field(default="SUPERVISOR", max_length=32)
+    expected_revision: int = Field(ge=1)
 
 
 class RoleChangeRequest(BaseModel):

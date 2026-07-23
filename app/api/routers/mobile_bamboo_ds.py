@@ -216,7 +216,7 @@ def create_record(
 def _operation_error(error: BambooOperationError) -> HTTPException:
     return HTTPException(
         status_code=409,
-        detail={"code": error.code, "detail": str(error)},
+        detail={"code": error.code, "detail": str(error), **error.details},
     )
 
 
@@ -658,7 +658,7 @@ def selective_return(
     x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token"),
 ) -> dict[str, object]:
     actor = _bamboo_actor(request)
-    _require_write_headers(request, idempotency_key, x_csrf_token)
+    key = _require_write_headers(request, idempotency_key, x_csrf_token)
     try:
         stages = [BambooStage(value) for value in body.target_stages]
         return _services(request).bamboo_operations.selective_return(
@@ -667,6 +667,8 @@ def selective_return(
             target_stages=stages,
             reason=body.reason,
             source=body.source,
+            expected_revision=body.expected_revision,
+            idempotency_key=key,
         )
     except ValueError as error:
         raise HTTPException(

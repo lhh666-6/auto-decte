@@ -600,6 +600,7 @@ def test_complete_bamboo_operations_from_payroll_through_finance(tmp_path: Path)
             "target_stages": ["DRYING"],
             "reason": "主管判定干燥环节需要重写",
             "source": "FINANCE",
+            "expected_revision": 5,
         },
     )
     assert returned.status_code == 200
@@ -650,18 +651,41 @@ def test_returning_sorting_marks_linked_source_snapshot_upstream_changed(
     _submit(sort, sorting_id, "SORT", 1, {"moisture": [12, 13, 14]})
     linked = dipping.get("/api/v1/mobile/bamboo/tasks").json()["tasks"][0]
 
+    return_payload = {
+        "target_stages": ["SORT"],
+        "reason": "分选数据需要重填",
+        "source": "SUPERVISOR",
+        "expected_revision": 2,
+    }
     returned = supervisor.post(
         f"/api/v1/mobile/bamboo/records/{sorting_id}/return",
         headers=_headers(supervisor, "return-sorting"),
-        json={
-            "target_stages": ["SORT"],
-            "reason": "分选数据需要重填",
-            "source": "SUPERVISOR",
-        },
+        json=return_payload,
     )
 
     assert returned.status_code == 200
     assert returned.json()["current_stage"] == "SORT"
+    repeated = supervisor.post(
+        f"/api/v1/mobile/bamboo/records/{sorting_id}/return",
+        headers=_headers(supervisor, "return-sorting"),
+        json=return_payload,
+    )
+    assert repeated.status_code == 200
+    assert repeated.json() == returned.json()
+    conflicting_key = supervisor.post(
+        f"/api/v1/mobile/bamboo/records/{sorting_id}/return",
+        headers=_headers(supervisor, "return-sorting"),
+        json={**return_payload, "reason": "同一幂等键不能换原因"},
+    )
+    assert conflicting_key.status_code == 409
+    assert conflicting_key.json()["code"] == "IDEMPOTENCY_CONFLICT"
+    stale = supervisor.post(
+        f"/api/v1/mobile/bamboo/records/{sorting_id}/return",
+        headers=_headers(supervisor, "return-stale"),
+        json=return_payload,
+    )
+    assert stale.status_code == 409
+    assert stale.json()["code"] == "REVISION_CONFLICT"
     refreshed_linked = dipping.get(
         f"/api/v1/mobile/bamboo/records/{linked['record_id']}"
     ).json()

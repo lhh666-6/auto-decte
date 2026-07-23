@@ -1080,6 +1080,13 @@ class BambooInspectionExceptionRow(Base):
 
 class BambooReturnRow(Base):
     __tablename__ = "bamboo_returns"
+    __table_args__ = (
+        UniqueConstraint(
+            "actor_id",
+            "idempotency_key",
+            name="ux_bamboo_return_actor_idempotency",
+        ),
+    )
 
     return_id: Mapped[str] = mapped_column(String, primary_key=True)
     record_id: Mapped[str] = mapped_column(
@@ -1092,6 +1099,10 @@ class BambooReturnRow(Base):
     source: Mapped[str] = mapped_column(String, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     record_revision: Mapped[int] = mapped_column(Integer, nullable=False)
+    actor_id: Mapped[str] = mapped_column(String, nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String, nullable=False)
+    payload_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    result_payload: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
 
 
 class BambooPlantAuditRow(Base):

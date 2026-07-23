@@ -83,8 +83,15 @@ DEFAULT_ROLE_DEFINITIONS = {
 
 
 class BambooOperationError(RuntimeError):
-    def __init__(self, code: str, detail: str) -> None:
+    def __init__(
+        self,
+        code: str,
+        detail: str,
+        *,
+        details: dict[str, object] | None = None,
+    ) -> None:
         self.code = code
+        self.details = details or {}
         super().__init__(detail)
 
 
@@ -834,6 +841,8 @@ class BambooOperationsService:
         target_stage: BambooStage | None = None
         appeal_text = ""
         recipient = ""
+        record_revision = 0
+        appeal_revision = 0
         with Session(self._engine) as session, session.begin():
             window = session.get(BambooInspectionWindowRow, record_id)
             if window is None or window.factory_id != actor.factory_id:
@@ -865,6 +874,8 @@ class BambooOperationsService:
                 )
             result = self._inspection_window(window, record, now)
             result["appeal_decision"] = window.appeal_decision
+            record_revision = record.revision
+            appeal_revision = window.revision
         if approve and target_stage is not None:
             return_result = self.selective_return(
                 record_id,
@@ -872,6 +883,8 @@ class BambooOperationsService:
                 target_stages=[target_stage],
                 reason=appeal_text,
                 source="INSPECTION_APPEAL",
+                expected_revision=record_revision,
+                idempotency_key=f"appeal:{record_id}:{appeal_revision}",
             )
             result["return"] = return_result
         return result
@@ -1400,17 +1413,52 @@ class BambooOperationsService:
         target_stages: list[BambooStage],
         reason: str,
         source: str,
+        expected_revision: int,
+        idempotency_key: str,
     ) -> dict[str, Any]:
-        if actor.role is not BambooRole.SUPERVISOR and not (
-            actor.role is BambooRole.PLANT_MANAGER and source == "INSPECTION_APPEAL"
-        ):
-            raise BambooOperationError("RETURN_FORBIDDEN", "由主管选择需要重写的流程")
+        if actor.role not in {BambooRole.SUPERVISOR, BambooRole.PLANT_MANAGER}:
+            raise BambooOperationError("RETURN_FORBIDDEN", "仅主管或厂长可以选择返工环节")
         selected = set(target_stages)
         if not selected:
             raise BambooOperationError("INVALID_RETURN_STAGES", "请选择需要重写的生产环节")
         now = datetime.now(UTC)
+        canonical = json.dumps(
+            {
+                "record_id": record_id,
+                "target_stages": sorted(stage.value for stage in selected),
+                "reason": reason,
+                "source": source,
+                "expected_revision": expected_revision,
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+        payload_hash = hashlib.sha256(canonical).hexdigest()
         with Session(self._engine) as session, session.begin():
+            existing = session.scalar(
+                select(BambooReturnRow).where(
+                    BambooReturnRow.actor_id == actor.actor_id,
+                    BambooReturnRow.idempotency_key == idempotency_key,
+                )
+            )
+            if existing is not None:
+                if existing.payload_hash != payload_hash:
+                    raise BambooOperationError(
+                        "IDEMPOTENCY_CONFLICT",
+                        "幂等键已用于其他打回请求",
+                    )
+                return dict(existing.result_payload)
             record = self._record(session, record_id, actor)
+            if record.revision != expected_revision:
+                raise BambooOperationError(
+                    "REVISION_CONFLICT",
+                    "记录已更新，请刷新后重试",
+                    details={
+                        "expected_revision": expected_revision,
+                        "actual_revision": record.revision,
+                    },
+                )
             form_type = BambooFormType(record.form_type)
             allowed_stages = (
                 {BambooStage.SORT}
@@ -1511,14 +1559,20 @@ class BambooOperationsService:
                 source=source,
                 created_at=now,
                 record_revision=record.revision,
+                actor_id=actor.actor_id,
+                idempotency_key=idempotency_key,
+                payload_hash=payload_hash,
+                result_payload={},
             )
-            session.add(return_row)
-            return {
+            result = {
                 "return_id": return_row.return_id,
                 "record_id": record_id,
                 "current_stage": earliest.value,
                 "revision": record.revision,
             }
+            return_row.result_payload = result
+            session.add(return_row)
+            return result
 
     def request_role_change(
         self, *, actor: BambooActor, to_role: str, reason: str
