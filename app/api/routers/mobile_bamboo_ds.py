@@ -26,11 +26,14 @@ from app.api.schemas.bamboo_process_ds import (
     FinanceDecisionRequest,
     FinanceInquiryReplyRequest,
     FinanceInquiryRequest,
+    InspectionAppealDecisionRequest,
     PayrollRuleRequest,
     RoleChangeDecisionRequest,
     RoleChangeRequest,
     SelectiveReturnRequest,
     SubmitBambooStageRequest,
+    SubmitInspectionAppealRequest,
+    TerminateInspectionRequest,
 )
 from app.application.bamboo_operations_ds import BambooOperationError
 from app.application.mobile_identity_ds import MobileActor
@@ -375,6 +378,112 @@ def claim_inspection(
     _require_write_headers(request, idempotency_key, x_csrf_token)
     try:
         return _services(request).bamboo_operations.claim_inspection(record_id, actor=actor)
+    except BambooOperationError as error:
+        raise _operation_error(error) from error
+
+
+@router.post("/inspection-queue/{record_id}/terminate")
+def terminate_inspection(
+    record_id: str,
+    body: TerminateInspectionRequest,
+    request: Request,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token"),
+) -> dict[str, object]:
+    actor = _bamboo_actor(request)
+    _require_write_headers(request, idempotency_key, x_csrf_token)
+    try:
+        return _services(request).bamboo_operations.terminate_inspection(
+            record_id, actor=actor, confirm=body.confirm
+        )
+    except BambooOperationError as error:
+        raise _operation_error(error) from error
+
+
+@router.post("/inspection-queue/{record_id}/appeal/claim")
+def claim_inspection_appeal(
+    record_id: str,
+    request: Request,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token"),
+) -> dict[str, object]:
+    actor = _bamboo_actor(request)
+    _require_write_headers(request, idempotency_key, x_csrf_token)
+    try:
+        return _services(request).bamboo_operations.claim_inspection_appeal(
+            record_id, actor=actor
+        )
+    except BambooOperationError as error:
+        raise _operation_error(error) from error
+
+
+@router.post("/inspection-queue/{record_id}/appeal")
+def submit_inspection_appeal(
+    record_id: str,
+    body: SubmitInspectionAppealRequest,
+    request: Request,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token"),
+) -> dict[str, object]:
+    actor = _bamboo_actor(request)
+    _require_write_headers(request, idempotency_key, x_csrf_token)
+    try:
+        stage = BambooStage(body.target_stage)
+        return _services(request).bamboo_operations.submit_inspection_appeal(
+            record_id,
+            actor=actor,
+            target_stage=stage,
+            text_evidence=body.text_evidence,
+        )
+    except ValueError as error:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "INVALID_INSPECTION_STAGE", "detail": "无效的申诉环节"},
+        ) from error
+    except BambooOperationError as error:
+        raise _operation_error(error) from error
+
+
+@router.post("/inspection-queue/{record_id}/appeal/decision")
+def decide_inspection_appeal(
+    record_id: str,
+    body: InspectionAppealDecisionRequest,
+    request: Request,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token"),
+) -> dict[str, object]:
+    actor = _bamboo_actor(request)
+    _require_write_headers(request, idempotency_key, x_csrf_token)
+    try:
+        return _services(request).bamboo_operations.decide_inspection_appeal(
+            record_id,
+            actor=actor,
+            approve=body.approve,
+            note=body.note,
+        )
+    except BambooOperationError as error:
+        raise _operation_error(error) from error
+
+
+@router.get("/notifications")
+def list_notifications(request: Request) -> dict[str, object]:
+    actor = _bamboo_actor(request)
+    return _services(request).bamboo_operations.list_notifications(actor)
+
+
+@router.post("/notifications/{notification_id}/read")
+def read_notification(
+    notification_id: str,
+    request: Request,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token"),
+) -> dict[str, object]:
+    actor = _bamboo_actor(request)
+    _require_write_headers(request, idempotency_key, x_csrf_token)
+    try:
+        return _services(request).bamboo_operations.read_notification(
+            notification_id, actor=actor
+        )
     except BambooOperationError as error:
         raise _operation_error(error) from error
 

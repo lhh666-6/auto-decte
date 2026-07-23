@@ -1,8 +1,10 @@
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from fastapi.testclient import TestClient
+from sqlalchemy.orm import Session
 
+from app.adapters.database.models import BambooInspectionWindowRow
 from app.api.main_ds import create_app
 from app.modules.master_data.models_ds import MasterDataCatalog
 from app.services.container import Services, build_services
@@ -172,6 +174,160 @@ def test_inspection_queue_claims_once_and_accepts_one_click_conforming(
         "/api/v1/mobile/bamboo/inspection-queue", params={"bucket": "history"}
     ).json()["items"]
     assert {item["record_id"] for item in history} == {record_id, second_id}
+
+
+def test_manager_termination_appeal_and_durable_notifications(tmp_path: Path) -> None:
+    services = build_services(Settings(data_root=tmp_path, bamboo_plant_audit_wait_hours=0))
+    for code, role in (
+        ("SORT-A", "SORT_OPERATOR"),
+        ("INSPECT-A1", "INSPECTOR"),
+        ("INSPECT-A2", "INSPECTOR"),
+        ("SUP-A", "SUPERVISOR"),
+        ("MANAGER-A", "PLANT_MANAGER"),
+    ):
+        _add_user(services, code, role)
+    sort = _client(services, "SORT-A")
+    inspector = _client(services, "INSPECT-A1")
+    other_inspector = _client(services, "INSPECT-A2")
+    supervisor = _client(services, "SUP-A")
+    manager = _client(services, "MANAGER-A")
+    record = sort.post(
+        "/api/v1/mobile/bamboo/records",
+        headers=_headers(sort, "appeal-create"),
+        json={
+            "base_info": {
+                "cage_no": "APPEAL-01",
+                "length": "2.3",
+                "shade": "深",
+                "grade": "A",
+                "bundle_count": 5,
+            }
+        },
+    ).json()
+    record_id = str(record["record_id"])
+    _submit(sort, record_id, "SORT", 1, {"moisture": [12]})
+    _submit(supervisor, record_id, "SUPERVISOR", 2, {"result": "APPROVED"})
+    inspector.post(
+        f"/api/v1/mobile/bamboo/inspection-queue/{record_id}/claim",
+        headers=_headers(inspector, "appeal-normal-claim"),
+    ).raise_for_status()
+
+    terminated = manager.post(
+        f"/api/v1/mobile/bamboo/inspection-queue/{record_id}/terminate",
+        headers=_headers(manager, "appeal-terminate"),
+        json={"confirm": True},
+    )
+    assert terminated.status_code == 200
+    assert terminated.json()["status"] == "EARLY_TERMINATED"
+    stopped = inspector.post(
+        f"/api/v1/mobile/bamboo/records/{record_id}/inspections",
+        headers=_headers(inspector, "appeal-stopped-result"),
+        json={"conclusion": "CONFORMING", "device_id": "phone"},
+    )
+    assert stopped.status_code == 409
+    assert stopped.json()["code"] == "INSPECTION_CLAIM_REQUIRED"
+    for client in (inspector, other_inspector):
+        inbox = client.get("/api/v1/mobile/bamboo/notifications").json()["items"]
+        assert inbox[0]["category"] == "INSPECTION_TERMINATED"
+    _submit(manager, record_id, "PLANT_AUDIT", 3, {"result": "APPROVED"})
+
+    appeal = inspector.post(
+        f"/api/v1/mobile/bamboo/inspection-queue/{record_id}/appeal/claim",
+        headers=_headers(inspector, "appeal-claim"),
+    )
+    assert appeal.status_code == 200
+    reserved = other_inspector.post(
+        f"/api/v1/mobile/bamboo/inspection-queue/{record_id}/appeal/claim",
+        headers=_headers(other_inspector, "appeal-other-claim"),
+    )
+    assert reserved.status_code == 409
+    assert reserved.json()["code"] == "APPEAL_RESERVED_FOR_ORIGINAL_INSPECTOR"
+    submitted = inspector.post(
+        f"/api/v1/mobile/bamboo/inspection-queue/{record_id}/appeal",
+        headers=_headers(inspector, "appeal-submit"),
+        json={"target_stage": "SORT", "text_evidence": "复核发现竹丝受潮"},
+    )
+    assert submitted.status_code == 200
+    decision = manager.post(
+        f"/api/v1/mobile/bamboo/inspection-queue/{record_id}/appeal/decision",
+        headers=_headers(manager, "appeal-decision"),
+        json={"approve": False, "note": "复核批次正常"},
+    )
+    assert decision.status_code == 200
+    assert decision.json()["appeal_decision"] == "REJECTED"
+    assert inspector.get("/api/v1/mobile/bamboo/notifications").json()["items"][0][
+        "category"
+    ] == "APPEAL_DECIDED"
+
+    expired_record = sort.post(
+        "/api/v1/mobile/bamboo/records",
+        headers=_headers(sort, "appeal-expired-create"),
+        json={
+            "base_info": {
+                "cage_no": "APPEAL-02",
+                "length": "2.3",
+                "shade": "浅",
+                "grade": "B",
+                "bundle_count": 2,
+            }
+        },
+    ).json()
+    expired_id = str(expired_record["record_id"])
+    _submit(sort, expired_id, "SORT", 1, {"moisture": [10]})
+    _submit(supervisor, expired_id, "SUPERVISOR", 2, {"result": "APPROVED"})
+    manager.post(
+        f"/api/v1/mobile/bamboo/inspection-queue/{expired_id}/terminate",
+        headers=_headers(manager, "appeal-expired-terminate"),
+        json={"confirm": True},
+    ).raise_for_status()
+    with Session(services.engine) as session, session.begin():
+        window = session.get(BambooInspectionWindowRow, expired_id)
+        assert window is not None
+        window.appeal_deadline_at = datetime.now(UTC) - timedelta(seconds=1)
+    expired = other_inspector.post(
+        f"/api/v1/mobile/bamboo/inspection-queue/{expired_id}/appeal/claim",
+        headers=_headers(other_inspector, "appeal-expired-claim"),
+    )
+    assert expired.status_code == 409
+    assert expired.json()["code"] == "APPEAL_WINDOW_EXPIRED"
+
+    approved_record = sort.post(
+        "/api/v1/mobile/bamboo/records",
+        headers=_headers(sort, "appeal-approved-create"),
+        json={
+            "base_info": {
+                "cage_no": "APPEAL-03",
+                "length": "2.3",
+                "shade": "深",
+                "grade": "A",
+                "bundle_count": 3,
+            }
+        },
+    ).json()
+    approved_id = str(approved_record["record_id"])
+    _submit(sort, approved_id, "SORT", 1, {"moisture": [9]})
+    _submit(supervisor, approved_id, "SUPERVISOR", 2, {"result": "APPROVED"})
+    manager.post(
+        f"/api/v1/mobile/bamboo/inspection-queue/{approved_id}/terminate",
+        headers=_headers(manager, "appeal-approved-terminate"),
+        json={"confirm": True},
+    ).raise_for_status()
+    other_inspector.post(
+        f"/api/v1/mobile/bamboo/inspection-queue/{approved_id}/appeal/claim",
+        headers=_headers(other_inspector, "appeal-approved-claim"),
+    ).raise_for_status()
+    other_inspector.post(
+        f"/api/v1/mobile/bamboo/inspection-queue/{approved_id}/appeal",
+        headers=_headers(other_inspector, "appeal-approved-submit"),
+        json={"target_stage": "SORT", "text_evidence": "复测确认分选异常"},
+    ).raise_for_status()
+    approved = manager.post(
+        f"/api/v1/mobile/bamboo/inspection-queue/{approved_id}/appeal/decision",
+        headers=_headers(manager, "appeal-approved-decision"),
+        json={"approve": True, "note": "同意回溯"},
+    )
+    assert approved.status_code == 200, approved.text
+    assert approved.json()["return"]["current_stage"] == "SORT"
 
 
 def test_complete_bamboo_operations_from_payroll_through_finance(tmp_path: Path) -> None:

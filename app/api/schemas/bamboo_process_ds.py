@@ -95,6 +95,20 @@ class CloseInspectionExceptionRequest(BaseModel):
     resolution: str = Field(min_length=1, max_length=2000)
 
 
+class TerminateInspectionRequest(BaseModel):
+    confirm: bool
+
+
+class SubmitInspectionAppealRequest(BaseModel):
+    target_stage: str
+    text_evidence: str = Field(min_length=1, max_length=10000)
+
+
+class InspectionAppealDecisionRequest(BaseModel):
+    approve: bool
+    note: str = Field(default="", max_length=2000)
+
+
 class SelectiveReturnRequest(BaseModel):
     target_stages: list[str] = Field(min_length=1, max_length=3)
     reason: str = Field(min_length=1, max_length=2000)

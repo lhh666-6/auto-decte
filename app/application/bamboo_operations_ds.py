@@ -34,6 +34,7 @@ from app.adapters.database.models import (
     MasterDataRecordRow,
     MobileAccessProfileRow,
     MobileCredentialRow,
+    MobileNotificationRow,
 )
 from app.adapters.storage.local import LocalEvidenceStorage
 from app.application.mobile_identity_ds import hash_pin
@@ -662,6 +663,218 @@ class BambooOperationsService:
                 raise BambooOperationError("INSPECTION_WINDOW_NOT_FOUND", "检测任务不存在")
             return self._inspection_window(window, record, now)
 
+    def terminate_inspection(
+        self,
+        record_id: str,
+        *,
+        actor: BambooActor,
+        confirm: bool,
+    ) -> dict[str, Any]:
+        if actor.role is not BambooRole.PLANT_MANAGER:
+            raise BambooOperationError("MANAGER_REQUIRED", "仅厂长可以提前终止检测")
+        if not confirm:
+            raise BambooOperationError("TERMINATION_CONFIRMATION_REQUIRED", "请二次确认提前签字")
+        now = datetime.now(UTC)
+        with Session(self._engine) as session, session.begin():
+            window = session.get(BambooInspectionWindowRow, record_id)
+            if window is None or window.factory_id != actor.factory_id:
+                raise BambooOperationError("INSPECTION_WINDOW_NOT_FOUND", "检测任务不存在")
+            record = session.get(BambooRecordRow, record_id)
+            if record is None:  # pragma: no cover
+                raise BambooOperationError("INSPECTION_WINDOW_NOT_FOUND", "检测任务不存在")
+            if window.status == "EARLY_TERMINATED" and window.terminated_by == actor.actor_id:
+                return self._inspection_window(window, record, now)
+            if window.status not in {"OPEN", "CLAIMED"}:
+                raise BambooOperationError("INSPECTION_WINDOW_CLOSED", "当前检测已结束")
+            if now >= _utc(window.deadline_at):
+                window.status = "EXPIRED"
+                window.appeal_deadline_at = _utc(window.deadline_at) + timedelta(hours=24)
+                window.revision += 1
+                raise BambooOperationError("INSPECTION_WINDOW_EXPIRED", "两小时检测窗口已结束")
+            window.status = "EARLY_TERMINATED"
+            window.terminated_by = actor.actor_id
+            window.terminated_at = now
+            window.appeal_deadline_at = now + timedelta(hours=24)
+            window.revision += 1
+            self._notify_factory_role(
+                session,
+                factory_id=actor.factory_id,
+                role=BambooRole.INSPECTOR,
+                category="INSPECTION_TERMINATED",
+                title="检测已由厂长提前终止",
+                body=f"表单 {record.display_no} 的检测权限已停止，可在24小时内申诉。",
+                link=f"/mobile/bamboo/{record_id}",
+                payload={"record_id": record_id},
+                now=now,
+            )
+            return self._inspection_window(window, record, now)
+
+    def claim_inspection_appeal(
+        self,
+        record_id: str,
+        *,
+        actor: BambooActor,
+    ) -> dict[str, Any]:
+        if actor.role is not BambooRole.INSPECTOR:
+            raise BambooOperationError("INSPECTOR_REQUIRED", "仅检测人可以领取申诉")
+        now = datetime.now(UTC)
+        with Session(self._engine) as session, session.begin():
+            window = session.get(BambooInspectionWindowRow, record_id)
+            if window is None or window.factory_id != actor.factory_id:
+                raise BambooOperationError("INSPECTION_WINDOW_NOT_FOUND", "检测任务不存在")
+            record = session.get(BambooRecordRow, record_id)
+            if record is None:  # pragma: no cover
+                raise BambooOperationError("INSPECTION_WINDOW_NOT_FOUND", "检测任务不存在")
+            if window.appeal_deadline_at is None or now >= _utc(window.appeal_deadline_at):
+                raise BambooOperationError("APPEAL_WINDOW_EXPIRED", "24小时申诉窗口已结束")
+            if window.status not in {
+                "EARLY_TERMINATED",
+                "EXPIRED",
+                "APPEAL_CLAIMED",
+            }:
+                raise BambooOperationError("APPEAL_NOT_AVAILABLE", "当前表单不能发起申诉")
+            if window.claimed_by and window.claimed_by != actor.actor_id:
+                raise BambooOperationError(
+                    "APPEAL_RESERVED_FOR_ORIGINAL_INSPECTOR",
+                    "申诉权保留给最初领取检测的检测员",
+                )
+            if window.appeal_claimed_by == actor.actor_id:
+                return self._inspection_window(window, record, now)
+            if window.appeal_claimed_by is not None:
+                raise BambooOperationError("APPEAL_ALREADY_CLAIMED", "申诉已由另一名检测员领取")
+            window.status = "APPEAL_CLAIMED"
+            window.appeal_claimed_by = actor.actor_id
+            window.appeal_claimed_at = now
+            window.revision += 1
+            return self._inspection_window(window, record, now)
+
+    def submit_inspection_appeal(
+        self,
+        record_id: str,
+        *,
+        actor: BambooActor,
+        target_stage: BambooStage,
+        text_evidence: str,
+    ) -> dict[str, Any]:
+        if actor.role is not BambooRole.INSPECTOR:
+            raise BambooOperationError("INSPECTOR_REQUIRED", "仅检测人可以提交申诉")
+        now = datetime.now(UTC)
+        with Session(self._engine) as session, session.begin():
+            window = session.get(BambooInspectionWindowRow, record_id)
+            if window is None or window.factory_id != actor.factory_id:
+                raise BambooOperationError("INSPECTION_WINDOW_NOT_FOUND", "检测任务不存在")
+            record = session.get(BambooRecordRow, record_id)
+            if record is None:  # pragma: no cover
+                raise BambooOperationError("INSPECTION_WINDOW_NOT_FOUND", "检测任务不存在")
+            if window.appeal_deadline_at is None or now >= _utc(window.appeal_deadline_at):
+                raise BambooOperationError("APPEAL_WINDOW_EXPIRED", "24小时申诉窗口已结束")
+            if window.status != "APPEAL_CLAIMED" or window.appeal_claimed_by != actor.actor_id:
+                raise BambooOperationError("APPEAL_CLAIM_REQUIRED", "请先领取申诉权")
+            allowed = (
+                {BambooStage.SORT}
+                if record.form_type == BambooFormType.SORTING.value
+                else {BambooStage.DIPPING, BambooStage.DRYING}
+            )
+            if target_stage not in allowed:
+                raise BambooOperationError("INVALID_INSPECTION_STAGE", "申诉环节不属于当前表单")
+            text = text_evidence.strip()
+            if not text:
+                raise BambooOperationError("INSPECTION_EVIDENCE_REQUIRED", "请填写申诉检测结果")
+            window.status = "APPEAL_SUBMITTED"
+            window.appeal_payload = {
+                "target_stage": target_stage.value,
+                "conclusion": "NONCONFORMING",
+                "text_evidence": text,
+            }
+            window.appeal_submitted_at = now
+            window.revision += 1
+            self._notify_factory_role(
+                session,
+                factory_id=actor.factory_id,
+                role=BambooRole.PLANT_MANAGER,
+                category="APPEAL_SUBMITTED",
+                title="收到检测申诉",
+                body=f"表单 {record.display_no} 有新的检测申诉待审批。",
+                link=f"/mobile/bamboo/{record_id}",
+                payload={"record_id": record_id},
+                now=now,
+            )
+            return self._inspection_window(window, record, now)
+
+    def decide_inspection_appeal(
+        self,
+        record_id: str,
+        *,
+        actor: BambooActor,
+        approve: bool,
+        note: str,
+    ) -> dict[str, Any]:
+        if actor.role is not BambooRole.PLANT_MANAGER:
+            raise BambooOperationError("MANAGER_REQUIRED", "仅厂长可以审批检测申诉")
+        now = datetime.now(UTC)
+        target_stage: BambooStage | None = None
+        appeal_text = ""
+        recipient = ""
+        with Session(self._engine) as session, session.begin():
+            window = session.get(BambooInspectionWindowRow, record_id)
+            if window is None or window.factory_id != actor.factory_id:
+                raise BambooOperationError("INSPECTION_WINDOW_NOT_FOUND", "检测任务不存在")
+            record = session.get(BambooRecordRow, record_id)
+            if record is None:  # pragma: no cover
+                raise BambooOperationError("INSPECTION_WINDOW_NOT_FOUND", "检测任务不存在")
+            if window.status != "APPEAL_SUBMITTED" or not window.appeal_payload:
+                raise BambooOperationError("APPEAL_NOT_PENDING", "当前没有待审批申诉")
+            window.appeal_decision = "APPROVED" if approve else "REJECTED"
+            window.appeal_decision_note = note
+            window.appeal_decided_by = actor.actor_id
+            window.appeal_decided_at = now
+            window.status = "APPEAL_APPROVED" if approve else "APPEAL_REJECTED"
+            window.revision += 1
+            recipient = str(window.appeal_claimed_by or "")
+            target_stage = BambooStage(str(window.appeal_payload["target_stage"]))
+            appeal_text = str(window.appeal_payload["text_evidence"])
+            if recipient:
+                self._notify(
+                    session,
+                    recipient_actor_id=recipient,
+                    category="APPEAL_DECIDED",
+                    title="检测申诉已审批",
+                    body=f"表单 {record.display_no} 的申诉已{'通过' if approve else '驳回'}。",
+                    link=f"/mobile/bamboo/{record_id}",
+                    payload={"record_id": record_id, "approved": approve},
+                    now=now,
+                )
+            result = self._inspection_window(window, record, now)
+            result["appeal_decision"] = window.appeal_decision
+        if approve and target_stage is not None:
+            return_result = self.selective_return(
+                record_id,
+                actor=actor,
+                target_stages=[target_stage],
+                reason=appeal_text,
+                source="INSPECTION_APPEAL",
+            )
+            result["return"] = return_result
+        return result
+
+    def list_notifications(self, actor: BambooActor) -> dict[str, Any]:
+        with Session(self._engine) as session:
+            rows = session.scalars(
+                select(MobileNotificationRow)
+                .where(MobileNotificationRow.recipient_actor_id == actor.actor_id)
+                .order_by(MobileNotificationRow.created_at.desc())
+            ).all()
+            return {"items": [self._notification(row) for row in rows]}
+
+    def read_notification(self, notification_id: str, *, actor: BambooActor) -> dict[str, Any]:
+        with Session(self._engine) as session, session.begin():
+            row = session.get(MobileNotificationRow, notification_id)
+            if row is None or row.recipient_actor_id != actor.actor_id:
+                raise BambooOperationError("NOTIFICATION_NOT_FOUND", "消息不存在")
+            if row.read_at is None:
+                row.read_at = datetime.now(UTC)
+            return self._notification(row)
+
     def list_role_options(self, actor: BambooActor) -> list[dict[str, Any]]:
         manager_roles = PRODUCTION_ROLES | {
             BambooRole.INSPECTOR.value,
@@ -1151,7 +1364,9 @@ class BambooOperationsService:
         reason: str,
         source: str,
     ) -> dict[str, Any]:
-        if actor.role is not BambooRole.SUPERVISOR:
+        if actor.role is not BambooRole.SUPERVISOR and not (
+            actor.role is BambooRole.PLANT_MANAGER and source == "INSPECTION_APPEAL"
+        ):
             raise BambooOperationError("RETURN_FORBIDDEN", "由主管选择需要重写的流程")
         selected = set(target_stages)
         if not selected:
@@ -1599,6 +1814,77 @@ class BambooOperationsService:
             "completed_at": window.completed_at,
             "appeal_deadline_at": window.appeal_deadline_at,
             "revision": window.revision,
+        }
+
+    @staticmethod
+    def _notify(
+        session: Session,
+        *,
+        recipient_actor_id: str,
+        category: str,
+        title: str,
+        body: str,
+        link: str | None,
+        payload: dict[str, Any],
+        now: datetime,
+    ) -> None:
+        session.add(
+            MobileNotificationRow(
+                notification_id=str(uuid4()),
+                recipient_actor_id=recipient_actor_id,
+                category=category,
+                title=title,
+                body=body,
+                link=link,
+                payload=payload,
+                read_at=None,
+                created_at=now,
+            )
+        )
+
+    def _notify_factory_role(
+        self,
+        session: Session,
+        *,
+        factory_id: str,
+        role: BambooRole,
+        category: str,
+        title: str,
+        body: str,
+        link: str | None,
+        payload: dict[str, Any],
+        now: datetime,
+    ) -> None:
+        recipients = session.scalars(
+            select(EmployeeBambooAssignmentRow.employee_code).where(
+                EmployeeBambooAssignmentRow.factory_id == factory_id,
+                EmployeeBambooAssignmentRow.role_code == role.value,
+                EmployeeBambooAssignmentRow.status == "ACTIVE",
+            )
+        ).all()
+        for recipient in set(recipients):
+            self._notify(
+                session,
+                recipient_actor_id=recipient,
+                category=category,
+                title=title,
+                body=body,
+                link=link,
+                payload=payload,
+                now=now,
+            )
+
+    @staticmethod
+    def _notification(row: MobileNotificationRow) -> dict[str, Any]:
+        return {
+            "notification_id": row.notification_id,
+            "category": row.category,
+            "title": row.title,
+            "body": row.body,
+            "link": row.link,
+            "payload": row.payload,
+            "read_at": row.read_at,
+            "created_at": row.created_at,
         }
 
     @staticmethod

@@ -400,6 +400,7 @@ class SqlAlchemyBambooProcessRepository:
                     "COMPLETED",
                     "EARLY_TERMINATED",
                     "EXPIRED",
+                    "APPEAL_CLAIMED",
                     "APPEAL_REJECTED",
                 }:
                     raise BambooPermissionDenied("当前检测或申诉尚未结束")
