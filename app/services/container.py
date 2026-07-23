@@ -265,8 +265,7 @@ def build_services(settings: Settings, *, install_seed_templates: bool = False) 
         bamboo_process=bamboo_process,
         bamboo_operations=BambooOperationsService(engine, storage),
     )
-    tasks.recover_interrupted()
-    services.export_handler.recover_prepared()
+    # Legacy recognition/export tasks are no longer started by the Web mainline.
     if install_seed_templates:
         try:
             install_legacy_payroll_seed_templates(template_repository, template_renderer)

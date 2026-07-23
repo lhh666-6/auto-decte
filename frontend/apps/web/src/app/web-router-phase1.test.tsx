@@ -66,13 +66,13 @@ it("routes an authenticated finance user from root to the finance overview", asy
   expect(screen.getByRole("navigation", { name: "财务工作区导航" })).toBeTruthy();
 });
 
-it("keeps the old desktop routes available during the staged replacement", () => {
+it("retires the old desktop template route after the replacement is complete", () => {
   render(
     <MemoryRouter initialEntries={["/templates"]}>
       <AppRoutes />
     </MemoryRouter>,
   );
 
-  expect(screen.getByText("工业工资表系统")).toBeTruthy();
-  expect(screen.getByRole("link", { name: "模板中心" })).toBeTruthy();
+  expect(screen.getByRole("heading", { name: "找不到这个页面" })).toBeTruthy();
+  expect(screen.getByRole("link", { name: "返回管理端登录" })).toBeTruthy();
 });
