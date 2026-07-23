@@ -16,6 +16,7 @@ from app.modules.identity_access.web_policy_ds import (
     allows_workspace,
     resolve_plant_factory,
 )
+from app.modules.workflow_engine.service_ds import WorkflowService
 
 router = APIRouter(prefix="/api/v1/plant", tags=["plant"])
 
@@ -39,6 +40,10 @@ def _plant_actor(request: Request):  # type: ignore[no-untyped-def]
 
 def _forms(request: Request) -> ManagedFormService:
     return ManagedFormService(request.app.state.services.engine)
+
+
+def _workflows(request: Request) -> WorkflowService:
+    return WorkflowService(request.app.state.services.engine)
 
 
 @router.get("/overview", response_model=WorkspaceOverviewResponse)
@@ -91,6 +96,12 @@ def forms(request: Request) -> ManagedFormListResponse:
             for item in _forms(request).list_plant_forms(plant_id)
         ]
     )
+
+
+@router.get("/workflows")
+def workflows(request: Request) -> dict[str, object]:
+    _, plant_id = _plant_actor(request)
+    return {"items": _workflows(request).list_plant(plant_id)}
 
 
 @router.get("/notifications", response_model=ManagementNotificationListResponse)

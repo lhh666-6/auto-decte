@@ -3,6 +3,12 @@
 from fastapi import APIRouter, Header, HTTPException, Query, Request, status
 
 from app.api.routers.web_auth_ds import require_web_actor, require_web_csrf
+from app.api.schemas.business_workflows_ds import (
+    ConfirmDiscoveryRequest,
+    CreateDiscoverySessionRequest,
+    CreateWorkflowRequest,
+    DiscoveryMessageRequest,
+)
 from app.api.schemas.managed_forms_ds import (
     CreateManagedFormRequest,
     ManagedFormListResponse,
@@ -10,8 +16,13 @@ from app.api.schemas.managed_forms_ds import (
     UpdateManagedFormVersionRequest,
 )
 from app.api.schemas.web_workspaces_ds import OverviewCard, WorkspaceOverviewResponse
+from app.modules.business_discovery.service_ds import (
+    BusinessDiscoveryError,
+    BusinessDiscoveryService,
+)
 from app.modules.electronic_forms.governance_ds import ManagedFormError, ManagedFormService
 from app.modules.identity_access.web_policy_ds import WebWorkspace, allows_workspace
+from app.modules.workflow_engine.service_ds import WorkflowError, WorkflowService
 
 router = APIRouter(prefix="/api/v1/finance", tags=["finance"])
 
@@ -28,6 +39,14 @@ def _finance_actor(request: Request):  # type: ignore[no-untyped-def]
 
 def _forms(request: Request) -> ManagedFormService:
     return ManagedFormService(request.app.state.services.engine)
+
+
+def _discovery(request: Request) -> BusinessDiscoveryService:
+    return BusinessDiscoveryService(request.app.state.services.engine)
+
+
+def _workflows(request: Request) -> WorkflowService:
+    return WorkflowService(request.app.state.services.engine)
 
 
 def _form_error(error: ManagedFormError) -> HTTPException:
@@ -170,3 +189,111 @@ def clone_form_version(
     except ManagedFormError as error:
         raise _form_error(error) from error
     return ManagedFormVersionResponse.model_validate(payload)
+
+
+@router.post("/business-discovery/sessions", status_code=status.HTTP_201_CREATED)
+def create_discovery_session(
+    body: CreateDiscoverySessionRequest,
+    request: Request,
+    x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token"),
+) -> dict[str, object]:
+    actor = _finance_actor(request)
+    require_web_csrf(request, x_csrf_token)
+    return _discovery(request).create_session(
+        **body.model_dump(),
+        actor_id=actor.employee_code,
+    )
+
+
+@router.post("/business-discovery/sessions/{session_id}/messages")
+def add_discovery_message(
+    session_id: str,
+    body: DiscoveryMessageRequest,
+    request: Request,
+    x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token"),
+) -> dict[str, object]:
+    _finance_actor(request)
+    require_web_csrf(request, x_csrf_token)
+    try:
+        return _discovery(request).add_message(session_id, content=body.content)
+    except BusinessDiscoveryError as error:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": error.code, "detail": error.detail},
+        ) from error
+
+
+@router.post("/business-discovery/sessions/{session_id}/confirm")
+def confirm_discovery(
+    session_id: str,
+    body: ConfirmDiscoveryRequest,
+    request: Request,
+    x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token"),
+) -> dict[str, object]:
+    actor = _finance_actor(request)
+    require_web_csrf(request, x_csrf_token)
+    try:
+        return _discovery(request).confirm(
+            session_id,
+            **body.model_dump(),
+            actor_id=actor.employee_code,
+        )
+    except BusinessDiscoveryError as error:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": error.code, "detail": error.detail},
+        ) from error
+
+
+@router.post("/workflows", status_code=status.HTTP_201_CREATED)
+def create_workflow(
+    body: CreateWorkflowRequest,
+    request: Request,
+    x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token"),
+) -> dict[str, object]:
+    actor = _finance_actor(request)
+    require_web_csrf(request, x_csrf_token)
+    try:
+        return _workflows(request).create(
+            **body.model_dump(),
+            actor_id=actor.employee_code,
+        )
+    except WorkflowError as error:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": error.code, "detail": error.detail},
+        ) from error
+
+
+@router.post("/workflow-versions/{version_id}/validate")
+def validate_workflow(
+    version_id: str,
+    request: Request,
+    x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token"),
+) -> dict[str, object]:
+    _finance_actor(request)
+    require_web_csrf(request, x_csrf_token)
+    try:
+        return _workflows(request).validate(version_id)
+    except WorkflowError as error:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": error.code, "detail": error.detail},
+        ) from error
+
+
+@router.post("/workflow-versions/{version_id}/submit-approval")
+def submit_workflow(
+    version_id: str,
+    request: Request,
+    x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token"),
+) -> dict[str, object]:
+    _finance_actor(request)
+    require_web_csrf(request, x_csrf_token)
+    try:
+        return _workflows(request).submit(version_id)
+    except WorkflowError as error:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": error.code, "detail": error.detail},
+        ) from error

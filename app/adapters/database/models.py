@@ -482,6 +482,110 @@ class ManagementNotificationRow(Base):
     acknowledged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
+class BusinessDiscoverySessionRow(Base):
+    __tablename__ = "business_discovery_sessions"
+
+    session_id: Mapped[str] = mapped_column(String, primary_key=True)
+    title: Mapped[str] = mapped_column(String, nullable=False)
+    status: Mapped[str] = mapped_column(String, nullable=False)
+    source_refs: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    created_by: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class BusinessDiscoveryMessageRow(Base):
+    __tablename__ = "business_discovery_messages"
+
+    message_id: Mapped[str] = mapped_column(String, primary_key=True)
+    session_id: Mapped[str] = mapped_column(
+        ForeignKey("business_discovery_sessions.session_id"), nullable=False, index=True
+    )
+    role: Mapped[str] = mapped_column(String, nullable=False)
+    content: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class BusinessRuleConfirmationRow(Base):
+    __tablename__ = "business_rule_confirmations"
+    __table_args__ = (Index("ix_business_rules_session_status", "session_id", "status"),)
+
+    rule_id: Mapped[str] = mapped_column(String, primary_key=True)
+    session_id: Mapped[str] = mapped_column(
+        ForeignKey("business_discovery_sessions.session_id"), nullable=False
+    )
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    content_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    source_refs: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    confidence: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String, nullable=False)
+    confirmed_by: Mapped[str | None] = mapped_column(String)
+    confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    finance_note: Mapped[str] = mapped_column(String, nullable=False, default="")
+
+
+class BusinessLogicBaselineRow(Base):
+    __tablename__ = "business_logic_baselines"
+
+    baseline_id: Mapped[str] = mapped_column(String, primary_key=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, unique=True)
+    content_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    status: Mapped[str] = mapped_column(String, nullable=False)
+    confirmed_by: Mapped[str] = mapped_column(String, nullable=False)
+    confirmed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class WorkflowDefinitionRow(Base):
+    __tablename__ = "workflow_definitions"
+
+    definition_id: Mapped[str] = mapped_column(String, primary_key=True)
+    workflow_key: Mapped[str] = mapped_column(String, nullable=False, unique=True, index=True)
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    created_by: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class WorkflowVersionRow(Base):
+    __tablename__ = "workflow_versions"
+    __table_args__ = (
+        UniqueConstraint("definition_id", "version", name="ux_workflow_version"),
+        Index("ix_workflow_versions_status", "status", "created_at"),
+    )
+
+    version_id: Mapped[str] = mapped_column(String, primary_key=True)
+    definition_id: Mapped[str] = mapped_column(
+        ForeignKey("workflow_definitions.definition_id"), nullable=False, index=True
+    )
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    graph_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    canvas_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String, nullable=False)
+    revision: Mapped[int] = mapped_column(Integer, nullable=False)
+    validation_json: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    created_by: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    reviewed_by: Mapped[str | None] = mapped_column(String)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class WorkflowPlantActivationRow(Base):
+    __tablename__ = "workflow_plant_activations"
+    __table_args__ = (
+        UniqueConstraint("workflow_version_id", "plant_id", name="ux_workflow_plant"),
+        Index("ix_workflow_plant_status", "plant_id", "status"),
+    )
+
+    activation_id: Mapped[str] = mapped_column(String, primary_key=True)
+    workflow_version_id: Mapped[str] = mapped_column(
+        ForeignKey("workflow_versions.version_id"), nullable=False, index=True
+    )
+    plant_id: Mapped[str] = mapped_column(String, nullable=False)
+    status: Mapped[str] = mapped_column(String, nullable=False)
+    activated_by: Mapped[str] = mapped_column(String, nullable=False)
+    activated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 class FactRecordRow(Base):
     __tablename__ = "fact_records"
     __table_args__ = (

@@ -62,3 +62,31 @@ export interface ManagementNotification {
   acknowledged_by?: string;
   acknowledged_at?: string;
 }
+
+export interface ProposedBusinessRule {
+  rule_id: string;
+  content_json: { statement: string; questions?: string[] };
+  confidence: number;
+  status: string;
+  executable: boolean;
+}
+
+export interface WorkflowNode {
+  id: string;
+  type: string;
+  role?: string;
+  form_version_id?: string;
+}
+
+export interface WorkflowVersion {
+  workflow_key: string;
+  name: string;
+  version_id: string;
+  version: number;
+  graph_json: {
+    nodes: WorkflowNode[];
+    edges: Array<{ source: string; target: string; branch?: string }>;
+    start_node_id: string;
+  };
+  status: string;
+}

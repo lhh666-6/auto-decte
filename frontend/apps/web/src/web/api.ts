@@ -2,6 +2,8 @@ import type {
   ManagedFormVersion,
   ManagedFormField,
   ManagementNotification,
+  ProposedBusinessRule,
+  WorkflowVersion,
   WebSession,
   WorkspaceOverview,
 } from "./types";
@@ -243,6 +245,132 @@ export function acknowledgePlantNotification(
   return request<ManagementNotification>(
     `/api/v1/plant/notifications/${notificationId}/acknowledge`,
     { method: "POST", headers: csrfHeaders() },
+    fetcher,
+  );
+}
+
+export function createDiscoverySession(title: string, fetcher?: WebFetcher) {
+  return request<{ session_id: string }>(
+    "/api/v1/finance/business-discovery/sessions",
+    {
+      method: "POST",
+      headers: csrfHeaders(true),
+      body: JSON.stringify({ title, source_refs: [] }),
+    },
+    fetcher,
+  );
+}
+
+export function sendDiscoveryMessage(
+  sessionId: string,
+  content: string,
+  fetcher?: WebFetcher,
+) {
+  return request<{
+    proposed_rules: ProposedBusinessRule[];
+    assistant_message: string;
+  }>(
+    `/api/v1/finance/business-discovery/sessions/${sessionId}/messages`,
+    {
+      method: "POST",
+      headers: csrfHeaders(true),
+      body: JSON.stringify({ content }),
+    },
+    fetcher,
+  );
+}
+
+export function confirmDiscoveryRules(
+  sessionId: string,
+  ruleIds: string[],
+  fetcher?: WebFetcher,
+) {
+  return request<{ baseline: { version: number; status: string } }>(
+    `/api/v1/finance/business-discovery/sessions/${sessionId}/confirm`,
+    {
+      method: "POST",
+      headers: csrfHeaders(true),
+      body: JSON.stringify({ rule_ids: ruleIds, note: "财务页面确认" }),
+    },
+    fetcher,
+  );
+}
+
+export function createWorkflow(
+  body: {
+    workflow_key: string;
+    name: string;
+    graph_json: WorkflowVersion["graph_json"];
+    canvas_json: Record<string, unknown>;
+  },
+  fetcher?: WebFetcher,
+) {
+  return request<WorkflowVersion>(
+    "/api/v1/finance/workflows",
+    {
+      method: "POST",
+      headers: csrfHeaders(true),
+      body: JSON.stringify(body),
+    },
+    fetcher,
+  );
+}
+
+export function validateWorkflow(versionId: string, fetcher?: WebFetcher) {
+  return request<{
+    valid: boolean;
+    errors: Array<{ code: string; detail: string; node_id: string }>;
+  }>(
+    `/api/v1/finance/workflow-versions/${versionId}/validate`,
+    { method: "POST", headers: csrfHeaders() },
+    fetcher,
+  );
+}
+
+export function listWorkflowApprovals(fetcher?: WebFetcher) {
+  return request<{ items: WorkflowVersion[] }>(
+    "/api/v1/admin/workflow-approvals",
+    {},
+    fetcher,
+  );
+}
+
+export function decideWorkflow(
+  versionId: string,
+  decision: "APPROVE" | "REJECT",
+  fetcher?: WebFetcher,
+) {
+  return request<WorkflowVersion>(
+    `/api/v1/admin/workflow-approvals/${versionId}/decision`,
+    {
+      method: "POST",
+      headers: csrfHeaders(true),
+      body: JSON.stringify({ decision }),
+    },
+    fetcher,
+  );
+}
+
+export function activateWorkflow(
+  versionId: string,
+  plantIds: string[],
+  fetcher?: WebFetcher,
+) {
+  return request<{ status: string }>(
+    `/api/v1/admin/workflow-versions/${versionId}/activate`,
+    {
+      method: "POST",
+      headers: csrfHeaders(true),
+      body: JSON.stringify({ plant_ids: plantIds }),
+    },
+    fetcher,
+  );
+}
+
+export function listPlantWorkflows(fetcher?: WebFetcher) {
+  return request<{ items: WorkflowVersion[] }>(
+    "/api/v1/plant/workflows",
+    {},
     fetcher,
   );
 }

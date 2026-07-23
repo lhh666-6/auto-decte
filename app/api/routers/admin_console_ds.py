@@ -3,6 +3,10 @@
 from fastapi import APIRouter, Header, HTTPException, Request
 
 from app.api.routers.web_auth_ds import require_web_actor, require_web_csrf
+from app.api.schemas.business_workflows_ds import (
+    WorkflowActivationRequest,
+    WorkflowApprovalDecisionRequest,
+)
 from app.api.schemas.managed_forms_ds import (
     ApprovalDecisionRequest,
     ManagedFormListResponse,
@@ -13,6 +17,7 @@ from app.api.schemas.managed_forms_ds import (
 from app.api.schemas.web_workspaces_ds import OverviewCard, WorkspaceOverviewResponse
 from app.modules.electronic_forms.governance_ds import ManagedFormError, ManagedFormService
 from app.modules.identity_access.web_policy_ds import WebWorkspace, allows_workspace
+from app.modules.workflow_engine.service_ds import WorkflowError, WorkflowService
 
 router = APIRouter(prefix="/api/v1/admin", tags=["admin"])
 
@@ -29,6 +34,10 @@ def _admin_actor(request: Request):  # type: ignore[no-untyped-def]
 
 def _forms(request: Request) -> ManagedFormService:
     return ManagedFormService(request.app.state.services.engine)
+
+
+def _workflows(request: Request) -> WorkflowService:
+    return WorkflowService(request.app.state.services.engine)
 
 
 def _form_error(error: ManagedFormError) -> HTTPException:
@@ -165,3 +174,53 @@ def retire_form_version(
     x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token"),
 ) -> PlantActivationResponse:
     return _activation_action(version_id, body, request, x_csrf_token, "retire")
+
+
+@router.get("/workflow-approvals")
+def workflow_approvals(request: Request) -> dict[str, object]:
+    _admin_actor(request)
+    return {"items": _workflows(request).list_pending()}
+
+
+@router.post("/workflow-approvals/{version_id}/decision")
+def decide_workflow_approval(
+    version_id: str,
+    body: WorkflowApprovalDecisionRequest,
+    request: Request,
+    x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token"),
+) -> dict[str, object]:
+    actor = _admin_actor(request)
+    require_web_csrf(request, x_csrf_token)
+    try:
+        return _workflows(request).decide(
+            version_id,
+            decision=body.decision,
+            actor_id=actor.employee_code,
+        )
+    except WorkflowError as error:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": error.code, "detail": error.detail},
+        ) from error
+
+
+@router.post("/workflow-versions/{version_id}/activate")
+def activate_workflow(
+    version_id: str,
+    body: WorkflowActivationRequest,
+    request: Request,
+    x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token"),
+) -> dict[str, object]:
+    actor = _admin_actor(request)
+    require_web_csrf(request, x_csrf_token)
+    try:
+        return _workflows(request).activate(
+            version_id,
+            plant_ids=body.plant_ids,
+            actor_id=actor.employee_code,
+        )
+    except WorkflowError as error:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": error.code, "detail": error.detail},
+        ) from error

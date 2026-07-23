@@ -26,9 +26,13 @@ import { MobileSessionProvider } from "../mobile/session/MobileSessionProvider";
 import { RequireMobileSession } from "../mobile/session/RequireMobileSession";
 import { RequireWebSession } from "../web/RequireWebSession";
 import { AdminFormApprovalsPage } from "../web/AdminFormApprovalsPage";
+import { AdminWorkflowApprovalsPage } from "../web/AdminWorkflowApprovalsPage";
+import { BusinessModelingPage } from "../web/BusinessModelingPage";
 import { FinanceFormsPage } from "../web/FinanceFormsPage";
 import { PlantFormsPage } from "../web/PlantFormsPage";
 import { PlantNotificationsPage } from "../web/PlantNotificationsPage";
+import { PlantWorkflowsPage } from "../web/PlantWorkflowsPage";
+import { WorkflowDesignerPage } from "../web/WorkflowDesignerPage";
 import { WebLoginPage } from "../web/WebLoginPage";
 import {
   WebSessionProvider,
@@ -161,6 +165,8 @@ export function AppRoutes() {
           <Route index element={<Navigate to="/finance/overview" replace />} />
           <Route path="overview" element={<WorkspaceOverviewPage workspace="FINANCE" />} />
           <Route path="forms" element={<FinanceFormsPage />} />
+          <Route path="workflows" element={<WorkflowDesignerPage />} />
+          <Route path="business-modeling" element={<BusinessModelingPage />} />
           <Route path="*" element={<WorkspaceComingSoon />} />
         </Route>
 
@@ -168,6 +174,7 @@ export function AppRoutes() {
           <Route index element={<Navigate to="/admin/overview" replace />} />
           <Route path="overview" element={<WorkspaceOverviewPage workspace="ADMIN" />} />
           <Route path="form-approvals" element={<AdminFormApprovalsPage />} />
+          <Route path="workflow-approvals" element={<AdminWorkflowApprovalsPage />} />
           <Route path="*" element={<WorkspaceComingSoon />} />
         </Route>
 
@@ -176,6 +183,7 @@ export function AppRoutes() {
           <Route path="overview" element={<WorkspaceOverviewPage workspace="PLANT_MANAGER" />} />
           <Route path="notifications" element={<PlantNotificationsPage />} />
           <Route path="forms" element={<PlantFormsPage />} />
+          <Route path="workflows" element={<PlantWorkflowsPage />} />
           <Route path="*" element={<WorkspaceComingSoon />} />
         </Route>
       </Route>
