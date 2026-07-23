@@ -29,7 +29,7 @@ def _add_bamboo_user(
         team_id=f"TEAM-{factory_id}",
         team_name=f"{factory_id}班组",
         position=role,
-        roles=["WORKER"],
+        roles=[role] if role == "PLANT_MANAGER" else ["WORKER"],
         allowed_form_types=[],
         allowed_processes=["BAMBOO_PROCESS"],
         factory_id=factory_id,
@@ -46,6 +46,23 @@ def _client(services: Services, employee_code: str) -> TestClient:
     )
     assert response.status_code == 200
     return client
+
+
+def _web_client(services: Services, employee_code: str) -> TestClient:
+    client = TestClient(create_app(services))
+    response = client.post(
+        "/api/v1/web/auth/login",
+        json={"employee_code": employee_code, "pin": "2468"},
+    )
+    assert response.status_code == 200
+    return client
+
+
+def _web_headers(client: TestClient, key: str) -> dict[str, str]:
+    return {
+        "X-CSRF-Token": client.cookies["web_csrf"],
+        "Idempotency-Key": key,
+    }
 
 
 def _write_headers(client: TestClient, key: str) -> dict[str, str]:
@@ -413,10 +430,11 @@ def test_non_production_roles_read_scoped_records_and_linked_upstream_inline(
     ).json()
     record_url = f"/api/v1/mobile/bamboo/records/{created['record_id']}"
 
-    for code in ("E-INSPECT", "E-SUP", "E-MANAGER", "E-FINANCE", "E-ADMIN"):
+    for code in ("E-INSPECT", "E-SUP", "E-FINANCE", "E-ADMIN"):
         assert clients[code].get(record_url).status_code == 200
+    assert clients["E-MANAGER"].get(record_url).status_code == 403
     assert clients["E-DIP"].get(record_url).status_code == 404
-    assert clients["E-MANAGER-B"].get(record_url).status_code == 404
+    assert clients["E-MANAGER-B"].get(record_url).status_code == 403
 
     clients["E-SORT"].post(
         f"{record_url}/stages/SORT/submit",
@@ -441,7 +459,7 @@ def test_bamboo_record_options_are_published_and_enforced(tmp_path: Path) -> Non
     _add_bamboo_user(services, employee_code="E-SORT", role="SORT_OPERATOR")
     _add_bamboo_user(services, employee_code="E-MANAGER", role="PLANT_MANAGER")
     sort_client = _client(services, "E-SORT")
-    manager = _client(services, "E-MANAGER")
+    manager = _web_client(services, "E-MANAGER")
 
     defaults = sort_client.get("/api/v1/mobile/bamboo/record-options")
     assert defaults.status_code == 200
@@ -466,8 +484,8 @@ def test_bamboo_record_options_are_published_and_enforced(tmp_path: Path) -> Non
     assert invalid.json()["code"] == "INVALID_BAMBOO_BASE_INFO"
 
     rule = manager.post(
-        "/api/v1/mobile/bamboo/payroll-rules",
-        headers=_write_headers(manager, "publish-options"),
+        "/api/v1/plant/payroll-rules",
+        headers=_web_headers(manager, "publish-options"),
         json={
             "rule_key": "SORT",
             "configuration": {

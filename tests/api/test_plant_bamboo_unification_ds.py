@@ -153,3 +153,8 @@ def test_plant_web_reads_shared_bamboo_records_and_notifications(tmp_path: Path)
     assert replay.json() == returned.json()
     assert stale.status_code == 409
     assert stale.json()["code"] == "REVISION_CONFLICT"
+
+    manager_mobile = _mobile(services, "MANAGER-1")
+    mobile_dashboard = manager_mobile.get("/api/v1/mobile/bamboo/dashboard")
+    assert mobile_dashboard.status_code == 403
+    assert mobile_dashboard.json()["code"] == "PLANT_MANAGER_WEB_ONLY"

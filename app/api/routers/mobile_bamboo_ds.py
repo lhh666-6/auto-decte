@@ -80,6 +80,14 @@ def _bamboo_actor(request: Request) -> BambooActor:
             status_code=403,
             detail={"code": "BAMBOO_ROLE_REQUIRED", "detail": "当前竹丝工序职务无效。"},
         ) from error
+    if role is BambooRole.PLANT_MANAGER:
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "code": "PLANT_MANAGER_WEB_ONLY",
+                "detail": "厂长业务请使用 Web 工作区。",
+            },
+        )
     return _domain_actor(mobile_actor, role)
 
 

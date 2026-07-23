@@ -27,7 +27,7 @@ def _add_user(
         team_id="TEAM-A",
         team_name="一厂",
         position=role,
-        roles=["WORKER"],
+        roles=[role] if role == "PLANT_MANAGER" else ["WORKER"],
         allowed_form_types=[],
         allowed_processes=["BAMBOO_PROCESS"],
         factory_id=factory_id,
@@ -46,9 +46,20 @@ def _client(services: Services, code: str) -> TestClient:
     return client
 
 
+def _web_client(services: Services, code: str) -> TestClient:
+    client = TestClient(create_app(services))
+    result = client.post(
+        "/api/v1/web/auth/login",
+        json={"employee_code": code, "pin": "2468"},
+    )
+    assert result.status_code == 200
+    return client
+
+
 def _headers(client: TestClient, key: str) -> dict[str, str]:
+    csrf_cookie = "web_csrf" if "web_csrf" in client.cookies else "mobile_csrf"
     return {
-        "X-CSRF-Token": client.cookies["mobile_csrf"],
+        "X-CSRF-Token": client.cookies[csrf_cookie],
         "Idempotency-Key": key,
     }
 
@@ -60,8 +71,13 @@ def _submit(
     revision: int,
     values: dict[str, object],
 ) -> dict[str, object]:
+    route = (
+        f"/api/v1/plant/records/{record_id}/audit"
+        if stage == "PLANT_AUDIT" and "web_csrf" in client.cookies
+        else f"/api/v1/mobile/bamboo/records/{record_id}/stages/{stage}/submit"
+    )
     result = client.post(
-        f"/api/v1/mobile/bamboo/records/{record_id}/stages/{stage}/submit",
+        route,
         headers=_headers(client, f"{record_id}-{stage}-{revision}"),
         json={"expected_revision": revision, "device_id": "phone", "values": values},
     )
@@ -85,7 +101,7 @@ def test_inspection_queue_claims_once_and_accepts_one_click_conforming(
     inspector = _client(services, "INSPECT-Q1")
     other_inspector = _client(services, "INSPECT-Q2")
     supervisor = _client(services, "SUP-Q")
-    manager = _client(services, "MANAGER-Q")
+    manager = _web_client(services, "MANAGER-Q")
     record = sort.post(
         "/api/v1/mobile/bamboo/records",
         headers=_headers(sort, "queue-create"),
@@ -203,7 +219,7 @@ def test_manager_termination_appeal_and_durable_notifications(tmp_path: Path) ->
     inspector = _client(services, "INSPECT-A1")
     other_inspector = _client(services, "INSPECT-A2")
     supervisor = _client(services, "SUP-A")
-    manager = _client(services, "MANAGER-A")
+    manager = _web_client(services, "MANAGER-A")
     record = sort.post(
         "/api/v1/mobile/bamboo/records",
         headers=_headers(sort, "appeal-create"),
@@ -226,7 +242,7 @@ def test_manager_termination_appeal_and_durable_notifications(tmp_path: Path) ->
     ).raise_for_status()
 
     terminated = manager.post(
-        f"/api/v1/mobile/bamboo/inspection-queue/{record_id}/terminate",
+        f"/api/v1/plant/inspection-queue/{record_id}/terminate",
         headers=_headers(manager, "appeal-terminate"),
         json={"confirm": True},
     )
@@ -262,7 +278,7 @@ def test_manager_termination_appeal_and_durable_notifications(tmp_path: Path) ->
     )
     assert submitted.status_code == 200
     decision = manager.post(
-        f"/api/v1/mobile/bamboo/inspection-queue/{record_id}/appeal/decision",
+        f"/api/v1/plant/inspection-queue/{record_id}/appeal/decision",
         headers=_headers(manager, "appeal-decision"),
         json={"approve": False, "note": "复核批次正常"},
     )
@@ -289,7 +305,7 @@ def test_manager_termination_appeal_and_durable_notifications(tmp_path: Path) ->
     _submit(sort, expired_id, "SORT", 1, {"moisture": [10]})
     _submit(supervisor, expired_id, "SUPERVISOR", 2, {"result": "APPROVED"})
     manager.post(
-        f"/api/v1/mobile/bamboo/inspection-queue/{expired_id}/terminate",
+        f"/api/v1/plant/inspection-queue/{expired_id}/terminate",
         headers=_headers(manager, "appeal-expired-terminate"),
         json={"confirm": True},
     ).raise_for_status()
@@ -321,7 +337,7 @@ def test_manager_termination_appeal_and_durable_notifications(tmp_path: Path) ->
     _submit(sort, approved_id, "SORT", 1, {"moisture": [9]})
     _submit(supervisor, approved_id, "SUPERVISOR", 2, {"result": "APPROVED"})
     manager.post(
-        f"/api/v1/mobile/bamboo/inspection-queue/{approved_id}/terminate",
+        f"/api/v1/plant/inspection-queue/{approved_id}/terminate",
         headers=_headers(manager, "appeal-approved-terminate"),
         json={"confirm": True},
     ).raise_for_status()
@@ -335,7 +351,7 @@ def test_manager_termination_appeal_and_durable_notifications(tmp_path: Path) ->
         json={"target_stage": "SORT", "text_evidence": "复测确认分选异常"},
     ).raise_for_status()
     approved = manager.post(
-        f"/api/v1/mobile/bamboo/inspection-queue/{approved_id}/appeal/decision",
+        f"/api/v1/plant/inspection-queue/{approved_id}/appeal/decision",
         headers=_headers(manager, "appeal-approved-decision"),
         json={"approve": True, "note": "同意回溯"},
     )
@@ -362,7 +378,7 @@ def test_complete_bamboo_operations_from_payroll_through_finance(tmp_path: Path)
     drying = _client(services, "DRY-1")
     inspector = _client(services, "INSPECT-1")
     supervisor = _client(services, "SUP-1")
-    manager = _client(services, "MANAGER-1")
+    manager = _web_client(services, "MANAGER-1")
     finance = _client(services, "FIN-1")
     admin = _client(services, "ADMIN-1")
 
@@ -449,7 +465,7 @@ def test_complete_bamboo_operations_from_payroll_through_finance(tmp_path: Path)
     assert inspector_history[0]["cage_no"] == "L-207"
 
     blocked = manager.post(
-        f"/api/v1/mobile/bamboo/records/{linked_id}/stages/PLANT_AUDIT/submit",
+        f"/api/v1/plant/records/{linked_id}/audit",
         headers=_headers(manager, "manager-blocked"),
         json={"expected_revision": 4, "device_id": "phone", "values": {}},
     )
@@ -488,10 +504,10 @@ def test_complete_bamboo_operations_from_payroll_through_finance(tmp_path: Path)
     assert sorting_audit["status"] == "COMPLETED"
 
     sorting_operations = manager.get(
-        f"/api/v1/mobile/bamboo/records/{sorting_id}/operations"
+        f"/api/v1/plant/production/{sorting_id}"
     ).json()
     linked_operations = manager.get(
-        f"/api/v1/mobile/bamboo/records/{linked_id}/operations"
+        f"/api/v1/plant/production/{linked_id}"
     ).json()
     assert [fact["fact_type"] for fact in sorting_operations["payroll_facts"]] == [
         "SORT"
@@ -552,10 +568,10 @@ def test_complete_bamboo_operations_from_payroll_through_finance(tmp_path: Path)
     )
     assert inquiry.status_code == 201
     inquiry_id = inquiry.json()["inquiry_id"]
-    manager_inquiries = manager.get("/api/v1/mobile/bamboo/finance/inquiries").json()
+    manager_inquiries = manager.get("/api/v1/plant/finance-inquiries").json()["items"]
     assert manager_inquiries[0]["messages"][0]["body"] == "请说明原始表单情况"
     manager.post(
-        f"/api/v1/mobile/bamboo/finance/inquiries/{inquiry_id}/reply",
+        f"/api/v1/plant/finance-inquiries/{inquiry_id}/reply",
         headers=_headers(manager, "manager-reply"),
         json={"body": "已查原始表单，数据属实", "close": False},
     ).raise_for_status()
@@ -573,7 +589,7 @@ def test_complete_bamboo_operations_from_payroll_through_finance(tmp_path: Path)
     ).json()
     assert summary["total_amount"] == "130.00"
     assert manager.get(
-        "/api/v1/mobile/bamboo/finance/monthly-summary", params={"month": month}
+        "/api/v1/plant/payroll", params={"month": month}
     ).json()["total_amount"] == "130.00"
     assert admin.get(
         "/api/v1/mobile/bamboo/finance/monthly-summary", params={"month": month}
@@ -703,8 +719,8 @@ def test_personnel_transfers_require_managers_and_admin_execution(tmp_path: Path
     _add_user(services, "ADMIN-1", "SYSTEM_ADMIN")
     _add_user(services, "FUTURE-MANAGER", "SUPERVISOR", "FACTORY-B", "竹丝二厂")
     worker = _client(services, "SORT-1")
-    manager_a = _client(services, "MANAGER-A")
-    manager_b = _client(services, "MANAGER-B")
+    manager_a = _web_client(services, "MANAGER-A")
+    manager_b = _web_client(services, "MANAGER-B")
     admin = _client(services, "ADMIN-1")
 
     requested = worker.post(
@@ -716,7 +732,7 @@ def test_personnel_transfers_require_managers_and_admin_execution(tmp_path: Path
     assert requested.json()["code"] == "WORKER_TRANSFER_FORBIDDEN"
 
     internal = manager_a.post(
-        "/api/v1/mobile/bamboo/personnel-transfers",
+        "/api/v1/plant/personnel-transfers",
         headers=_headers(manager_a, "internal-transfer"),
         json={
             "employee_code": "SORT-1",
@@ -741,7 +757,7 @@ def test_personnel_transfers_require_managers_and_admin_execution(tmp_path: Path
     ] == "PERSONNEL_TRANSFER_COMPLETED"
 
     cross = manager_a.post(
-        "/api/v1/mobile/bamboo/personnel-transfers",
+        "/api/v1/plant/personnel-transfers",
         headers=_headers(manager_a, "cross-transfer"),
         json={
             "employee_code": "SORT-1",
@@ -761,7 +777,7 @@ def test_personnel_transfers_require_managers_and_admin_execution(tmp_path: Path
     assert bypass.status_code == 409
     assert bypass.json()["code"] == "BOTH_MANAGERS_REQUIRED"
     manager_b.post(
-        f"/api/v1/mobile/bamboo/personnel-transfers/{cross_id}/manager-decision",
+        f"/api/v1/plant/personnel-transfers/{cross_id}/manager-decision",
         headers=_headers(manager_b, "target-manager-approve"),
         json={"approve": True, "note": "二厂厂长同意"},
     ).raise_for_status()
@@ -806,10 +822,10 @@ def test_manager_configures_factory_rule_and_assigns_new_hire(tmp_path: Path) ->
         "pending role",
     )
     services.mobile_identity_repository.set_credential("NEW-1", "2468")
-    manager = _client(services, "MANAGER-1")
+    manager = _web_client(services, "MANAGER-1")
 
     rule = manager.post(
-        "/api/v1/mobile/bamboo/payroll-rules",
+        "/api/v1/plant/payroll-rules",
         headers=_headers(manager, "factory-rule"),
         json={
             "rule_key": "SORT",
@@ -825,7 +841,7 @@ def test_manager_configures_factory_rule_and_assigns_new_hire(tmp_path: Path) ->
     assert rule.json()["version"] == 1
 
     assigned = manager.post(
-        "/api/v1/mobile/bamboo/admin/assignments",
+        "/api/v1/plant/employee-assignments",
         headers=_headers(manager, "assign-new-hire"),
         json={"employee_code": "NEW-1", "role_code": "INSPECTOR"},
     )
@@ -838,16 +854,16 @@ def test_manager_configures_factory_rule_and_assigns_new_hire(tmp_path: Path) ->
 def test_manager_adds_people_only_with_published_business_roles(tmp_path: Path) -> None:
     services = build_services(Settings(data_root=tmp_path))
     _add_user(services, "MANAGER-1", "PLANT_MANAGER")
-    manager = _client(services, "MANAGER-1")
+    manager = _web_client(services, "MANAGER-1")
 
-    role_options = manager.get("/api/v1/mobile/bamboo/role-options").json()
+    role_options = manager.get("/api/v1/plant/role-options").json()["items"]
     assert {item["display_name"] for item in role_options} >= {
         "分选工", "浸胶工", "干燥工", "检测人", "主管"
     }
     assert "PLANT_MANAGER" not in {item["role_code"] for item in role_options}
 
     created = manager.post(
-        "/api/v1/mobile/bamboo/admin/employees",
+        "/api/v1/plant/employees",
         headers=_headers(manager, "create-person"),
         json={"employee_name": "新检测员", "initial_pin": "1357", "role_code": "INSPECTOR"},
     )
@@ -858,7 +874,7 @@ def test_manager_adds_people_only_with_published_business_roles(tmp_path: Path) 
         "role_code": "INSPECTOR",
         "role_name": "检测人",
     }
-    people = manager.get("/api/v1/mobile/bamboo/admin/employees").json()
+    people = manager.get("/api/v1/plant/employees").json()["items"]
     assert any(item["employee_code"] == "YG0001" for item in people)
     new_person = TestClient(create_app(services))
     login = new_person.post(
@@ -869,7 +885,7 @@ def test_manager_adds_people_only_with_published_business_roles(tmp_path: Path) 
     assert new_person.get("/api/v1/mobile/auth/session").json()["bamboo_role"] == "INSPECTOR"
 
     rejected = manager.post(
-        "/api/v1/mobile/bamboo/admin/assignments",
+        "/api/v1/plant/employee-assignments",
         headers=_headers(manager, "unknown-role"),
         json={"employee_code": "YG0001", "role_code": "NEW_UNPUBLISHED_ROLE"},
     )

@@ -7,10 +7,15 @@ from fastapi import APIRouter, Header, HTTPException, Query, Request, status
 
 from app.api.routers.web_auth_ds import require_web_actor, require_web_csrf
 from app.api.schemas.bamboo_process_ds import (
+    CreateFactoryEmployeeRequest,
     CreatePersonnelTransferRequest,
+    EmployeeRoleAssignmentRequest,
+    FinanceInquiryReplyRequest,
     InspectionAppealDecisionRequest,
+    PayrollRuleRequest,
     PersonnelTransferDecisionRequest,
     SelectiveReturnRequest,
+    SubmitBambooStageRequest,
     TerminateInspectionRequest,
 )
 from app.api.schemas.managed_forms_ds import (
@@ -22,7 +27,13 @@ from app.application.bamboo_operations_ds import (
     BambooOperationError,
     BambooOperationsService,
 )
+from app.modules.bamboo_process.errors_ds import (
+    BambooPermissionDenied,
+    BambooRecordNotFound,
+    StaleBambooRevision,
+)
 from app.modules.bamboo_process.models_ds import BambooActor, BambooRole, BambooStage
+from app.modules.bamboo_process.ports_ds import BambooRepositoryConflict
 from app.modules.electronic_forms.governance_ds import ManagedFormService
 from app.modules.identity_access.web_policy_ds import (
     WebActor,
@@ -182,6 +193,63 @@ def production_detail(record_id: str, request: Request) -> dict[str, Any]:
         raise _operation_error(error) from error
 
 
+@router.post("/records/{record_id}/audit")
+def audit_record(
+    record_id: str,
+    body: SubmitBambooStageRequest,
+    request: Request,
+    x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token"),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+) -> dict[str, object]:
+    actor, plant_id = _plant_actor(request)
+    key = _write_key(request, x_csrf_token, idempotency_key)
+    bamboo_actor = _bamboo_actor(actor, plant_id)
+    try:
+        values = _bamboo(request).validate_stage_values(
+            BambooStage.PLANT_AUDIT,
+            dict(body.values),
+        )
+        record = request.app.state.services.bamboo_process.submit_stage(
+            record_id,
+            actor=bamboo_actor,
+            stage=BambooStage.PLANT_AUDIT,
+            values=values,
+            expected_revision=body.expected_revision,
+            idempotency_key=key,
+            device_id=body.device_id,
+            request_id=str(getattr(request.state, "request_id", "unknown")),
+        )
+        return {
+            "record_id": record.record_id,
+            "display_no": record.display_no,
+            "status": record.status.value,
+            "current_stage": record.current_stage.value if record.current_stage else None,
+            "revision": record.revision,
+        }
+    except StaleBambooRevision as error:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "STALE_REVISION",
+                "detail": str(error),
+                "expected_revision": error.expected,
+                "actual_revision": error.actual,
+            },
+        ) from error
+    except BambooPermissionDenied as error:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "STAGE_NOT_AVAILABLE", "detail": str(error)},
+        ) from error
+    except (BambooRecordNotFound, BambooRepositoryConflict) as error:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "RECORD_NOT_VISIBLE", "detail": str(error)},
+        ) from error
+    except BambooOperationError as error:
+        raise _operation_error(error) from error
+
+
 @router.post("/records/{record_id}/return")
 def return_bamboo_record(
     record_id: str,
@@ -281,12 +349,88 @@ def employees(request: Request) -> dict[str, object]:
     }
 
 
+@router.post("/employees", status_code=status.HTTP_201_CREATED)
+def create_employee(
+    body: CreateFactoryEmployeeRequest,
+    request: Request,
+    x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token"),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+) -> dict[str, object]:
+    actor, plant_id = _plant_actor(request)
+    _write_key(request, x_csrf_token, idempotency_key)
+    try:
+        return _bamboo(request).create_factory_employee(
+            actor=_bamboo_actor(actor, plant_id),
+            employee_name=body.employee_name,
+            initial_pin=body.initial_pin,
+            role_code=body.role_code,
+        )
+    except BambooOperationError as error:
+        raise _operation_error(error) from error
+
+
+@router.post("/employee-assignments", status_code=status.HTTP_201_CREATED)
+def assign_employee(
+    body: EmployeeRoleAssignmentRequest,
+    request: Request,
+    x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token"),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+) -> dict[str, object]:
+    actor, plant_id = _plant_actor(request)
+    _write_key(request, x_csrf_token, idempotency_key)
+    try:
+        return _bamboo(request).assign_employee_role(
+            actor=_bamboo_actor(actor, plant_id),
+            employee_code=body.employee_code,
+            role_code=body.role_code,
+            factory_id=body.factory_id,
+        )
+    except BambooOperationError as error:
+        raise _operation_error(error) from error
+
+
 @router.get("/role-options")
 def role_options(request: Request) -> dict[str, object]:
     actor, plant_id = _plant_actor(request)
     return {
         "items": _bamboo(request).list_role_options(_bamboo_actor(actor, plant_id))
     }
+
+
+@router.get("/factories")
+def factories(request: Request) -> dict[str, object]:
+    actor, plant_id = _plant_actor(request)
+    return {
+        "items": _bamboo(request).list_factories(_bamboo_actor(actor, plant_id))
+    }
+
+
+@router.get("/payroll-rules")
+def payroll_rules(request: Request) -> dict[str, object]:
+    actor, plant_id = _plant_actor(request)
+    return {
+        "items": _bamboo(request).list_payroll_rules(_bamboo_actor(actor, plant_id))
+    }
+
+
+@router.post("/payroll-rules", status_code=status.HTTP_201_CREATED)
+def create_payroll_rule(
+    body: PayrollRuleRequest,
+    request: Request,
+    x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token"),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+) -> dict[str, object]:
+    actor, plant_id = _plant_actor(request)
+    _write_key(request, x_csrf_token, idempotency_key)
+    try:
+        return _bamboo(request).create_payroll_rule(
+            actor=_bamboo_actor(actor, plant_id),
+            rule_key=body.rule_key,
+            configuration=body.configuration,
+            system_default=False,
+        )
+    except BambooOperationError as error:
+        raise _operation_error(error) from error
 
 
 @router.get("/personnel-transfers")
@@ -348,6 +492,35 @@ def payroll(
 ) -> dict[str, object]:
     actor, plant_id = _plant_actor(request)
     return _bamboo(request).monthly_summary(_bamboo_actor(actor, plant_id), month)
+
+
+@router.get("/finance-inquiries")
+def finance_inquiries(request: Request) -> dict[str, object]:
+    actor, plant_id = _plant_actor(request)
+    return {
+        "items": _bamboo(request).list_inquiries(_bamboo_actor(actor, plant_id))
+    }
+
+
+@router.post("/finance-inquiries/{inquiry_id}/reply")
+def reply_finance_inquiry(
+    inquiry_id: str,
+    body: FinanceInquiryReplyRequest,
+    request: Request,
+    x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token"),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+) -> dict[str, object]:
+    actor, plant_id = _plant_actor(request)
+    _write_key(request, x_csrf_token, idempotency_key)
+    try:
+        return _bamboo(request).reply_inquiry(
+            inquiry_id,
+            actor=_bamboo_actor(actor, plant_id),
+            body=body.body,
+            close=body.close,
+        )
+    except BambooOperationError as error:
+        raise _operation_error(error) from error
 
 
 @router.get("/notifications")
