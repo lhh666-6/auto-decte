@@ -26,6 +26,7 @@ class _MemoryBambooRepository:
     def __init__(self) -> None:
         self.records: dict[str, BambooRecord] = {}
         self.signatures: list[ElectronicSignature] = []
+        self.submissions: dict[str, StageSubmission] = {}
         self.idempotent_results: dict[tuple[str, str], BambooRecord] = {}
 
     def next_display_sequence(self, factory_id: str, production_date: str) -> int:
@@ -54,9 +55,13 @@ class _MemoryBambooRepository:
         return list(self.records.values())
 
     def find_created_result(
-        self, actor_id: str, source_ref: str
+        self,
+        actor_id: str,
+        source_ref: str,
+        *,
+        payload_hash: str | None = None,
     ) -> BambooRecord | None:
-        return next(
+        existing = next(
             (
                 record
                 for record in self.records.values()
@@ -64,10 +69,57 @@ class _MemoryBambooRepository:
             ),
             None,
         )
+        if existing is not None and payload_hash is not None:
+            if (
+                existing.create_payload_hash is not None
+                and existing.create_payload_hash != payload_hash
+            ):
+                from app.modules.bamboo_process.errors_ds import (
+                    BambooIdempotencyConflict,
+                )
+                raise BambooIdempotencyConflict(
+                    actor_id, source_ref, "create_record"
+                )
+        return existing
 
     def find_idempotent_result(
-        self, actor_id: str, idempotency_key: str
+        self,
+        actor_id: str,
+        idempotency_key: str,
+        *,
+        idempotency_payload_hash: str | None = None,
+        legacy_comparison_hash: str | None = None,
     ) -> BambooRecord | None:
+        for sig in self.signatures:
+            if sig.actor_id == actor_id and sig.idempotency_key == idempotency_key:
+                if sig.idempotency_hash_version >= 1:
+                    if (
+                        idempotency_payload_hash is not None
+                        and sig.idempotency_payload_hash
+                        != idempotency_payload_hash
+                    ):
+                        from app.modules.bamboo_process.errors_ds import (
+                            BambooIdempotencyConflict,
+                        )
+                        raise BambooIdempotencyConflict(
+                            actor_id, idempotency_key, "submit_stage"
+                        )
+                elif legacy_comparison_hash is not None:
+                    if sig.payload_hash != legacy_comparison_hash:
+                        from app.modules.bamboo_process.errors_ds import (
+                            BambooIdempotencyConflict,
+                        )
+                        raise BambooIdempotencyConflict(
+                            actor_id, idempotency_key, "submit_stage"
+                        )
+                elif idempotency_payload_hash is not None:
+                    from app.modules.bamboo_process.errors_ds import (
+                        BambooIdempotencyConflict,
+                    )
+                    raise BambooIdempotencyConflict(
+                        actor_id, idempotency_key, "submit_stage"
+                    )
+                break
         return self.idempotent_results.get((actor_id, idempotency_key))
 
     def find_linked(
@@ -94,7 +146,7 @@ class _MemoryBambooRepository:
         expected_revision: int,
         linked_record: BambooRecord | None = None,
     ) -> BambooRecord:
-        del submission
+        self.submissions[submission.submission_id] = submission
         current = self.records[record.record_id]
         if current.revision != expected_revision:
             raise StaleBambooRevision(expected_revision, current.revision)
@@ -196,7 +248,8 @@ def test_sort_submission_advances_sorting_and_atomically_creates_linked_form() -
     }
 
     signature = repository.signatures[0]
-    canonical_payload = json.dumps(
+    # Legacy audit hash (unchanged format)
+    audit_payload = json.dumps(
         {
             "record_id": record.record_id,
             "stage": "SORT",
@@ -207,7 +260,26 @@ def test_sort_submission_advances_sorting_and_atomically_creates_linked_form() -
         separators=(",", ":"),
         ensure_ascii=False,
     ).encode()
-    assert signature.payload_hash == hashlib.sha256(canonical_payload).hexdigest()
+    assert signature.payload_hash == hashlib.sha256(audit_payload).hexdigest()
+    # New idempotency hash (version ≥ 1)
+    idempotency_payload = json.dumps(
+        {
+            "actor_id": actor.actor_id,
+            "record_id": record.record_id,
+            "stage": "SORT",
+            "expected_revision": 1,
+            "device_id": "device-a",
+            "values": values,
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    ).encode()
+    assert (
+        signature.idempotency_payload_hash
+        == hashlib.sha256(idempotency_payload).hexdigest()
+    )
+    assert signature.idempotency_hash_version == 1
     assert signature.role_code == BambooRole.SORT_OPERATOR.value
 
 

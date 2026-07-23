@@ -33,6 +33,14 @@ from app.modules.bamboo_process.state_machine_ds import (
 )
 
 
+def _sha256_canonical(payload: object) -> str:
+    """SHA-256 of a canonical JSON payload (sorted keys, no whitespace)."""
+    canonical = json.dumps(
+        payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+    ).encode()
+    return hashlib.sha256(canonical).hexdigest()
+
+
 class BambooProcessFacade:
     def __init__(
         self,
@@ -53,13 +61,16 @@ class BambooProcessFacade:
         source_type: str,
         source_ref: str | None,
         form_type: BambooFormType = BambooFormType.SORTING,
+        create_payload_hash: str | None = None,
     ) -> BambooRecord:
         if actor.role is not BambooRole.SORT_OPERATOR:
             raise BambooPermissionDenied("only a sort operator can create a bamboo record")
         if form_type is not BambooFormType.SORTING:
             raise BambooPermissionDenied("linked production forms are created by the system")
         if source_ref:
-            repeated = self._repository.find_created_result(actor.actor_id, source_ref)
+            repeated = self._repository.find_created_result(
+                actor.actor_id, source_ref, payload_hash=create_payload_hash
+            )
             if repeated is not None:
                 return repeated
 
@@ -85,6 +96,7 @@ class BambooProcessFacade:
             updated_at=now,
             form_type=form_type,
             production_object_id=record_id,
+            create_payload_hash=create_payload_hash,
         )
         cage_no = str(base_info.get("cage_no") or "").strip()
         if cage_no:
@@ -209,9 +221,48 @@ class BambooProcessFacade:
         device_id: str,
         request_id: str,
     ) -> BambooRecord:
+        # ── 1. Read current record once for stage_version (hash input) ──
+        pre = self._repository.get(record_id)
+        if pre is None:
+            raise BambooRecordNotFound(record_id)
+        stage_version = (
+            sum(submission.stage is stage for submission in pre.submissions) + 1
+        )
+
+        # ── 2. Compute the *new* idempotency hash (version ≥ 1) ──
+        idempotency_payload_obj = {
+            "actor_id": actor.actor_id,
+            "record_id": record_id,
+            "stage": stage.value,
+            "expected_revision": expected_revision,
+            "device_id": device_id,
+            "values": values,
+        }
+        idempotency_payload_hash = _sha256_canonical(idempotency_payload_obj)
+
+        # ── 3. Compute legacy comparison hash (for v0 signatures) ──
+        # Uses the *stored* version from the last same-stage submission
+        # so that the hash is stable across replays.
+        existing = [
+            s for s in pre.submissions if s.stage is stage and not s.invalidated
+        ]
+        stored_version = existing[-1].version if existing else 0
+        legacy_obj = {
+            "record_id": record_id,
+            "stage": stage.value,
+            "version": stored_version,
+            "values": values,
+        }
+        legacy_comparison_hash = (
+            _sha256_canonical(legacy_obj) if stored_version > 0 else None
+        )
+
+        # ── 4. Idempotency gate (before any state mutation) ──
         repeated = self._repository.find_idempotent_result(
             actor.actor_id,
             idempotency_key,
+            idempotency_payload_hash=idempotency_payload_hash,
+            legacy_comparison_hash=legacy_comparison_hash,
         )
         if repeated is not None:
             if repeated.form_type is BambooFormType.SORTING and any(
@@ -221,6 +272,7 @@ class BambooProcessFacade:
                 self._ensure_linked_record(repeated, actor=actor)
             return repeated
 
+        # ── 5. State / permission gates ──
         current = self._repository.get(record_id)
         if current is None:
             raise BambooRecordNotFound(record_id)
@@ -233,6 +285,7 @@ class BambooProcessFacade:
         if current.revision != expected_revision:
             raise StaleBambooRevision(expected_revision, current.revision)
 
+        # ── 6. Build submission, advance state, sign ──
         now = self._clock()
         stage_version = (
             sum(submission.stage is stage for submission in current.submissions) + 1
@@ -264,18 +317,14 @@ class BambooProcessFacade:
             updated_at=now,
             submissions=submissions,
         )
-        payload = {
+        # payload_hash retains the legacy audit format
+        audit_payload_obj = {
             "record_id": record_id,
             "stage": stage.value,
             "version": stage_version,
             "values": values,
         }
-        canonical_payload = json.dumps(
-            payload,
-            sort_keys=True,
-            separators=(",", ":"),
-            ensure_ascii=False,
-        ).encode()
+        audit_payload_hash = _sha256_canonical(audit_payload_obj)
         signature = ElectronicSignature(
             signature_id=self._id_factory(),
             submission_id=submission_id,
@@ -284,11 +333,13 @@ class BambooProcessFacade:
             actor_name=actor.employee_name,
             factory_id=actor.factory_id,
             role_code=actor.role.value,
-            payload_hash=hashlib.sha256(canonical_payload).hexdigest(),
+            payload_hash=audit_payload_hash,
             signed_at=now,
             device_id=device_id,
             request_id=request_id,
             idempotency_key=idempotency_key,
+            idempotency_payload_hash=idempotency_payload_hash,
+            idempotency_hash_version=1,
         )
         linked_record = (
             self._build_linked_record(updated, actor=actor)

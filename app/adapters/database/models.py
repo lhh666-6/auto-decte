@@ -796,6 +796,7 @@ class BambooRecordRow(Base):
     created_by: Mapped[str] = mapped_column(String, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    create_payload_hash: Mapped[str | None] = mapped_column(String(64))
 
 
 class BambooStageSubmissionRow(Base):
@@ -889,6 +890,8 @@ class BambooSignatureRow(Base):
     device_id: Mapped[str] = mapped_column(String, nullable=False)
     request_id: Mapped[str] = mapped_column(String, nullable=False)
     idempotency_key: Mapped[str] = mapped_column(String, nullable=False)
+    idempotency_payload_hash: Mapped[str | None] = mapped_column(String(64))
+    idempotency_hash_version: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
 
 class BambooPayrollRuleVersionRow(Base):

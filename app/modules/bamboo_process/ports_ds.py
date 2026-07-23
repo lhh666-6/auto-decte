@@ -42,12 +42,17 @@ class BambooRecordRepository(Protocol):
         self,
         actor_id: str,
         source_ref: str,
+        *,
+        payload_hash: str | None = None,
     ) -> BambooRecord | None: ...
 
     def find_idempotent_result(
         self,
         actor_id: str,
         idempotency_key: str,
+        *,
+        idempotency_payload_hash: str | None = None,
+        legacy_comparison_hash: str | None = None,
     ) -> BambooRecord | None: ...
 
     def find_linked(

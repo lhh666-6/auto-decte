@@ -1,5 +1,7 @@
 """Authenticated, factory-scoped bamboo workflow routes."""
 
+import hashlib
+import json as _json
 from decimal import Decimal
 from io import BytesIO
 from typing import Annotated, cast
@@ -40,6 +42,7 @@ from app.api.schemas.bamboo_process_ds import (
 from app.application.bamboo_operations_ds import BambooOperationError
 from app.application.mobile_identity_ds import MobileActor
 from app.modules.bamboo_process.errors_ds import (
+    BambooIdempotencyConflict,
     BambooPermissionDenied,
     BambooRecordNotFound,
     StaleBambooRevision,
@@ -177,21 +180,55 @@ def create_record(
     actor = _bamboo_actor(request)
     key = _require_write_headers(request, idempotency_key, x_csrf_token)
     services = _services(request)
-    repeated = services.bamboo_repository.find_created_result(actor.actor_id, key)
-    if repeated is not None:
-        return _response(repeated, actor=actor)
+    # Validate base_info first so the canonical payload hash is computed from
+    # server-normalised values, not from the raw JSON body.
     try:
         base_info = services.bamboo_operations.validate_record_base_info(
             actor,
             dict(body.base_info),
         )
+    except BambooOperationError as error:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": error.code, "detail": str(error)},
+        ) from error
+    # Compute canonical payload hash for idempotency binding.
+    form_type = BambooFormType(body.form_type)
+    create_payload = {
+        "actor_id": actor.actor_id,
+        "form_type": form_type.value,
+        "base_info": base_info,
+    }
+    canonical = _json.dumps(
+        create_payload,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    ).encode()
+    create_payload_hash = hashlib.sha256(canonical).hexdigest()
+
+    try:
+        repeated = services.bamboo_repository.find_created_result(
+            actor.actor_id, key, payload_hash=create_payload_hash
+        )
+        if repeated is not None:
+            return _response(repeated, actor=actor)
         record = services.bamboo_process.create_record(
             actor=actor,
             base_info=base_info,
             source_type="MOBILE_CREATED",
             source_ref=key,
-            form_type=BambooFormType(body.form_type),
+            form_type=form_type,
+            create_payload_hash=create_payload_hash,
         )
+    except BambooIdempotencyConflict as error:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "IDEMPOTENCY_CONFLICT",
+                "detail": "该幂等键已用于不同的请求，请刷新后重新提交。",
+            },
+        ) from error
     except BambooPermissionDenied as error:
         raise HTTPException(
             status_code=403,
@@ -992,6 +1029,14 @@ def submit_stage(
                 "detail": str(error),
                 "expected_revision": error.expected,
                 "actual_revision": error.actual,
+            },
+        ) from error
+    except BambooIdempotencyConflict as error:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "IDEMPOTENCY_CONFLICT",
+                "detail": "该幂等键已用于不同的请求，请刷新后重新提交。",
             },
         ) from error
     except BambooPermissionDenied as error:

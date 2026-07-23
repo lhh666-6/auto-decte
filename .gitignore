@@ -15,3 +15,4 @@ frontend/**/dist/
 data/
 *.xlsx
 !samples/enterprise_payroll/*.xlsx
+artifacts/acceptance/

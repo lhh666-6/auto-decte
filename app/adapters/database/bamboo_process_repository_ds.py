@@ -25,7 +25,11 @@ from app.adapters.database.models import (
     BambooSignatureRow,
     BambooStageSubmissionRow,
 )
-from app.modules.bamboo_process.errors_ds import BambooPermissionDenied, StaleBambooRevision
+from app.modules.bamboo_process.errors_ds import (
+    BambooIdempotencyConflict,
+    BambooPermissionDenied,
+    StaleBambooRevision,
+)
 from app.modules.bamboo_process.models_ds import (
     BambooFormType,
     BambooRecord,
@@ -108,6 +112,7 @@ class SqlAlchemyBambooProcessRepository:
                 existing = self.find_created_result(
                     record.created_by,
                     record.source_ref,
+                    payload_hash=record.create_payload_hash,
                 )
                 if existing is not None:
                     return existing
@@ -152,7 +157,11 @@ class SqlAlchemyBambooProcessRepository:
                 session.flush()
         except IntegrityError as error:
             if record.source_type == "MOBILE_CREATED" and record.source_ref:
-                repeated = self.find_created_result(record.created_by, record.source_ref)
+                repeated = self.find_created_result(
+                    record.created_by,
+                    record.source_ref,
+                    payload_hash=record.create_payload_hash,
+                )
                 if repeated is not None:
                     return repeated
             active = self._active_cage_occupancy(record.factory_id, cage_no_key)
@@ -219,22 +228,49 @@ class SqlAlchemyBambooProcessRepository:
         self,
         actor_id: str,
         source_ref: str,
+        *,
+        payload_hash: str | None = None,
     ) -> BambooRecord | None:
         with Session(self._engine) as session:
-            record_id = session.scalar(
-                select(BambooRecordRow.record_id).where(
+            row = session.scalar(
+                select(BambooRecordRow).where(
                     BambooRecordRow.created_by == actor_id,
                     BambooRecordRow.source_type == "MOBILE_CREATED",
                     BambooRecordRow.source_ref == source_ref,
                 )
             )
-        return self.get(record_id) if record_id is not None else None
+        if row is None:
+            return None
+        if payload_hash is not None:
+            if row.create_payload_hash is None:
+                # Old record that cannot be verified — reject conservatively
+                raise BambooIdempotencyConflict(
+                    actor_id, source_ref, "create_record"
+                )
+            if row.create_payload_hash != payload_hash:
+                raise BambooIdempotencyConflict(
+                    actor_id, source_ref, "create_record"
+                )
+        return self.get(row.record_id)
 
     def find_idempotent_result(
         self,
         actor_id: str,
         idempotency_key: str,
+        *,
+        idempotency_payload_hash: str | None = None,
+        legacy_comparison_hash: str | None = None,
     ) -> BambooRecord | None:
+        """Return the record for a previous submission under this key.
+
+        - v1 signatures compare *idempotency_payload_hash* against
+          ``idempotency_payload_hash``.
+        - v0 signatures compare *legacy_comparison_hash* against the
+          stored ``payload_hash`` (the caller must compute it with the
+          stored version, not the version the new submission would get).
+
+        Mismatch raises ``BambooIdempotencyConflict``.
+        """
         with Session(self._engine) as session:
             signature = session.scalar(
                 select(BambooSignatureRow).where(
@@ -248,6 +284,27 @@ class SqlAlchemyBambooProcessRepository:
                 BambooStageSubmissionRow,
                 signature.submission_id,
             )
+            # Version >= 1: compare against dedicated idempotency hash
+            if signature.idempotency_hash_version >= 1:
+                if (
+                    idempotency_payload_hash is not None
+                    and signature.idempotency_payload_hash
+                    != idempotency_payload_hash
+                ):
+                    raise BambooIdempotencyConflict(
+                        actor_id, idempotency_key, "submit_stage"
+                    )
+            # Legacy (version 0): compare caller-supplied hash vs stored
+            elif legacy_comparison_hash is not None:
+                if signature.payload_hash != legacy_comparison_hash:
+                    raise BambooIdempotencyConflict(
+                        actor_id, idempotency_key, "submit_stage"
+                    )
+            # Legacy with no comparison hash → reject
+            elif idempotency_payload_hash is not None:
+                raise BambooIdempotencyConflict(
+                    actor_id, idempotency_key, "submit_stage"
+                )
             record_id = submission.record_id if submission is not None else None
         return self.get(record_id) if record_id is not None else None
 
@@ -754,6 +811,7 @@ def _record_row(record: BambooRecord) -> BambooRecordRow:
         created_by=record.created_by,
         created_at=record.created_at,
         updated_at=record.updated_at,
+        create_payload_hash=record.create_payload_hash,
     )
 
 
@@ -787,6 +845,8 @@ def _signature_row(signature: ElectronicSignature) -> BambooSignatureRow:
         device_id=signature.device_id,
         request_id=signature.request_id,
         idempotency_key=signature.idempotency_key,
+        idempotency_payload_hash=signature.idempotency_payload_hash,
+        idempotency_hash_version=signature.idempotency_hash_version,
     )
 
 
@@ -812,6 +872,7 @@ def _record(
         created_at=_utc(row.created_at),
         updated_at=_utc(row.updated_at),
         submissions=tuple(_submission(item) for item in submissions),
+        create_payload_hash=row.create_payload_hash,
     )
 
 

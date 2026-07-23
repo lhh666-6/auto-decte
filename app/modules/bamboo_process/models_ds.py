@@ -69,6 +69,7 @@ class BambooRecord:
     production_object_id: str | None = None
     source_record_id: str | None = None
     source_snapshot: dict[str, object] = field(default_factory=dict)
+    create_payload_hash: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -100,3 +101,5 @@ class ElectronicSignature:
     device_id: str
     request_id: str
     idempotency_key: str
+    idempotency_payload_hash: str | None = None
+    idempotency_hash_version: int = 0
