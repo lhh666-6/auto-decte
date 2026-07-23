@@ -407,6 +407,81 @@ class ElectronicSubmissionReceiptRow(Base):
     submitted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
+class ManagedFormDefinitionRow(Base):
+    """Web-governed form identity; versions are stored separately and immutable after review."""
+
+    __tablename__ = "electronic_form_definitions"
+
+    definition_id: Mapped[str] = mapped_column(String, primary_key=True)
+    form_key: Mapped[str] = mapped_column(String, nullable=False, unique=True, index=True)
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    owner_role: Mapped[str] = mapped_column(String, nullable=False)
+    created_by: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    retired_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class ManagedFormVersionRow(Base):
+    __tablename__ = "electronic_form_versions"
+    __table_args__ = (
+        UniqueConstraint("definition_id", "version", name="ux_managed_form_version"),
+        Index("ix_managed_form_versions_status", "status", "created_at"),
+    )
+
+    version_id: Mapped[str] = mapped_column(String, primary_key=True)
+    definition_id: Mapped[str] = mapped_column(
+        ForeignKey("electronic_form_definitions.definition_id"), nullable=False, index=True
+    )
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    schema_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String, nullable=False)
+    revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    created_by: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    reviewed_by: Mapped[str | None] = mapped_column(String)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    review_comment: Mapped[str] = mapped_column(String, nullable=False, default="")
+
+
+class FormPlantActivationRow(Base):
+    __tablename__ = "form_plant_activations"
+    __table_args__ = (
+        UniqueConstraint("form_version_id", "plant_id", name="ux_form_plant_activation"),
+        Index("ix_form_plant_activations_plant_status", "plant_id", "status"),
+    )
+
+    activation_id: Mapped[str] = mapped_column(String, primary_key=True)
+    form_version_id: Mapped[str] = mapped_column(
+        ForeignKey("electronic_form_versions.version_id"), nullable=False, index=True
+    )
+    plant_id: Mapped[str] = mapped_column(String, nullable=False)
+    status: Mapped[str] = mapped_column(String, nullable=False)
+    activated_by: Mapped[str] = mapped_column(String, nullable=False)
+    activated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    updated_by: Mapped[str] = mapped_column(String, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class ManagementNotificationRow(Base):
+    __tablename__ = "management_notifications"
+    __table_args__ = (
+        Index("ix_management_notifications_recipient", "plant_id", "created_at"),
+    )
+
+    notification_id: Mapped[str] = mapped_column(String, primary_key=True)
+    notification_type: Mapped[str] = mapped_column(String, nullable=False)
+    plant_id: Mapped[str] = mapped_column(String, nullable=False)
+    title: Mapped[str] = mapped_column(String, nullable=False)
+    body: Mapped[str] = mapped_column(String, nullable=False)
+    resource_type: Mapped[str] = mapped_column(String, nullable=False)
+    resource_id: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    acknowledged_by: Mapped[str | None] = mapped_column(String)
+    acknowledged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
 class FactRecordRow(Base):
     __tablename__ = "fact_records"
     __table_args__ = (

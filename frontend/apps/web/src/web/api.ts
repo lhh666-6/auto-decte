@@ -1,4 +1,10 @@
-import type { WebSession, WorkspaceOverview } from "./types";
+import type {
+  ManagedFormVersion,
+  ManagedFormField,
+  ManagementNotification,
+  WebSession,
+  WorkspaceOverview,
+} from "./types";
 
 export interface WebProblem {
   title: string;
@@ -106,6 +112,137 @@ export function getOverview(segment: string, fetcher?: WebFetcher) {
   return request<WorkspaceOverview>(
     `/api/v1/${segment}/overview`,
     {},
+    fetcher,
+  );
+}
+
+function csrfHeaders(json = false): Record<string, string> {
+  const headers: Record<string, string> = {};
+  const token = readCookie("web_csrf");
+  if (token) headers["X-CSRF-Token"] = token;
+  if (json) headers["Content-Type"] = "application/json";
+  return headers;
+}
+
+export async function listManagedForms(
+  workspace: "finance" | "plant",
+  fetcher?: WebFetcher,
+) {
+  return request<{ items: ManagedFormVersion[] }>(
+    workspace === "finance"
+      ? "/api/v1/finance/form-definitions"
+      : "/api/v1/plant/forms",
+    {},
+    fetcher,
+  );
+}
+
+export function createManagedForm(
+  body: {
+    form_key: string;
+    name: string;
+    owner_role: string;
+    schema_json: { fields: ManagedFormField[] };
+  },
+  fetcher?: WebFetcher,
+) {
+  return request<ManagedFormVersion>(
+    "/api/v1/finance/form-definitions",
+    {
+      method: "POST",
+      headers: csrfHeaders(true),
+      body: JSON.stringify(body),
+    },
+    fetcher,
+  );
+}
+
+export function submitManagedFormApproval(
+  versionId: string,
+  fetcher?: WebFetcher,
+) {
+  return request<ManagedFormVersion>(
+    `/api/v1/finance/form-versions/${versionId}/submit-approval`,
+    { method: "POST", headers: csrfHeaders() },
+    fetcher,
+  );
+}
+
+export function updateManagedForm(
+  versionId: string,
+  expectedRevision: number,
+  schemaJson: { fields: ManagedFormField[] },
+  fetcher?: WebFetcher,
+) {
+  return request<ManagedFormVersion>(
+    `/api/v1/finance/form-versions/${versionId}`,
+    {
+      method: "PATCH",
+      headers: csrfHeaders(true),
+      body: JSON.stringify({
+        expected_revision: expectedRevision,
+        schema_json: schemaJson,
+      }),
+    },
+    fetcher,
+  );
+}
+
+export function listManagedFormApprovals(fetcher?: WebFetcher) {
+  return request<{ items: ManagedFormVersion[] }>(
+    "/api/v1/admin/form-approvals",
+    {},
+    fetcher,
+  );
+}
+
+export function decideManagedFormApproval(
+  versionId: string,
+  decision: "APPROVE" | "REJECT",
+  fetcher?: WebFetcher,
+) {
+  return request<ManagedFormVersion>(
+    `/api/v1/admin/form-approvals/${versionId}/decision`,
+    {
+      method: "POST",
+      headers: csrfHeaders(true),
+      body: JSON.stringify({ decision }),
+    },
+    fetcher,
+  );
+}
+
+export function activateManagedForm(
+  versionId: string,
+  plantIds: string[],
+  fetcher?: WebFetcher,
+) {
+  return request<{ version_id: string; status: string; plant_ids: string[] }>(
+    `/api/v1/admin/form-versions/${versionId}/activate`,
+    {
+      method: "POST",
+      headers: csrfHeaders(true),
+      body: JSON.stringify({ plant_ids: plantIds }),
+    },
+    fetcher,
+  );
+}
+
+export function listPlantNotifications(fetcher?: WebFetcher) {
+  return request<{ items: ManagementNotification[] }>(
+    "/api/v1/plant/notifications",
+    {},
+    fetcher,
+  );
+}
+
+export function acknowledgePlantNotification(
+  notificationId: string,
+  fetcher?: WebFetcher,
+) {
+  return request<ManagementNotification>(
+    `/api/v1/plant/notifications/${notificationId}/acknowledge`,
+    { method: "POST", headers: csrfHeaders() },
     fetcher,
   );
 }
