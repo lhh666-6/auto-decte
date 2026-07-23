@@ -28,7 +28,7 @@ def test_live_health_returns_request_id(tmp_path: Path) -> None:
     assert response.json() == {"status": "live"}
 
 
-def test_ready_and_identity_expose_local_capabilities(tmp_path: Path) -> None:
+def test_ready_exposes_capabilities_after_legacy_retirement(tmp_path: Path) -> None:
     client = build_client(tmp_path)
 
     ready = client.get("/health/ready")
@@ -36,8 +36,7 @@ def test_ready_and_identity_expose_local_capabilities(tmp_path: Path) -> None:
 
     assert ready.status_code == 200
     assert ready.json()["capabilities"]["ai"] is False
-    assert identity.json()["actor_id"] == "local-operator"
-    assert identity.json()["roles"] == ["OPERATOR"]
+    assert identity.status_code == 404
 
 
 def test_unhandled_error_uses_problem_details_without_traceback(tmp_path: Path) -> None:
