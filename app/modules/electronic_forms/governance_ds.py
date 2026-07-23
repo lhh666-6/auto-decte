@@ -17,6 +17,8 @@ from app.adapters.database.models import (
     ManagedFormDefinitionRow,
     ManagedFormVersionRow,
     ManagementNotificationRow,
+    MobileAccessProfileRow,
+    MobileNotificationRow,
 )
 
 
@@ -492,6 +494,32 @@ class ManagedFormService:
                 acknowledged_at=None,
             )
         )
+        recipients = session.scalars(
+            select(MobileAccessProfileRow).where(
+                MobileAccessProfileRow.factory_id == plant_id,
+                MobileAccessProfileRow.active.is_(True),
+            )
+        ).all()
+        for profile in recipients:
+            if "PLANT_MANAGER" not in profile.roles:
+                continue
+            session.add(
+                MobileNotificationRow(
+                    notification_id=_id("notice"),
+                    recipient_actor_id=profile.employee_code,
+                    category=f"FORM_{action.upper()}",
+                    title=f"表单{label}",
+                    body=f"{form_name}{label}，请知悉。",
+                    link="/plant/forms",
+                    payload={
+                        "resource_type": "FORM_VERSION",
+                        "resource_id": version_id,
+                        "plant_id": plant_id,
+                    },
+                    read_at=None,
+                    created_at=now,
+                )
+            )
 
     @staticmethod
     def _notification_payload(row: ManagementNotificationRow) -> dict[str, Any]:

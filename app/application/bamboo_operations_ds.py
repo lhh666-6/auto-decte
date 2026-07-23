@@ -1574,6 +1574,98 @@ class BambooOperationsService:
             session.add(return_row)
             return result
 
+    def list_production_records(self, actor: BambooActor) -> list[dict[str, Any]]:
+        """Return the factory Bamboo records used by both mobile and Web views."""
+        if actor.role not in {
+            BambooRole.PLANT_MANAGER,
+            BambooRole.SYSTEM_ADMIN,
+        }:
+            raise BambooOperationError(
+                "MANAGER_REQUIRED",
+                "仅厂长或管理员可查看本厂全部生产记录",
+            )
+        with Session(self._engine) as session:
+            query = select(BambooRecordRow)
+            if actor.role is BambooRole.PLANT_MANAGER:
+                query = query.where(BambooRecordRow.factory_id == actor.factory_id)
+            rows = session.scalars(
+                query.order_by(BambooRecordRow.updated_at.desc())
+            ).all()
+            return [
+                {
+                    "record_id": row.record_id,
+                    "display_no": row.display_no,
+                    "factory_id": row.factory_id,
+                    "form_type": row.form_type,
+                    "source_type": row.source_type,
+                    "source_record_id": row.source_record_id,
+                    "base_info": row.base_info,
+                    "cage_no": str(row.base_info.get("cage_no", "")),
+                    "current_stage": row.current_stage,
+                    "status": row.status,
+                    "revision": row.revision,
+                    "created_at": row.created_at,
+                    "updated_at": row.updated_at,
+                }
+                for row in rows
+            ]
+
+    def production_record_detail(
+        self,
+        record_id: str,
+        actor: BambooActor,
+    ) -> dict[str, Any]:
+        with Session(self._engine) as session:
+            row = self._record(session, record_id, actor)
+            record = {
+                "record_id": row.record_id,
+                "display_no": row.display_no,
+                "factory_id": row.factory_id,
+                "form_type": row.form_type,
+                "source_type": row.source_type,
+                "source_record_id": row.source_record_id,
+                "source_snapshot": row.source_snapshot,
+                "base_info": row.base_info,
+                "cage_no": str(row.base_info.get("cage_no", "")),
+                "current_stage": row.current_stage,
+                "status": row.status,
+                "revision": row.revision,
+                "created_at": row.created_at,
+                "updated_at": row.updated_at,
+            }
+        return {**record, **self.record_summary(record_id, actor)}
+
+    @staticmethod
+    def workflow_stage_summaries(actor: BambooActor) -> list[dict[str, object]]:
+        if actor.role not in {
+            BambooRole.PLANT_MANAGER,
+            BambooRole.SYSTEM_ADMIN,
+        }:
+            raise BambooOperationError(
+                "MANAGER_REQUIRED",
+                "仅厂长或管理员可查看生产流程",
+            )
+        labels = {
+            BambooStage.SORT: "分选",
+            BambooStage.DIPPING: "浸胶",
+            BambooStage.DRYING: "干燥",
+            BambooStage.SUPERVISOR: "主管审核",
+            BambooStage.PLANT_AUDIT: "厂长签字",
+        }
+        return [
+            {
+                "stage": stage.value,
+                "label": labels[stage],
+                "editable_by_plant_manager": stage is BambooStage.PLANT_AUDIT,
+                "returnable": stage in {
+                    BambooStage.SORT,
+                    BambooStage.DIPPING,
+                    BambooStage.DRYING,
+                },
+            }
+            for stage in BambooStage
+        ]
+
     def request_role_change(
         self, *, actor: BambooActor, to_role: str, reason: str
     ) -> dict[str, Any]:

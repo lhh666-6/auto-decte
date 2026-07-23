@@ -212,7 +212,7 @@ def test_plant_sees_only_own_active_forms_and_notice_does_not_block(
     forms_a = manager_a.get("/api/v1/plant/forms")
     assert [item["form_key"] for item in forms_a.json()["items"]] == ["DAILY_OUTPUT"]
     notices = manager_a.get("/api/v1/plant/notifications")
-    assert notices.json()["items"][0]["acknowledged_at"] is None
+    assert notices.json()["items"][0]["read_at"] is None
 
     manager_b = _login(services, "MANAGER-B")
     assert manager_b.get("/api/v1/plant/forms").json()["items"] == []
@@ -287,7 +287,7 @@ def test_plant_sees_only_own_active_forms_and_notice_does_not_block(
         headers=_csrf(manager_a),
     )
     assert acknowledged.status_code == 200
-    assert acknowledged.json()["acknowledged_at"] is not None
+    assert acknowledged.json()["read_at"] is not None
     assert manager_a.get("/api/v1/plant/forms").json()["items"][0]["version_id"] == version_id
 
 
