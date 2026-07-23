@@ -148,6 +148,35 @@ def test_alembic_upgrade_creates_inspection_windows_and_notifications(tmp_path: 
         assert connection.scalar(text("SELECT version_num FROM alembic_version")) == HEAD_REVISION
 
 
+def test_alembic_upgrade_creates_governed_personnel_transfers(tmp_path: Path) -> None:
+    database_path = tmp_path / "bamboo-personnel-transfers.db"
+
+    upgrade_database(database_path)
+
+    engine = create_engine(f"sqlite:///{database_path}")
+    inspector = inspect(engine)
+    assert "bamboo_personnel_transfers" in inspector.get_table_names()
+    columns = {
+        column["name"] for column in inspector.get_columns("bamboo_personnel_transfers")
+    }
+    assert {
+        "transfer_id",
+        "employee_code",
+        "transfer_type",
+        "source_factory_id",
+        "target_factory_id",
+        "from_role",
+        "to_role",
+        "source_manager_decision",
+        "target_manager_decision",
+        "admin_decision",
+        "executed_at",
+        "revision",
+    } <= columns
+    with engine.connect() as connection:
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == HEAD_REVISION
+
+
 def test_alembic_upgrade_creates_complete_bamboo_operations_tables(tmp_path: Path) -> None:
     database_path = tmp_path / "bamboo-operations.db"
 

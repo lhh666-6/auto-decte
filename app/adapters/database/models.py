@@ -952,6 +952,47 @@ class BambooRoleChangeRequestRow(Base):
     revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
 
 
+class BambooPersonnelTransferRow(Base):
+    __tablename__ = "bamboo_personnel_transfers"
+    __table_args__ = (
+        Index(
+            "ix_bamboo_personnel_transfer_queue",
+            "status",
+            "source_factory_id",
+            "target_factory_id",
+            "requested_at",
+        ),
+    )
+
+    transfer_id: Mapped[str] = mapped_column(String, primary_key=True)
+    employee_code: Mapped[str] = mapped_column(String, nullable=False)
+    transfer_type: Mapped[str] = mapped_column(String, nullable=False)
+    source_factory_id: Mapped[str] = mapped_column(
+        ForeignKey("bamboo_factories.factory_id"), nullable=False
+    )
+    target_factory_id: Mapped[str] = mapped_column(
+        ForeignKey("bamboo_factories.factory_id"), nullable=False
+    )
+    from_role: Mapped[str] = mapped_column(String, nullable=False)
+    to_role: Mapped[str] = mapped_column(String, nullable=False)
+    reason: Mapped[str] = mapped_column(String, nullable=False)
+    status: Mapped[str] = mapped_column(String, nullable=False)
+    requested_by: Mapped[str] = mapped_column(String, nullable=False)
+    requested_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    source_manager_id: Mapped[str | None] = mapped_column(String)
+    source_manager_decision: Mapped[str | None] = mapped_column(String)
+    source_manager_decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    target_manager_id: Mapped[str | None] = mapped_column(String)
+    target_manager_decision: Mapped[str | None] = mapped_column(String)
+    target_manager_decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    admin_id: Mapped[str | None] = mapped_column(String)
+    admin_decision: Mapped[str | None] = mapped_column(String)
+    admin_note: Mapped[str | None] = mapped_column(String)
+    admin_decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    executed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+
+
 class BambooDailyExportBatchRow(Base):
     __tablename__ = "bamboo_daily_export_batches"
     __table_args__ = (
