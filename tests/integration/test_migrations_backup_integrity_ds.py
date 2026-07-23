@@ -11,7 +11,11 @@ from app.adapters.database.template_repository_ds import SqlAlchemyTemplateRepos
 from app.domain.models import stable_json_sha256
 from app.infrastructure.backup.integrity_ds import IntegrityChecker
 from app.infrastructure.backup.service_ds import BackupService
-from app.infrastructure.database.migrations import SchemaRevisionError, upgrade_database
+from app.infrastructure.database.migrations import (
+    HEAD_REVISION,
+    SchemaRevisionError,
+    upgrade_database,
+)
 from app.services.container import build_services
 from config.settings import Settings
 
@@ -54,7 +58,7 @@ def test_alembic_upgrade_creates_persistent_mobile_identity_tables(
         "mobile_access_profiles",
     } <= tables
     with engine.connect() as connection:
-        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "016"
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == HEAD_REVISION
 
 
 def test_alembic_upgrade_creates_bamboo_process_core_tables(tmp_path: Path) -> None:
@@ -73,7 +77,37 @@ def test_alembic_upgrade_creates_bamboo_process_core_tables(tmp_path: Path) -> N
         "bamboo_signatures",
     } <= tables
     with engine.connect() as connection:
-        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "016"
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == HEAD_REVISION
+
+
+def test_alembic_upgrade_creates_bamboo_cage_occupancy_table(tmp_path: Path) -> None:
+    database_path = tmp_path / "bamboo-cage-occupancy.db"
+
+    upgrade_database(database_path)
+
+    engine = create_engine(f"sqlite:///{database_path}")
+    inspector = inspect(engine)
+    assert "bamboo_cage_occupancies" in inspector.get_table_names()
+    assert {
+        "occupancy_id",
+        "factory_id",
+        "cage_no",
+        "cage_no_key",
+        "sorting_record_id",
+        "acquired_at",
+        "released_at",
+        "released_by_submission_id",
+    } == {
+        column["name"]
+        for column in inspector.get_columns("bamboo_cage_occupancies")
+    }
+    indexes = {
+        index["name"]: index
+        for index in inspector.get_indexes("bamboo_cage_occupancies")
+    }
+    assert indexes["ux_bamboo_cage_occupancy_active"]["unique"]
+    with engine.connect() as connection:
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == HEAD_REVISION
 
 
 def test_alembic_upgrade_creates_complete_bamboo_operations_tables(tmp_path: Path) -> None:
@@ -99,7 +133,7 @@ def test_alembic_upgrade_creates_complete_bamboo_operations_tables(tmp_path: Pat
         "bamboo_correction_cases",
     } <= tables
     with engine.connect() as connection:
-        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "016"
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == HEAD_REVISION
 
 
 def test_alembic_upgrade_creates_report_definition_versions(tmp_path: Path) -> None:
@@ -120,7 +154,7 @@ def test_alembic_upgrade_creates_report_definition_versions(tmp_path: Path) -> N
         "configuration",
     }
     with engine.connect() as connection:
-        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == "016"
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == HEAD_REVISION
 
 
 def test_alembic_upgrade_creates_template_version_tables(tmp_path: Path) -> None:
@@ -181,7 +215,7 @@ def test_alembic_upgrade_creates_job_profile_versions_without_changing_templates
     assert SqlAlchemyTemplateRepository(upgraded).get_version("TPL-KEEP") is not None
     with upgraded.connect() as connection:
         revision = connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-        assert revision == "016"
+        assert revision == HEAD_REVISION
     upgraded.dispose()
 
 
@@ -266,7 +300,7 @@ def test_upgrade_007_preserves_legacy_template_and_adds_layout_storage(
     assert loaded.fields[0].recognition_mode.value == "NONE"
     with upgraded.connect() as connection:
         revision = connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-        assert revision == "016"
+        assert revision == HEAD_REVISION
     upgraded.dispose()
 
 
@@ -478,7 +512,7 @@ def test_upgrade_006_export_batch_preserves_data_and_adds_snapshot_columns(
     assert batch.download_name == "export.xlsx"
     with upgraded.connect() as connection:
         revision = connection.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-        assert revision == "016"
+        assert revision == HEAD_REVISION
     upgraded.dispose()
 
     _downgrade_to_revision(database_path, "006")

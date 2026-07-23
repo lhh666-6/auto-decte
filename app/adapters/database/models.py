@@ -650,6 +650,35 @@ class BambooStageSubmissionRow(Base):
     invalidated: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
 
+class BambooCageOccupancyRow(Base):
+    __tablename__ = "bamboo_cage_occupancies"
+    __table_args__ = (
+        Index(
+            "ux_bamboo_cage_occupancy_active",
+            "factory_id",
+            "cage_no_key",
+            unique=True,
+            sqlite_where=text("released_at IS NULL"),
+            postgresql_where=text("released_at IS NULL"),
+        ),
+    )
+
+    occupancy_id: Mapped[str] = mapped_column(String, primary_key=True)
+    factory_id: Mapped[str] = mapped_column(
+        ForeignKey("bamboo_factories.factory_id"), nullable=False
+    )
+    cage_no: Mapped[str] = mapped_column(String, nullable=False)
+    cage_no_key: Mapped[str] = mapped_column(String, nullable=False)
+    sorting_record_id: Mapped[str] = mapped_column(
+        ForeignKey("bamboo_records.record_id"), nullable=False, unique=True
+    )
+    acquired_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    released_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    released_by_submission_id: Mapped[str | None] = mapped_column(
+        ForeignKey("bamboo_stage_submissions.submission_id")
+    )
+
+
 class BambooSignatureRow(Base):
     __tablename__ = "bamboo_signatures"
     __table_args__ = (
