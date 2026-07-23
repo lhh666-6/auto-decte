@@ -34,6 +34,52 @@ def _downgrade_to_revision(database_path: Path, revision: str) -> None:
     command.downgrade(config, revision)
 
 
+def test_head_repairs_missing_bamboo_inspection_kind_at_revision_028(
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "database" / "demo.db"
+    database_path.parent.mkdir(parents=True)
+    engine = create_engine(f"sqlite:///{database_path}")
+    with engine.begin() as connection:
+        connection.execute(
+            text("CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL)")
+        )
+        connection.execute(text("INSERT INTO alembic_version VALUES ('028')"))
+        connection.execute(
+            text(
+                "CREATE TABLE bamboo_inspections ("
+                "inspection_id VARCHAR PRIMARY KEY, record_id VARCHAR NOT NULL)"
+            )
+        )
+        connection.execute(
+            text(
+                "INSERT INTO bamboo_inspections (inspection_id, record_id) "
+                "VALUES ('LEGACY-INSPECTION', 'LEGACY-RECORD')"
+            )
+        )
+    engine.dispose()
+
+    upgrade_database(database_path)
+
+    upgraded = create_engine(f"sqlite:///{database_path}")
+    columns = {item["name"] for item in inspect(upgraded).get_columns("bamboo_inspections")}
+    indexes = {item["name"] for item in inspect(upgraded).get_indexes("bamboo_inspections")}
+    with upgraded.connect() as connection:
+        kind = connection.scalar(
+            text(
+                "SELECT inspection_kind FROM bamboo_inspections "
+                "WHERE inspection_id = 'LEGACY-INSPECTION'"
+            )
+        )
+        revision = connection.scalar(text("SELECT version_num FROM alembic_version"))
+    upgraded.dispose()
+
+    assert revision == HEAD_REVISION
+    assert "inspection_kind" in columns
+    assert "ux_bamboo_inspection_formal_record" in indexes
+    assert kind == "LEGACY"
+
+
 def test_alembic_upgrade_creates_task_and_review_lease_tables(tmp_path: Path) -> None:
     database_path = tmp_path / "demo.db"
 
