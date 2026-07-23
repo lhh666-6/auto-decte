@@ -26,6 +26,7 @@ import { MobileSessionProvider } from "../mobile/session/MobileSessionProvider";
 import { RequireMobileSession } from "../mobile/session/RequireMobileSession";
 import { RequireWebSession } from "../web/RequireWebSession";
 import { AdminFormApprovalsPage } from "../web/AdminFormApprovalsPage";
+import { AdminPayrollApprovalsPage } from "../web/AdminPayrollApprovalsPage";
 import { AdminWorkflowApprovalsPage } from "../web/AdminWorkflowApprovalsPage";
 import { BusinessModelingPage } from "../web/BusinessModelingPage";
 import { FinanceFormsPage } from "../web/FinanceFormsPage";
@@ -35,6 +36,8 @@ import { PlantFormsPage } from "../web/PlantFormsPage";
 import { PlantNotificationsPage } from "../web/PlantNotificationsPage";
 import { PlantProductionPage } from "../web/PlantProductionPage";
 import { PlantWorkflowsPage } from "../web/PlantWorkflowsPage";
+import { PayrollResultsPage } from "../web/PayrollResultsPage";
+import { PayrollRulesPage } from "../web/PayrollRulesPage";
 import { WorkflowDesignerPage } from "../web/WorkflowDesignerPage";
 import { WebLoginPage } from "../web/WebLoginPage";
 import {
@@ -174,6 +177,7 @@ export function AppRoutes() {
           <Route path="month" element={<FinanceLedgerPage />} />
           <Route path="year" element={<FinanceLedgerPage />} />
           <Route path="exceptions" element={<FinanceLedgerPage />} />
+          <Route path="payroll-rules" element={<PayrollRulesPage />} />
           <Route path="*" element={<WorkspaceComingSoon />} />
         </Route>
 
@@ -182,6 +186,8 @@ export function AppRoutes() {
           <Route path="overview" element={<WorkspaceOverviewPage workspace="ADMIN" />} />
           <Route path="form-approvals" element={<AdminFormApprovalsPage />} />
           <Route path="workflow-approvals" element={<AdminWorkflowApprovalsPage />} />
+          <Route path="payroll-approvals" element={<AdminPayrollApprovalsPage />} />
+          <Route path="payroll" element={<PayrollResultsPage workspace="admin" />} />
           <Route path="*" element={<WorkspaceComingSoon />} />
         </Route>
 
@@ -193,6 +199,7 @@ export function AppRoutes() {
           <Route path="workflows" element={<PlantWorkflowsPage />} />
           <Route path="production" element={<PlantProductionPage />} />
           <Route path="exceptions" element={<PlantExceptionsPage />} />
+          <Route path="payroll" element={<PayrollResultsPage workspace="plant" />} />
           <Route path="*" element={<WorkspaceComingSoon />} />
         </Route>
       </Route>

@@ -1355,3 +1355,93 @@ class BusinessTaskRow(Base):
     payload: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class GovernedPayrollRuleVersionRow(Base):
+    __tablename__ = "governed_payroll_rule_versions"
+    __table_args__ = (
+        UniqueConstraint(
+            "rule_key", "factory_id", "version", name="ux_governed_payroll_rule_version"
+        ),
+        Index("ix_governed_payroll_rule_status", "status", "factory_id", "created_at"),
+    )
+
+    rule_version_id: Mapped[str] = mapped_column(String, primary_key=True)
+    rule_key: Mapped[str] = mapped_column(String, nullable=False)
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    factory_id: Mapped[str] = mapped_column(String, nullable=False)
+    position: Mapped[str] = mapped_column(String, nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    dsl: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String, nullable=False)
+    created_by: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    reviewed_by: Mapped[str | None] = mapped_column(String)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    review_note: Mapped[str] = mapped_column(String, nullable=False, default="")
+
+
+class PayrollCalculationBatchRow(Base):
+    __tablename__ = "payroll_calculation_batches"
+    __table_args__ = (
+        Index("ix_payroll_batch_period", "factory_id", "period_start", "period_end", "status"),
+    )
+
+    batch_id: Mapped[str] = mapped_column(String, primary_key=True)
+    batch_type: Mapped[str] = mapped_column(String, nullable=False)
+    factory_id: Mapped[str] = mapped_column(String, nullable=False)
+    period_start: Mapped[str] = mapped_column(String, nullable=False)
+    period_end: Mapped[str] = mapped_column(String, nullable=False)
+    data_watermark: Mapped[str] = mapped_column(String, nullable=False)
+    rule_version_id: Mapped[str] = mapped_column(
+        ForeignKey("governed_payroll_rule_versions.rule_version_id"), nullable=False
+    )
+    source_batch_id: Mapped[str | None] = mapped_column(
+        ForeignKey("payroll_calculation_batches.batch_id")
+    )
+    status: Mapped[str] = mapped_column(String, nullable=False)
+    created_by: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    confirmed_by: Mapped[str | None] = mapped_column(String)
+    confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class PayrollCalculationResultRow(Base):
+    __tablename__ = "payroll_calculation_results"
+    __table_args__ = (
+        UniqueConstraint("batch_id", "root_submission_id", name="ux_payroll_batch_source"),
+        Index("ix_payroll_result_employee", "employee_code", "business_date"),
+    )
+
+    result_id: Mapped[str] = mapped_column(String, primary_key=True)
+    batch_id: Mapped[str] = mapped_column(
+        ForeignKey("payroll_calculation_batches.batch_id"), nullable=False
+    )
+    root_submission_id: Mapped[str] = mapped_column(String, nullable=False)
+    employee_code: Mapped[str] = mapped_column(String, nullable=False)
+    factory_id: Mapped[str] = mapped_column(String, nullable=False)
+    business_date: Mapped[str] = mapped_column(String, nullable=False)
+    rule_version_id: Mapped[str] = mapped_column(
+        ForeignKey("governed_payroll_rule_versions.rule_version_id"), nullable=False
+    )
+    input_snapshot: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    amount: Mapped[str] = mapped_column(String, nullable=False)
+    original_amount: Mapped[str | None] = mapped_column(String)
+    delta_amount: Mapped[str | None] = mapped_column(String)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class PayrollAccessAuditRow(Base):
+    __tablename__ = "payroll_access_audits"
+    __table_args__ = (
+        Index("ix_payroll_access_actor", "actor_id", "viewed_at"),
+    )
+
+    audit_id: Mapped[str] = mapped_column(String, primary_key=True)
+    actor_id: Mapped[str] = mapped_column(String, nullable=False)
+    actor_role: Mapped[str] = mapped_column(String, nullable=False)
+    requested_factory_id: Mapped[str] = mapped_column(String, nullable=False)
+    requested_employee_code: Mapped[str] = mapped_column(String, nullable=False)
+    result_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    viewed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

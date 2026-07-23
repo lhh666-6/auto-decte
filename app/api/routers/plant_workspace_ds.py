@@ -17,6 +17,7 @@ from app.modules.identity_access.web_policy_ds import (
     allows_workspace,
     resolve_plant_factory,
 )
+from app.modules.payroll_rules.service_ds import PayrollService
 from app.modules.submission_ledger.service_ds import (
     SubmissionLedgerError,
     SubmissionLedgerService,
@@ -53,6 +54,10 @@ def _workflows(request: Request) -> WorkflowService:
 
 def _ledger(request: Request) -> SubmissionLedgerService:
     return SubmissionLedgerService(request.app.state.services.engine)
+
+
+def _payroll(request: Request) -> PayrollService:
+    return PayrollService(request.app.state.services.engine)
 
 
 @router.get("/overview", response_model=WorkspaceOverviewResponse)
@@ -131,6 +136,16 @@ def exceptions(request: Request) -> dict[str, object]:
         "corrections": service.list_corrections(plant_id)["items"],
         "tasks": service.list_tasks(plant_id)["items"],
     }
+
+
+@router.get("/payroll")
+def payroll(request: Request) -> dict[str, object]:
+    actor, plant_id = _plant_actor(request)
+    return _payroll(request).list_official(
+        factory_id=plant_id,
+        actor_id=actor.employee_code,
+        actor_role="PLANT_MANAGER",
+    )
 
 
 @router.post("/submissions/{submission_id}/return")

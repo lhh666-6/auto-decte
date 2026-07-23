@@ -1,6 +1,6 @@
 """Phase 1 administrator workspace endpoints."""
 
-from fastapi import APIRouter, Header, HTTPException, Request
+from fastapi import APIRouter, Header, HTTPException, Query, Request
 
 from app.api.routers.web_auth_ds import require_web_actor, require_web_csrf
 from app.api.schemas.business_workflows_ds import (
@@ -14,9 +14,14 @@ from app.api.schemas.managed_forms_ds import (
     PlantActivationRequest,
     PlantActivationResponse,
 )
+from app.api.schemas.payroll_rules_ds import (
+    PayrollDecisionRequest,
+    RecalculatePayrollRequest,
+)
 from app.api.schemas.web_workspaces_ds import OverviewCard, WorkspaceOverviewResponse
 from app.modules.electronic_forms.governance_ds import ManagedFormError, ManagedFormService
 from app.modules.identity_access.web_policy_ds import WebWorkspace, allows_workspace
+from app.modules.payroll_rules.service_ds import PayrollError, PayrollService
 from app.modules.workflow_engine.service_ds import WorkflowError, WorkflowService
 
 router = APIRouter(prefix="/api/v1/admin", tags=["admin"])
@@ -38,6 +43,10 @@ def _forms(request: Request) -> ManagedFormService:
 
 def _workflows(request: Request) -> WorkflowService:
     return WorkflowService(request.app.state.services.engine)
+
+
+def _payroll(request: Request) -> PayrollService:
+    return PayrollService(request.app.state.services.engine)
 
 
 def _form_error(error: ManagedFormError) -> HTTPException:
@@ -76,6 +85,69 @@ def form_approvals(request: Request) -> ManagedFormListResponse:
             ManagedFormVersionResponse.model_validate(item)
             for item in _forms(request).list_approvals()
         ]
+    )
+
+
+@router.get("/payroll-approvals")
+def payroll_approvals(request: Request) -> dict[str, object]:
+    _admin_actor(request)
+    return _payroll(request).list_rules(approvals_only=True)
+
+
+@router.post("/payroll-approvals/{version_id}/decision")
+def decide_payroll_rule(
+    version_id: str,
+    body: PayrollDecisionRequest,
+    request: Request,
+    x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token"),
+) -> dict[str, object]:
+    actor = _admin_actor(request)
+    require_web_csrf(request, x_csrf_token)
+    try:
+        return _payroll(request).decide_rule(
+            version_id,
+            approved=body.approved,
+            actor_id=actor.employee_code,
+            note=body.note,
+        )
+    except PayrollError as error:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": error.code, "detail": error.detail},
+        ) from error
+
+
+@router.post("/payroll-recalculations", status_code=201)
+def recalculate_payroll(
+    body: RecalculatePayrollRequest,
+    request: Request,
+    x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token"),
+) -> dict[str, object]:
+    actor = _admin_actor(request)
+    require_web_csrf(request, x_csrf_token)
+    try:
+        return _payroll(request).recalculate(
+            **body.model_dump(), actor_id=actor.employee_code
+        )
+    except PayrollError as error:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": error.code, "detail": error.detail},
+        ) from error
+
+
+@router.get("/payroll")
+def admin_payroll(
+    request: Request,
+    factory_id: str = Query(default=""),
+    employee_code: str = Query(default=""),
+) -> dict[str, object]:
+    actor = _admin_actor(request)
+    return _payroll(request).list_official(
+        factory_id=factory_id or None,
+        employee_code=employee_code or None,
+        actor_id=actor.employee_code,
+        actor_role="ADMIN",
     )
 
 

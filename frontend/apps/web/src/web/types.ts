@@ -130,3 +130,44 @@ export interface BusinessTask {
   payload: Record<string, unknown>;
   created_at: string;
 }
+
+export interface PayrollRuleVersion {
+  rule_version_id: string;
+  rule_key: string;
+  name: string;
+  factory_id: string;
+  position: string;
+  version: number;
+  dsl: { metric: string; rate: string; base: string };
+  content_hash: string;
+  status: string;
+  created_by: string;
+  reviewed_by?: string;
+  review_note: string;
+}
+
+export interface PayrollBatch {
+  batch_id: string;
+  batch_type: string;
+  factory_id: string;
+  period_start: string;
+  period_end: string;
+  data_watermark: string;
+  rule_version_id: string;
+  source_batch_id?: string;
+  status: string;
+  created_by: string;
+  confirmed_by?: string;
+}
+
+export interface PayrollResult {
+  result_id: string;
+  batch_id: string;
+  employee_code: string;
+  factory_id: string;
+  business_date: string;
+  rule_version_id: string;
+  amount: string;
+  original_amount?: string;
+  delta_amount?: string;
+}

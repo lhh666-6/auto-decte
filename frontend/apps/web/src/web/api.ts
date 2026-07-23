@@ -5,6 +5,9 @@ import type {
   ManagedFormField,
   ManagementNotification,
   ProposedBusinessRule,
+  PayrollBatch,
+  PayrollResult,
+  PayrollRuleVersion,
   SubmissionCorrection,
   WorkflowVersion,
   WebSession,
@@ -465,5 +468,102 @@ export function returnPlantSubmission(
       body: JSON.stringify({ reason, assigned_to: assignedTo }),
     },
     fetcher,
+  );
+}
+
+export function listPayrollRules(fetcher?: WebFetcher) {
+  return request<{ items: PayrollRuleVersion[] }>(
+    "/api/v1/finance/payroll-rules", {}, fetcher,
+  );
+}
+
+export function createPayrollRule(
+  body: {
+    rule_key: string;
+    name: string;
+    factory_id: string;
+    position: string;
+    dsl: { metric: string; rate: string; base: string };
+  },
+  fetcher?: WebFetcher,
+) {
+  return request<PayrollRuleVersion>(
+    "/api/v1/finance/payroll-rules",
+    { method: "POST", headers: csrfHeaders(true), body: JSON.stringify(body) },
+    fetcher,
+  );
+}
+
+export function submitPayrollRule(versionId: string, fetcher?: WebFetcher) {
+  return request<PayrollRuleVersion>(
+    `/api/v1/finance/payroll-rules/${versionId}/submit-approval`,
+    { method: "POST", headers: csrfHeaders() },
+    fetcher,
+  );
+}
+
+export function listPayrollApprovals(fetcher?: WebFetcher) {
+  return request<{ items: PayrollRuleVersion[] }>(
+    "/api/v1/admin/payroll-approvals", {}, fetcher,
+  );
+}
+
+export function decidePayrollRule(
+  versionId: string,
+  approved: boolean,
+  fetcher?: WebFetcher,
+) {
+  return request<PayrollRuleVersion>(
+    `/api/v1/admin/payroll-approvals/${versionId}/decision`,
+    {
+      method: "POST",
+      headers: csrfHeaders(true),
+      body: JSON.stringify({ approved, note: approved ? "管理员批准" : "管理员退回" }),
+    },
+    fetcher,
+  );
+}
+
+export function calculatePayroll(
+  ruleVersionId: string,
+  periodStart: string,
+  periodEnd: string,
+  fetcher?: WebFetcher,
+) {
+  return request<PayrollBatch>(
+    "/api/v1/finance/payroll-calculations",
+    {
+      method: "POST",
+      headers: csrfHeaders(true),
+      body: JSON.stringify({
+        rule_version_id: ruleVersionId,
+        period_start: periodStart,
+        period_end: periodEnd,
+      }),
+    },
+    fetcher,
+  );
+}
+
+export function listPayrollBatches(fetcher?: WebFetcher) {
+  return request<{ items: PayrollBatch[] }>(
+    "/api/v1/finance/payroll-calculations", {}, fetcher,
+  );
+}
+
+export function confirmPayrollBatch(batchId: string, fetcher?: WebFetcher) {
+  return request<PayrollBatch>(
+    `/api/v1/finance/payroll-calculations/${batchId}/confirm`,
+    { method: "POST", headers: csrfHeaders() },
+    fetcher,
+  );
+}
+
+export function listOfficialPayroll(
+  workspace: "finance" | "admin" | "plant",
+  fetcher?: WebFetcher,
+) {
+  return request<{ items: PayrollResult[] }>(
+    `/api/v1/${workspace}/payroll`, {}, fetcher,
   );
 }

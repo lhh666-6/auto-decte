@@ -15,6 +15,10 @@ from app.api.schemas.managed_forms_ds import (
     ManagedFormVersionResponse,
     UpdateManagedFormVersionRequest,
 )
+from app.api.schemas.payroll_rules_ds import (
+    CalculatePayrollRequest,
+    CreatePayrollRuleRequest,
+)
 from app.api.schemas.submission_ledger_ds import (
     AttachReplacementRequest,
     ReviewCorrectionRequest,
@@ -26,6 +30,7 @@ from app.modules.business_discovery.service_ds import (
 )
 from app.modules.electronic_forms.governance_ds import ManagedFormError, ManagedFormService
 from app.modules.identity_access.web_policy_ds import WebWorkspace, allows_workspace
+from app.modules.payroll_rules.service_ds import PayrollError, PayrollService
 from app.modules.submission_ledger.service_ds import (
     SubmissionLedgerError,
     SubmissionLedgerService,
@@ -59,6 +64,10 @@ def _workflows(request: Request) -> WorkflowService:
 
 def _ledger(request: Request) -> SubmissionLedgerService:
     return SubmissionLedgerService(request.app.state.services.engine)
+
+
+def _payroll(request: Request) -> PayrollService:
+    return PayrollService(request.app.state.services.engine)
 
 
 def _form_error(error: ManagedFormError) -> HTTPException:
@@ -120,6 +129,105 @@ def corrections(request: Request, factory_id: str = Query(default="")) -> dict[s
 def business_tasks(request: Request, factory_id: str = Query(default="")) -> dict[str, object]:
     _finance_actor(request)
     return _ledger(request).list_tasks(factory_id or None)
+
+
+@router.get("/payroll-rules")
+def payroll_rules(request: Request) -> dict[str, object]:
+    _finance_actor(request)
+    return _payroll(request).list_rules()
+
+
+@router.post("/payroll-rules", status_code=status.HTTP_201_CREATED)
+def create_payroll_rule(
+    body: CreatePayrollRuleRequest,
+    request: Request,
+    x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token"),
+) -> dict[str, object]:
+    actor = _finance_actor(request)
+    require_web_csrf(request, x_csrf_token)
+    try:
+        return _payroll(request).create_rule(
+            **body.model_dump(), actor_id=actor.employee_code
+        )
+    except PayrollError as error:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": error.code, "detail": error.detail},
+        ) from error
+
+
+@router.post("/payroll-rules/{version_id}/submit-approval")
+def submit_payroll_rule(
+    version_id: str,
+    request: Request,
+    x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token"),
+) -> dict[str, object]:
+    _finance_actor(request)
+    require_web_csrf(request, x_csrf_token)
+    try:
+        return _payroll(request).submit_rule(version_id)
+    except PayrollError as error:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": error.code, "detail": error.detail},
+        ) from error
+
+
+@router.post("/payroll-calculations", status_code=status.HTTP_201_CREATED)
+def calculate_payroll(
+    body: CalculatePayrollRequest,
+    request: Request,
+    x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token"),
+) -> dict[str, object]:
+    actor = _finance_actor(request)
+    require_web_csrf(request, x_csrf_token)
+    try:
+        return _payroll(request).calculate(
+            **body.model_dump(), actor_id=actor.employee_code
+        )
+    except PayrollError as error:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": error.code, "detail": error.detail},
+        ) from error
+
+
+@router.get("/payroll-calculations")
+def payroll_batches(request: Request) -> dict[str, object]:
+    _finance_actor(request)
+    return _payroll(request).list_batches()
+
+
+@router.post("/payroll-calculations/{batch_id}/confirm")
+def confirm_payroll_batch(
+    batch_id: str,
+    request: Request,
+    x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token"),
+) -> dict[str, object]:
+    actor = _finance_actor(request)
+    require_web_csrf(request, x_csrf_token)
+    try:
+        return _payroll(request).confirm_batch(batch_id, actor_id=actor.employee_code)
+    except PayrollError as error:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": error.code, "detail": error.detail},
+        ) from error
+
+
+@router.get("/payroll")
+def finance_payroll(
+    request: Request,
+    factory_id: str = Query(default=""),
+    employee_code: str = Query(default=""),
+) -> dict[str, object]:
+    actor = _finance_actor(request)
+    return _payroll(request).list_official(
+        factory_id=factory_id or None,
+        employee_code=employee_code or None,
+        actor_id=actor.employee_code,
+        actor_role="FINANCE",
+    )
 
 
 @router.post("/corrections/{correction_id}/replacement")

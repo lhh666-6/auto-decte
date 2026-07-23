@@ -1,0 +1,10 @@
+.payroll-page { display: grid; gap: 1rem; }
+.payroll-page header p { color: #596579; }
+.payroll-rule-form { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .8rem; background: #fff; border: 1px solid #dce3ec; padding: 1rem; border-radius: 12px; }
+.payroll-rule-form label { display: grid; gap: .35rem; }
+.payroll-list { display: grid; gap: .7rem; }
+.payroll-list article { display: flex; align-items: center; justify-content: space-between; gap: 1rem; background: #fff; border: 1px solid #dce3ec; border-radius: 12px; padding: 1rem; }
+@media (max-width: 780px) {
+  .payroll-rule-form { grid-template-columns: 1fr; }
+  .payroll-list article { align-items: stretch; flex-direction: column; }
+}
