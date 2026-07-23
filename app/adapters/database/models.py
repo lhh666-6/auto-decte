@@ -763,6 +763,13 @@ class BambooInspectionRow(Base):
         UniqueConstraint("record_id", "serial_no", name="ux_bamboo_inspection_serial"),
         UniqueConstraint("actor_id", "idempotency_key", name="ux_bamboo_inspection_idempotency"),
         Index("ix_bamboo_inspection_record", "record_id", "signed_at"),
+        Index(
+            "ux_bamboo_inspection_formal_record",
+            "record_id",
+            unique=True,
+            sqlite_where=text("inspection_kind = 'FORMAL'"),
+            postgresql_where=text("inspection_kind = 'FORMAL'"),
+        ),
     )
 
     inspection_id: Mapped[str] = mapped_column(String, primary_key=True)
@@ -787,6 +794,69 @@ class BambooInspectionRow(Base):
     request_id: Mapped[str] = mapped_column(String, nullable=False)
     idempotency_key: Mapped[str] = mapped_column(String, nullable=False)
     window_revision: Mapped[int] = mapped_column(Integer, nullable=False)
+    inspection_kind: Mapped[str] = mapped_column(String, nullable=False, default="FORMAL")
+
+
+class BambooInspectionWindowRow(Base):
+    __tablename__ = "bamboo_inspection_windows"
+    __table_args__ = (
+        Index(
+            "ix_bamboo_inspection_window_queue",
+            "factory_id",
+            "status",
+            "deadline_at",
+        ),
+    )
+
+    record_id: Mapped[str] = mapped_column(
+        ForeignKey("bamboo_records.record_id", ondelete="CASCADE"), primary_key=True
+    )
+    factory_id: Mapped[str] = mapped_column(
+        ForeignKey("bamboo_factories.factory_id"), nullable=False
+    )
+    opened_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    deadline_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    status: Mapped[str] = mapped_column(String, nullable=False)
+    claimed_by: Mapped[str | None] = mapped_column(String)
+    claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    inspection_id: Mapped[str | None] = mapped_column(
+        ForeignKey("bamboo_inspections.inspection_id")
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    terminated_by: Mapped[str | None] = mapped_column(String)
+    terminated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    appeal_deadline_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    appeal_claimed_by: Mapped[str | None] = mapped_column(String)
+    appeal_claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    appeal_payload: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    appeal_submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    appeal_decision: Mapped[str | None] = mapped_column(String)
+    appeal_decision_note: Mapped[str | None] = mapped_column(String)
+    appeal_decided_by: Mapped[str | None] = mapped_column(String)
+    appeal_decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+
+
+class MobileNotificationRow(Base):
+    __tablename__ = "mobile_notifications"
+    __table_args__ = (
+        Index(
+            "ix_mobile_notification_inbox",
+            "recipient_actor_id",
+            "read_at",
+            "created_at",
+        ),
+    )
+
+    notification_id: Mapped[str] = mapped_column(String, primary_key=True)
+    recipient_actor_id: Mapped[str] = mapped_column(String, nullable=False)
+    category: Mapped[str] = mapped_column(String, nullable=False)
+    title: Mapped[str] = mapped_column(String, nullable=False)
+    body: Mapped[str] = mapped_column(String, nullable=False)
+    link: Mapped[str | None] = mapped_column(String)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False, default=dict)
+    read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
 class BambooEvidenceAssetRow(Base):

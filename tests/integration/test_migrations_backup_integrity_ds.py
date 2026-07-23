@@ -110,6 +110,44 @@ def test_alembic_upgrade_creates_bamboo_cage_occupancy_table(tmp_path: Path) -> 
         assert connection.scalar(text("SELECT version_num FROM alembic_version")) == HEAD_REVISION
 
 
+def test_alembic_upgrade_creates_inspection_windows_and_notifications(tmp_path: Path) -> None:
+    database_path = tmp_path / "bamboo-inspection-window.db"
+
+    upgrade_database(database_path)
+
+    engine = create_engine(f"sqlite:///{database_path}")
+    inspector = inspect(engine)
+    assert {"bamboo_inspection_windows", "mobile_notifications"} <= set(
+        inspector.get_table_names()
+    )
+    window_columns = {
+        column["name"] for column in inspector.get_columns("bamboo_inspection_windows")
+    }
+    assert {
+        "record_id",
+        "factory_id",
+        "opened_at",
+        "deadline_at",
+        "status",
+        "claimed_by",
+        "appeal_deadline_at",
+        "appeal_claimed_by",
+        "appeal_payload",
+        "appeal_decision",
+        "revision",
+    } <= window_columns
+    inspection_columns = {
+        column["name"] for column in inspector.get_columns("bamboo_inspections")
+    }
+    assert "inspection_kind" in inspection_columns
+    indexes = {
+        item["name"]: item for item in inspector.get_indexes("bamboo_inspections")
+    }
+    assert indexes["ux_bamboo_inspection_formal_record"]["unique"]
+    with engine.connect() as connection:
+        assert connection.scalar(text("SELECT version_num FROM alembic_version")) == HEAD_REVISION
+
+
 def test_alembic_upgrade_creates_complete_bamboo_operations_tables(tmp_path: Path) -> None:
     database_path = tmp_path / "bamboo-operations.db"
 
