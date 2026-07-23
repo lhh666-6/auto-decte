@@ -50,6 +50,9 @@ class _MemoryBambooRepository:
     def list_for_factory(self, factory_id: str) -> list[BambooRecord]:
         return [record for record in self.records.values() if record.factory_id == factory_id]
 
+    def list_all(self) -> list[BambooRecord]:
+        return list(self.records.values())
+
     def find_created_result(
         self, actor_id: str, source_ref: str
     ) -> BambooRecord | None:

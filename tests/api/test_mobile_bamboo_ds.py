@@ -335,6 +335,107 @@ def test_cross_factory_record_is_not_visible(tmp_path: Path) -> None:
     assert factory_b_record.json()["display_no"] != created.json()["display_no"]
 
 
+def test_duplicate_active_cage_returns_stable_conflict(tmp_path: Path) -> None:
+    services = build_services(Settings(data_root=tmp_path))
+    _add_bamboo_user(services, employee_code="E-SORT", role="SORT_OPERATOR")
+    client = _client(services, "E-SORT")
+    base_info = {
+        "cage_no": "CAGE-18",
+        "length": "2.3",
+        "shade": "深",
+        "grade": "A",
+        "bundle_count": 10,
+    }
+    first = client.post(
+        "/api/v1/mobile/bamboo/records",
+        headers=_write_headers(client, "cage-first"),
+        json={"base_info": base_info},
+    )
+    assert first.status_code == 201
+
+    duplicate = client.post(
+        "/api/v1/mobile/bamboo/records",
+        headers=_write_headers(client, "cage-duplicate"),
+        json={"base_info": {**base_info, "cage_no": " cage-18 "}},
+    )
+
+    assert duplicate.status_code == 409
+    assert duplicate.json()["code"] == "CAGE_ALREADY_IN_USE"
+    assert duplicate.json()["cage_no"] == "CAGE-18"
+    assert duplicate.json()["sorting_record_id"] == first.json()["record_id"]
+
+
+def test_non_production_roles_read_scoped_records_and_linked_upstream_inline(
+    tmp_path: Path,
+) -> None:
+    services = build_services(Settings(data_root=tmp_path))
+    for code, role, factory_id in (
+        ("E-SORT", "SORT_OPERATOR", "FACTORY-A"),
+        ("E-DIP", "DIPPING_OPERATOR", "FACTORY-A"),
+        ("E-INSPECT", "INSPECTOR", "FACTORY-A"),
+        ("E-SUP", "SUPERVISOR", "FACTORY-A"),
+        ("E-MANAGER", "PLANT_MANAGER", "FACTORY-A"),
+        ("E-FINANCE", "FINANCE_APPROVER", "FACTORY-B"),
+        ("E-ADMIN", "SYSTEM_ADMIN", "FACTORY-B"),
+        ("E-MANAGER-B", "PLANT_MANAGER", "FACTORY-B"),
+    ):
+        _add_bamboo_user(
+            services,
+            employee_code=code,
+            role=role,
+            factory_id=factory_id,
+        )
+    clients = {
+        code: _client(services, code)
+        for code in (
+            "E-SORT",
+            "E-DIP",
+            "E-INSPECT",
+            "E-SUP",
+            "E-MANAGER",
+            "E-FINANCE",
+            "E-ADMIN",
+            "E-MANAGER-B",
+        )
+    }
+    created = clients["E-SORT"].post(
+        "/api/v1/mobile/bamboo/records",
+        headers=_write_headers(clients["E-SORT"], "visibility-create"),
+        json={
+            "base_info": {
+                "cage_no": "VISIBLE-1",
+                "length": "2.3",
+                "shade": "深",
+                "grade": "A",
+                "bundle_count": 10,
+            }
+        },
+    ).json()
+    record_url = f"/api/v1/mobile/bamboo/records/{created['record_id']}"
+
+    for code in ("E-INSPECT", "E-SUP", "E-MANAGER", "E-FINANCE", "E-ADMIN"):
+        assert clients[code].get(record_url).status_code == 200
+    assert clients["E-DIP"].get(record_url).status_code == 404
+    assert clients["E-MANAGER-B"].get(record_url).status_code == 404
+
+    clients["E-SORT"].post(
+        f"{record_url}/stages/SORT/submit",
+        headers=_write_headers(clients["E-SORT"], "visibility-sort"),
+        json={
+            "expected_revision": 1,
+            "device_id": "sort-phone",
+            "values": {"moisture": [12]},
+        },
+    )
+    linked = clients["E-DIP"].get("/api/v1/mobile/bamboo/tasks").json()["tasks"][0]
+
+    assert linked["upstream_record"]["record_id"] == created["record_id"]
+    assert linked["upstream_record"]["base_info"]["cage_no"] == "VISIBLE-1"
+    assert [item["stage"] for item in linked["upstream_record"]["submissions"]] == [
+        "SORT"
+    ]
+
+
 def test_bamboo_record_options_are_published_and_enforced(tmp_path: Path) -> None:
     services = build_services(Settings(data_root=tmp_path))
     _add_bamboo_user(services, employee_code="E-SORT", role="SORT_OPERATOR")

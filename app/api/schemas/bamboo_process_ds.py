@@ -37,6 +37,18 @@ class BambooSubmissionResponse(BaseModel):
     submitted_at: datetime | None
 
 
+class BambooUpstreamRecordResponse(BaseModel):
+    record_id: str
+    display_no: str
+    factory_id: str
+    form_type: str
+    base_info: dict[str, Any]
+    current_stage: str | None
+    status: str
+    revision: int
+    submissions: list[BambooSubmissionResponse]
+
+
 class BambooRecordResponse(BaseModel):
     record_id: str
     display_no: str
@@ -55,6 +67,7 @@ class BambooRecordResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     submissions: list[BambooSubmissionResponse]
+    upstream_record: BambooUpstreamRecordResponse | None = None
 
 
 class BambooTaskListResponse(BaseModel):

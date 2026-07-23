@@ -16,6 +16,7 @@ from app.api.schemas.bamboo_process_ds import (
     BambooRecordResponse,
     BambooSubmissionResponse,
     BambooTaskListResponse,
+    BambooUpstreamRecordResponse,
     CloseInspectionExceptionRequest,
     CreateBambooRecordRequest,
     CreateFactoryEmployeeRequest,
@@ -44,9 +45,13 @@ from app.modules.bamboo_process.models_ds import (
     BambooRecord,
     BambooRole,
     BambooStage,
+    StageSubmission,
     TaskBucket,
 )
-from app.modules.bamboo_process.ports_ds import BambooRepositoryConflict
+from app.modules.bamboo_process.ports_ds import (
+    BambooCageOccupied,
+    BambooRepositoryConflict,
+)
 from app.services.container import Services
 
 router = APIRouter(prefix="/bamboo")
@@ -116,14 +121,21 @@ def list_tasks(
     cage_no: str | None = None,
 ) -> BambooTaskListResponse:
     actor = _bamboo_actor(request)
-    records = _services(request).bamboo_process.list_tasks(
+    service = _services(request).bamboo_process
+    records = service.list_tasks(
         actor=actor,
         bucket=bucket,
         cage_no=cage_no,
     )
     return BambooTaskListResponse(
         bucket=bucket.value,
-        tasks=[_response(record) for record in records],
+        tasks=[
+            _response(
+                record,
+                upstream_record=service.get_upstream(record, actor=actor),
+            )
+            for record in records
+        ],
     )
 
 
@@ -176,6 +188,16 @@ def create_record(
         raise HTTPException(
             status_code=status_code_,
             detail={"code": error.code, "detail": str(error)},
+        ) from error
+    except BambooCageOccupied as error:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "CAGE_ALREADY_IN_USE",
+                "detail": "该笼号仍在未完成流程中。",
+                "cage_no": error.cage_no,
+                "sorting_record_id": error.sorting_record_id,
+            },
         ) from error
     except BambooRepositoryConflict as error:
         raise HTTPException(
@@ -610,13 +632,17 @@ def export_finance_xlsx(
 @router.get("/records/{record_id}", response_model=BambooRecordResponse)
 def get_record(record_id: str, request: Request) -> BambooRecordResponse:
     actor = _bamboo_actor(request)
-    record = _services(request).bamboo_process.get_visible(record_id, actor=actor)
+    service = _services(request).bamboo_process
+    record = service.get_visible(record_id, actor=actor)
     if record is None:
         raise HTTPException(
             status_code=404,
             detail={"code": "RECORD_NOT_VISIBLE", "detail": "记录不存在或当前不可见。"},
         )
-    return _response(record)
+    return _response(
+        record,
+        upstream_record=service.get_upstream(record, actor=actor),
+    )
 
 
 @router.post(
@@ -684,10 +710,48 @@ def submit_stage(
             status_code=409,
             detail={"code": "BAMBOO_RECORD_CONFLICT", "detail": str(error)},
         ) from error
-    return _response(record)
+    return _response(
+        record,
+        upstream_record=service.get_upstream(record, actor=actor),
+    )
 
 
-def _response(record: BambooRecord) -> BambooRecordResponse:
+def _submission_response(submission: StageSubmission) -> BambooSubmissionResponse:
+    return BambooSubmissionResponse(
+        submission_id=submission.submission_id,
+        stage=submission.stage.value,
+        version=submission.version,
+        values=submission.values,
+        actor_id=submission.actor_id,
+        actor_name=submission.actor_name,
+        role_code=submission.role_code,
+        submitted_at=submission.submitted_at,
+    )
+
+
+def _upstream_response(record: BambooRecord) -> BambooUpstreamRecordResponse:
+    return BambooUpstreamRecordResponse(
+        record_id=record.record_id,
+        display_no=record.display_no,
+        factory_id=record.factory_id,
+        form_type=record.form_type.value,
+        base_info=record.base_info,
+        current_stage=record.current_stage.value if record.current_stage else None,
+        status=record.status.value,
+        revision=record.revision,
+        submissions=[
+            _submission_response(submission)
+            for submission in record.submissions
+            if not submission.invalidated
+        ],
+    )
+
+
+def _response(
+    record: BambooRecord,
+    *,
+    upstream_record: BambooRecord | None = None,
+) -> BambooRecordResponse:
     return BambooRecordResponse(
         record_id=record.record_id,
         display_no=record.display_no,
@@ -706,17 +770,11 @@ def _response(record: BambooRecord) -> BambooRecordResponse:
         created_at=record.created_at,
         updated_at=record.updated_at,
         submissions=[
-            BambooSubmissionResponse(
-                submission_id=submission.submission_id,
-                stage=submission.stage.value,
-                version=submission.version,
-                values=submission.values,
-                actor_id=submission.actor_id,
-                actor_name=submission.actor_name,
-                role_code=submission.role_code,
-                submitted_at=submission.submitted_at,
-            )
+            _submission_response(submission)
             for submission in record.submissions
             if not submission.invalidated
         ],
+        upstream_record=(
+            _upstream_response(upstream_record) if upstream_record is not None else None
+        ),
     )

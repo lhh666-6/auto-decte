@@ -98,7 +98,11 @@ class BambooProcessFacade:
         bucket: TaskBucket,
         cage_no: str | None = None,
     ) -> list[BambooRecord]:
-        records = self._repository.list_for_factory(actor.factory_id)
+        records = (
+            self._repository.list_all()
+            if actor.role in {BambooRole.FINANCE_APPROVER, BambooRole.SYSTEM_ADMIN}
+            else self._repository.list_for_factory(actor.factory_id)
+        )
         completed = {
             record.record_id
             for record in records
@@ -161,11 +165,37 @@ class BambooProcessFacade:
         actor: BambooActor,
     ) -> BambooRecord | None:
         record = self._repository.get(record_id)
-        if record is None or record.factory_id != actor.factory_id:
+        if record is None:
             return None
+        if actor.role in {BambooRole.FINANCE_APPROVER, BambooRole.SYSTEM_ADMIN}:
+            return record
+        if record.factory_id != actor.factory_id:
+            return None
+        if actor.role in {
+            BambooRole.INSPECTOR,
+            BambooRole.SUPERVISOR,
+            BambooRole.PLANT_MANAGER,
+        }:
+            return record
         if not visible_to_role(record.submissions, actor.role, record.form_type):
             return None
         return record
+
+    def get_upstream(
+        self,
+        record: BambooRecord,
+        *,
+        actor: BambooActor,
+    ) -> BambooRecord | None:
+        if not record.source_record_id:
+            return None
+        visible_record = self.get_visible(record.record_id, actor=actor)
+        if visible_record is None:
+            return None
+        source = self._repository.get(record.source_record_id)
+        if source is None or source.factory_id != record.factory_id:
+            return None
+        return source
 
     def submit_stage(
         self,

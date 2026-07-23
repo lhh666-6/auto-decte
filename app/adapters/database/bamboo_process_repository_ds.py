@@ -207,6 +207,13 @@ class SqlAlchemyBambooProcessRepository:
             ).all()
         return [record for record_id in record_ids if (record := self.get(record_id))]
 
+    def list_all(self) -> list[BambooRecord]:
+        with Session(self._engine) as session:
+            record_ids = session.scalars(
+                select(BambooRecordRow.record_id).order_by(BambooRecordRow.updated_at.desc())
+            ).all()
+        return [record for record_id in record_ids if (record := self.get(record_id))]
+
     def find_created_result(
         self,
         actor_id: str,

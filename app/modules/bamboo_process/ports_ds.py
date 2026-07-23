@@ -36,6 +36,8 @@ class BambooRecordRepository(Protocol):
 
     def list_for_factory(self, factory_id: str) -> list[BambooRecord]: ...
 
+    def list_all(self) -> list[BambooRecord]: ...
+
     def find_created_result(
         self,
         actor_id: str,
