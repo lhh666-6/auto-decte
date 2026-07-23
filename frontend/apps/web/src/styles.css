@@ -2799,3 +2799,41 @@ button { cursor: pointer; }
     border-radius: 0 0 24px 24px;
   }
 }
+.bamboo-inspection-queue {
+  display: grid;
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.bamboo-inspection-queue article,
+.bamboo-window-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--border, #d8dee8);
+  border-radius: 12px;
+}
+
+.bamboo-inspection-queue article.current {
+  border-color: #1677ff;
+  background: #eef6ff;
+}
+
+.bamboo-window-status {
+  margin: 12px 0;
+  background: #fff8e8;
+}
+
+.bamboo-capture-button {
+  display: inline-flex;
+  min-height: 46px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #1677ff;
+  border-radius: 10px;
+  color: #0b63ce;
+  background: #eef6ff;
+  cursor: pointer;
+}

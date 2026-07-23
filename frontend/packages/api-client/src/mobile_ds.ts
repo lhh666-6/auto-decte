@@ -195,6 +195,45 @@ export interface BambooRoleChange {
   status: string;
 }
 
+export interface BambooInspectionWindow {
+  record_id: string;
+  display_no: string;
+  form_type: "SORTING" | "DIPPING_DRYING";
+  cage_no: string;
+  status: string;
+  opened_at: string;
+  deadline_at: string;
+  inside_window: boolean;
+  claimed_by: string | null;
+  claimed_at: string | null;
+  completed_at: string | null;
+  appeal_deadline_at: string | null;
+  appeal_claimed_by: string | null;
+  appeal_submitted_at: string | null;
+  appeal_decision: string | null;
+  revision: number;
+}
+
+export interface BambooNotification {
+  notification_id: string;
+  category: string;
+  title: string;
+  body: string;
+  link: string | null;
+  payload: Record<string, unknown>;
+  read_at: string | null;
+  created_at: string;
+}
+
+export interface SubmitBambooInspectionInput {
+  conclusion: "CONFORMING" | "NONCONFORMING";
+  targetStage?: BambooStage;
+  textEvidence?: string;
+  photos?: File[];
+  audio?: File | null;
+  deviceId: string;
+}
+
 export interface BambooRoleOption {
   role_code: string;
   display_name: string;
@@ -634,6 +673,89 @@ export class MobileApiClient {
       method: "POST",
       headers: { "Idempotency-Key": createMobileClientId("employee-role") },
       body: JSON.stringify({ employee_code: employeeCode, role_code: roleCode }),
+    });
+  }
+
+  listBambooInspectionQueue(bucket: "active" | "history" = "active"): Promise<{
+    bucket: string;
+    items: BambooInspectionWindow[];
+  }> {
+    return this.request(`/bamboo/inspection-queue?bucket=${bucket}`);
+  }
+
+  claimBambooInspection(recordId: string, idempotencyKey: string): Promise<BambooInspectionWindow> {
+    return this.request(`/bamboo/inspection-queue/${encodeURIComponent(recordId)}/claim`, {
+      method: "POST",
+      headers: { "Idempotency-Key": idempotencyKey },
+    });
+  }
+
+  submitBambooInspection(
+    recordId: string,
+    input: SubmitBambooInspectionInput,
+    idempotencyKey: string,
+  ): Promise<BambooInspection> {
+    const body = new FormData();
+    body.set("conclusion", input.conclusion);
+    body.set("device_id", input.deviceId);
+    if (input.targetStage) body.set("target_stage", input.targetStage);
+    if (input.textEvidence) body.set("text_evidence", input.textEvidence);
+    for (const photo of input.photos ?? []) body.append("photos", photo);
+    if (input.audio) body.set("audio", input.audio);
+    return this.request(`/bamboo/records/${encodeURIComponent(recordId)}/inspection-submit`, {
+      method: "POST",
+      headers: { "Idempotency-Key": idempotencyKey },
+      body,
+    });
+  }
+
+  terminateBambooInspection(recordId: string): Promise<BambooInspectionWindow> {
+    return this.request(`/bamboo/inspection-queue/${encodeURIComponent(recordId)}/terminate`, {
+      method: "POST",
+      headers: { "Idempotency-Key": createMobileClientId("inspection-terminate") },
+      body: JSON.stringify({ confirm: true }),
+    });
+  }
+
+  claimBambooInspectionAppeal(recordId: string): Promise<BambooInspectionWindow> {
+    return this.request(`/bamboo/inspection-queue/${encodeURIComponent(recordId)}/appeal/claim`, {
+      method: "POST",
+      headers: { "Idempotency-Key": createMobileClientId("appeal-claim") },
+    });
+  }
+
+  submitBambooInspectionAppeal(
+    recordId: string,
+    targetStage: BambooStage,
+    textEvidence: string,
+  ): Promise<BambooInspectionWindow> {
+    return this.request(`/bamboo/inspection-queue/${encodeURIComponent(recordId)}/appeal`, {
+      method: "POST",
+      headers: { "Idempotency-Key": createMobileClientId("appeal-submit") },
+      body: JSON.stringify({ target_stage: targetStage, text_evidence: textEvidence }),
+    });
+  }
+
+  decideBambooInspectionAppeal(
+    recordId: string,
+    approve: boolean,
+    note: string,
+  ): Promise<BambooInspectionWindow> {
+    return this.request(`/bamboo/inspection-queue/${encodeURIComponent(recordId)}/appeal/decision`, {
+      method: "POST",
+      headers: { "Idempotency-Key": createMobileClientId("appeal-decision") },
+      body: JSON.stringify({ approve, note }),
+    });
+  }
+
+  listBambooNotifications(): Promise<{ items: BambooNotification[] }> {
+    return this.request("/bamboo/notifications");
+  }
+
+  readBambooNotification(notificationId: string): Promise<BambooNotification> {
+    return this.request(`/bamboo/notifications/${encodeURIComponent(notificationId)}/read`, {
+      method: "POST",
+      headers: { "Idempotency-Key": createMobileClientId("notification-read") },
     });
   }
 

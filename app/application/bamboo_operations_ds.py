@@ -1137,6 +1137,7 @@ class BambooOperationsService:
         device_id: str,
         request_id: str,
         idempotency_key: str,
+        has_file_evidence: bool = False,
     ) -> dict[str, Any]:
         if actor.role is not BambooRole.INSPECTOR:
             raise BambooOperationError("INSPECTOR_REQUIRED", "仅检测人可以登记检测记录")
@@ -1212,7 +1213,7 @@ class BambooOperationsService:
             if conclusion not in {"CONFORMING", "NONCONFORMING"}:
                 raise BambooOperationError("INVALID_INSPECTION_CONCLUSION", "检测结论无效")
             text = (text_evidence or note or "").strip()
-            if conclusion == "NONCONFORMING" and not text:
+            if conclusion == "NONCONFORMING" and not text and not has_file_evidence:
                 raise BambooOperationError(
                     "INSPECTION_EVIDENCE_REQUIRED",
                     "不合格检测至少填写文字或提交照片、录音",
@@ -1813,6 +1814,9 @@ class BambooOperationsService:
             "claimed_at": window.claimed_at,
             "completed_at": window.completed_at,
             "appeal_deadline_at": window.appeal_deadline_at,
+            "appeal_claimed_by": window.appeal_claimed_by,
+            "appeal_submitted_at": window.appeal_submitted_at,
+            "appeal_decision": window.appeal_decision,
             "revision": window.revision,
         }
 

@@ -159,17 +159,18 @@ def test_inspection_queue_claims_once_and_accepts_one_click_conforming(
     assert missing_evidence.status_code == 409
     assert missing_evidence.json()["code"] == "INSPECTION_EVIDENCE_REQUIRED"
     abnormal = inspector.post(
-        f"/api/v1/mobile/bamboo/records/{second_id}/inspections",
+        f"/api/v1/mobile/bamboo/records/{second_id}/inspection-submit",
         headers=_headers(inspector, "queue-result-abnormal"),
-        json={
+        data={
             "conclusion": "NONCONFORMING",
             "target_stage": "SORT",
-            "text_evidence": "竹丝含水率异常",
             "device_id": "inspect-phone",
         },
+        files={"photos": ("现场.jpg", b"photo-evidence", "image/jpeg")},
     )
     assert abnormal.status_code == 201
     assert abnormal.json()["exception"]["status"] == "OPEN"
+    assert abnormal.json()["evidence"][0]["evidence_type"] == "PHOTO"
     history = inspector.get(
         "/api/v1/mobile/bamboo/inspection-queue", params={"bucket": "history"}
     ).json()["items"]

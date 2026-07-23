@@ -15,6 +15,10 @@ const mocks = vi.hoisted(() => ({
   createBambooRecord: vi.fn(),
   submitBambooStage: vi.fn(),
   getBambooOperations: vi.fn(),
+  listBambooInspectionQueue: vi.fn(),
+  claimBambooInspection: vi.fn(),
+  submitBambooInspection: vi.fn(),
+  listBambooNotifications: vi.fn(),
   listBambooHistory: vi.fn(),
   listBambooRoleOptions: vi.fn(),
   listBambooFactoryEmployees: vi.fn(),
@@ -31,6 +35,10 @@ vi.mock("@form-detection/api-client", async (importOriginal) => ({
     createBambooRecord: mocks.createBambooRecord,
     submitBambooStage: mocks.submitBambooStage,
     getBambooOperations: mocks.getBambooOperations,
+    listBambooInspectionQueue: mocks.listBambooInspectionQueue,
+    claimBambooInspection: mocks.claimBambooInspection,
+    submitBambooInspection: mocks.submitBambooInspection,
+    listBambooNotifications: mocks.listBambooNotifications,
     listBambooHistory: mocks.listBambooHistory,
     listBambooRoleOptions: mocks.listBambooRoleOptions,
     listBambooFactoryEmployees: mocks.listBambooFactoryEmployees,
@@ -145,6 +153,20 @@ beforeEach(() => {
   mocks.createBambooRecord.mockResolvedValue({ ...sortingRecord, current_stage: "SORT", revision: 1, submissions: [] });
   mocks.submitBambooStage.mockResolvedValue(sortingRecord);
   mocks.getBambooOperations.mockResolvedValue({ payroll_facts: [], inspections: [], corrections: [] });
+  mocks.listBambooInspectionQueue.mockImplementation((bucket: string) => Promise.resolve({
+    bucket,
+    items: bucket === "active" ? [{
+      record_id: "SORT-18", display_no: "FX-20260722-018", form_type: "SORTING",
+      cage_no: "3-018", status: "CLAIMED", opened_at: "2026-07-22T04:30:00Z",
+      deadline_at: "2099-07-22T06:30:00Z", inside_window: true, claimed_by: "ZS001",
+      claimed_at: "2026-07-22T04:31:00Z", completed_at: null,
+      appeal_deadline_at: null, appeal_claimed_by: null, appeal_submitted_at: null,
+      appeal_decision: null, revision: 2,
+    }] : [],
+  }));
+  mocks.claimBambooInspection.mockResolvedValue({});
+  mocks.submitBambooInspection.mockResolvedValue({ inspection_id: "I-1", evidence: [] });
+  mocks.listBambooNotifications.mockResolvedValue({ items: [] });
   mocks.listBambooHistory.mockResolvedValue([
     { activity_id: "SUB-1", record_id: "SORT-18", display_no: "FX-20260722-018", form_type: "SORTING", cage_no: "3-018", action: "SORT", submitted_at: "2026-07-22T04:00:00Z", current_stage: "SUPERVISOR", status: "ACTIVE" },
   ]);
@@ -265,7 +287,9 @@ describe("independent bamboo forms", () => {
   });
 
   it("limits inspector and supervisor targets by form type", async () => {
+    mocks.getBambooRecord.mockResolvedValue({ ...sortingRecord, current_stage: "PLANT_AUDIT", revision: 3 });
     withSession(<BambooRecordDetailPage recordId="SORT-18" />, { ...worker, bamboo_role: "INSPECTOR", position: "检测人" });
+    await userEvent.setup().click(await screen.findByRole("button", { name: "报告异常" }));
     expect(await screen.findByLabelText("检测目标")).toBeTruthy();
     expect(Array.from((screen.getByLabelText("检测目标") as HTMLSelectElement).options).map((item) => item.text)).toEqual(["分选"]);
     cleanup();
@@ -279,6 +303,24 @@ describe("independent bamboo forms", () => {
     expect(within(returnSection).getByLabelText("浸胶")).toBeTruthy();
     expect(within(returnSection).getByLabelText("干燥")).toBeTruthy();
     expect(within(returnSection).queryByLabelText("分选")).toBeNull();
+  });
+
+  it("shows the two-hour queue and explicit Android capture controls", async () => {
+    mocks.getBambooRecord.mockResolvedValue({ ...sortingRecord, current_stage: "PLANT_AUDIT", revision: 3 });
+    const user = userEvent.setup();
+    withSession(<BambooRecordDetailPage recordId="SORT-18" />, { ...worker, bamboo_role: "INSPECTOR", position: "检测人" });
+    expect(await screen.findByText(/检测剩余时间/)).toBeTruthy();
+    expect(screen.getByText("3-018")).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: "检测合格" }));
+    await waitFor(() => expect(mocks.submitBambooInspection).toHaveBeenCalledWith(
+      "SORT-18",
+      expect.objectContaining({ conclusion: "CONFORMING" }),
+      "inspection-key",
+    ));
+    await user.click(screen.getByRole("button", { name: "报告异常" }));
+    expect(screen.getByRole("button", { name: "点击拍照" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "点击录音" })).toBeTruthy();
+    expect(screen.queryByLabelText("检测序号")).toBeNull();
   });
 });
 

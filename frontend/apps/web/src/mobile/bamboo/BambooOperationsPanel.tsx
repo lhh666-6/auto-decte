@@ -4,6 +4,8 @@ import {
   MobileApiError,
   mobileApiClient,
   type BambooOperationsSummary,
+  type BambooInspectionWindow,
+  type BambooNotification,
   type BambooRecord,
   type BambooStage,
 } from "@form-detection/api-client";
@@ -16,21 +18,26 @@ export function BambooOperationsPanel({
   record,
   role,
   onRefresh,
+  onInspectionGateChange,
 }: {
   record: BambooRecord;
   role: string;
   onRefresh(): Promise<void>;
+  onInspectionGateChange?(blocked: boolean): void;
 }) {
   const { sessionMetadata: session } = useMobileSession();
   const [summary, setSummary] = useState<BambooOperationsSummary | null>(null);
   const [inquiries, setInquiries] = useState<Array<{ inquiry_id: string; subject: string; status: string; messages: Array<{ actor_name: string; body: string }> }>>([]);
-  const [serialNo, setSerialNo] = useState("");
   const productionStages = useMemo<BambooStage[]>(() => record.form_type === "DIPPING_DRYING" ? ["DIPPING", "DRYING"] : ["SORT"], [record.form_type]);
   const [targetStage, setTargetStage] = useState<BambooStage>(() => record.form_type === "DIPPING_DRYING" ? "DIPPING" : "SORT");
-  const [points, setPoints] = useState("");
-  const [conclusion, setConclusion] = useState("CONFORMING");
   const [note, setNote] = useState("");
-  const [evidenceFiles, setEvidenceFiles] = useState<File[]>([]);
+  const [photos, setPhotos] = useState<File[]>([]);
+  const [audio, setAudio] = useState<File | null>(null);
+  const [abnormalOpen, setAbnormalOpen] = useState(false);
+  const [inspectionQueue, setInspectionQueue] = useState<BambooInspectionWindow[]>([]);
+  const [inspectionHistory, setInspectionHistory] = useState<BambooInspectionWindow[]>([]);
+  const [notifications, setNotifications] = useState<BambooNotification[]>([]);
+  const [clock, setClock] = useState(() => Date.now());
   const [returnStages, setReturnStages] = useState<BambooStage[]>([]);
   const [returnReason, setReturnReason] = useState("");
   const [returnOpen, setReturnOpen] = useState(false);
@@ -51,23 +58,34 @@ export function BambooOperationsPanel({
     const key = JSON.stringify(inspectionScope);
     if (restoredInspection.current === key) return;
     restoredInspection.current = key;
-    const draft = readBambooDraft<{ serialNo: string; targetStage: BambooStage; points: string; conclusion: string; note: string }>(inspectionScope);
+    const draft = readBambooDraft<{ targetStage: BambooStage; note: string }>(inspectionScope);
     if (!draft) return;
-    setSerialNo(draft.serialNo || "");
     setTargetStage(draft.targetStage || productionStages[0]);
-    setPoints(draft.points || "");
-    setConclusion(draft.conclusion || "CONFORMING");
     setNote(draft.note || "");
   }, [inspectionScope, productionStages, role]);
 
   useEffect(() => {
     if (!inspectionScope || role !== "INSPECTOR" || restoredInspection.current !== JSON.stringify(inspectionScope)) return;
-    writeBambooDraft(inspectionScope, { serialNo, targetStage, points, conclusion, note });
-  }, [conclusion, inspectionScope, note, points, role, serialNo, targetStage]);
+    writeBambooDraft(inspectionScope, { targetStage, note });
+  }, [inspectionScope, note, role, targetStage]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setClock(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   const load = useCallback(async () => {
     try {
       setSummary(await mobileApiClient.getBambooOperations(record.record_id));
+      if (["INSPECTOR", "SUPERVISOR", "PLANT_MANAGER"].includes(role)) {
+        const [active, history] = await Promise.all([
+          mobileApiClient.listBambooInspectionQueue("active"),
+          mobileApiClient.listBambooInspectionQueue("history"),
+        ]);
+        setInspectionQueue(active.items);
+        setInspectionHistory(history.items);
+      }
+      setNotifications((await mobileApiClient.listBambooNotifications()).items);
       if (role === "PLANT_MANAGER") {
         setInquiries(await mobileApiClient.listBambooFinanceInquiries() as typeof inquiries);
       }
@@ -93,37 +111,39 @@ export function BambooOperationsPanel({
     }
   };
 
-  const createInspection = () => run(async () => {
-    const created = await mobileApiClient.createBambooInspection(
+  const submitInspection = (result: "CONFORMING" | "NONCONFORMING") => run(async () => {
+    await mobileApiClient.submitBambooInspection(
       record.record_id,
       {
-        serial_no: serialNo,
-        target_stage: targetStage,
-        moisture_points: points.split(/[，,\s]+/).filter(Boolean).map(Number),
-        conclusion,
-        note,
-        text_evidence: note,
-        device_id: getMobileDeviceId(),
+        conclusion: result,
+        targetStage: result === "NONCONFORMING" ? targetStage : undefined,
+        textEvidence: result === "NONCONFORMING" ? note : undefined,
+        photos: result === "NONCONFORMING" ? photos : [],
+        audio: result === "NONCONFORMING" ? audio : null,
+        deviceId: getMobileDeviceId(),
       },
       createMobileClientId("inspection"),
     );
-    for (const file of evidenceFiles) {
-      await mobileApiClient.uploadBambooEvidence(
-        created.inspection_id,
-        file.type.startsWith("audio/") ? "AUDIO" : "PHOTO",
-        file,
-        createMobileClientId("evidence"),
-      );
-    }
     if (inspectionScope) clearBambooDraft(inspectionScope);
-    setSerialNo("");
-    setPoints("");
     setNote("");
-    setEvidenceFiles([]);
-  }, "检测记录及留痕已保存");
+    setPhotos([]);
+    setAudio(null);
+    setAbnormalOpen(false);
+  }, result === "CONFORMING" ? "检测合格" : "异常检测结果及留痕已保存");
 
   const payrollFacts = summary?.payroll_facts ?? [];
   const inspections = summary?.inspections ?? [];
+  const currentWindow = [...inspectionQueue, ...inspectionHistory].find((item) => item.record_id === record.record_id);
+  const claimedByMe = currentWindow?.claimed_by === session?.employee_code;
+  const remainingSeconds = currentWindow
+    ? Math.max(0, Math.ceil((new Date(currentWindow.deadline_at).getTime() - clock) / 1000))
+    : 0;
+
+  useEffect(() => {
+    onInspectionGateChange?.(
+      Boolean(currentWindow && ["OPEN", "CLAIMED", "APPEAL_SUBMITTED"].includes(currentWindow.status)),
+    );
+  }, [currentWindow, onInspectionGateChange]);
 
   return (
     <>
@@ -143,6 +163,21 @@ export function BambooOperationsPanel({
       {(role === "INSPECTOR" || inspections.length > 0) && (
         <section className="bamboo-sheet-section bamboo-operations-panel">
           <h3>检测与证据留痕</h3>
+          {role === "INSPECTOR" && inspectionQueue.length > 0 && (
+            <div className="bamboo-inspection-queue" aria-label="本厂检测队列">
+              {inspectionQueue.map((item) => (
+                <article className={item.record_id === record.record_id ? "current" : ""} key={item.record_id}>
+                  <strong>{item.display_no}</strong><span>笼号 {item.cage_no}</span>
+                </article>
+              ))}
+            </div>
+          )}
+          {currentWindow && (
+            <div className="bamboo-window-status">
+              <strong>{currentWindow.inside_window ? `检测剩余时间 ${formatDuration(remainingSeconds)}` : "两小时检测已结束"}</strong>
+              <span>{inspectionStatus(currentWindow.status)}</span>
+            </div>
+          )}
           {inspections.map((inspection) => (
             <article className="bamboo-operation-card" key={inspection.inspection_id}>
               <strong>{inspection.serial_no} · {inspection.target_stage} · 平均 {inspection.average_value}</strong>
@@ -157,17 +192,71 @@ export function BambooOperationsPanel({
               )}
             </article>
           ))}
-          {role === "INSPECTOR" && record.current_stage === "SUPERVISOR" && (
+          {role === "INSPECTOR" && currentWindow?.status === "OPEN" && (
+            <button className="bamboo-sign-button" disabled={busy} onClick={() => void run(
+              () => mobileApiClient.claimBambooInspection(record.record_id, createMobileClientId("inspection-claim")),
+              "已领取本表检测权",
+            )}>领取检测</button>
+          )}
+          {role === "INSPECTOR" && currentWindow?.status === "CLAIMED" && claimedByMe && currentWindow.inside_window && (
             <div className="bamboo-operation-form">
-              <label>检测序号<input value={serialNo} onChange={(event) => setSerialNo(event.target.value)} /></label>
-              <label>检测目标<select value={targetStage} onChange={(event) => setTargetStage(event.target.value as BambooStage)}>{productionStages.map((stage) => <option value={stage} key={stage}>{stageLabel(stage)}</option>)}</select></label>
-              <label>检测数值（逗号分隔）<input inputMode="decimal" value={points} onChange={(event) => setPoints(event.target.value)} /></label>
-              <label>结论<select value={conclusion} onChange={(event) => setConclusion(event.target.value)}><option value="CONFORMING">合格</option><option value="NONCONFORMING">不合格</option></select></label>
-              <label>文字留痕<textarea value={note} onChange={(event) => setNote(event.target.value)} /></label>
-              <label>照片或录音<input type="file" accept="image/*,audio/*" multiple onChange={(event) => setEvidenceFiles(Array.from(event.target.files ?? []))} /></label>
-              <button className="bamboo-sign-button" disabled={busy || !serialNo || !points} onClick={() => void createInspection()}>保存检测并签字</button>
+              <button className="bamboo-sign-button" disabled={busy} onClick={() => void submitInspection("CONFORMING")}>检测合格</button>
+              <button type="button" className="btn secondary" onClick={() => setAbnormalOpen((value) => !value)}>报告异常</button>
+              {abnormalOpen && <>
+                <label>检测目标<select value={targetStage} onChange={(event) => setTargetStage(event.target.value as BambooStage)}>{productionStages.map((stage) => <option value={stage} key={stage}>{stageLabel(stage)}</option>)}</select></label>
+                <label>文字检测结果<textarea value={note} onChange={(event) => setNote(event.target.value)} /></label>
+                <label className="bamboo-capture-button" role="button" tabIndex={0}>点击拍照<input hidden type="file" accept="image/*" capture="environment" multiple onChange={(event) => setPhotos(Array.from(event.target.files ?? []))} /></label>
+                <label className="bamboo-capture-button" role="button" tabIndex={0}>点击录音<input hidden type="file" accept="audio/*" capture onChange={(event) => setAudio(event.target.files?.[0] ?? null)} /></label>
+                <small>{photos.length ? `已选择 ${photos.length} 张照片` : "未选择照片"} · {audio ? "已录音" : "未录音"}</small>
+                <button className="btn danger" disabled={busy || (!note.trim() && photos.length === 0 && !audio)} onClick={() => void submitInspection("NONCONFORMING")}>提交异常检测</button>
+              </>}
             </div>
           )}
+          {role === "INSPECTOR" && currentWindow && ["EARLY_TERMINATED", "EXPIRED"].includes(currentWindow.status) && (
+            <button disabled={busy} onClick={() => void run(
+              () => mobileApiClient.claimBambooInspectionAppeal(record.record_id),
+              "已领取24小时申诉权",
+            )}>领取申诉</button>
+          )}
+          {role === "INSPECTOR" && currentWindow?.status === "APPEAL_CLAIMED" && currentWindow.appeal_claimed_by === session?.employee_code && (
+            <div className="bamboo-operation-form">
+              <label>申诉环节<select value={targetStage} onChange={(event) => setTargetStage(event.target.value as BambooStage)}>{productionStages.map((stage) => <option value={stage} key={stage}>{stageLabel(stage)}</option>)}</select></label>
+              <label>申诉检测结果<textarea value={note} onChange={(event) => setNote(event.target.value)} /></label>
+              <button disabled={busy || !note.trim()} onClick={() => void run(
+                () => mobileApiClient.submitBambooInspectionAppeal(record.record_id, targetStage, note),
+                "申诉已提交厂长审批",
+              )}>提交申诉</button>
+            </div>
+          )}
+        </section>
+      )}
+
+      {role === "PLANT_MANAGER" && currentWindow && ["OPEN", "CLAIMED"].includes(currentWindow.status) && (
+        <section className="bamboo-sheet-section bamboo-operations-panel">
+          <h3>检测窗口管理</h3>
+          <p>检测窗口结束前不能直接签字。确需提前签字时，将立即停止检测权限并通知所有检测员。</p>
+          <button className="btn danger" disabled={busy} onClick={() => {
+            if (window.confirm("确认提前停止检测并开放厂长签字？")) void run(
+              () => mobileApiClient.terminateBambooInspection(record.record_id),
+              "检测已终止，已通知检测员",
+            );
+          }}>停止检测并提前签字</button>
+        </section>
+      )}
+      {role === "PLANT_MANAGER" && currentWindow?.status === "APPEAL_SUBMITTED" && (
+        <section className="bamboo-sheet-section bamboo-operations-panel">
+          <h3>检测申诉审批</h3>
+          <label>审批说明<textarea value={note} onChange={(event) => setNote(event.target.value)} /></label>
+          <div className="btnrow">
+            <button disabled={busy} className="btn secondary" onClick={() => void run(
+              () => mobileApiClient.decideBambooInspectionAppeal(record.record_id, false, note),
+              "申诉已驳回",
+            )}>驳回申诉</button>
+            <button disabled={busy} className="btn danger" onClick={() => void run(
+              () => mobileApiClient.decideBambooInspectionAppeal(record.record_id, true, note),
+              "申诉已通过，表单已回溯",
+            )}>通过并回溯</button>
+          </div>
         </section>
       )}
 
@@ -200,10 +289,28 @@ export function BambooOperationsPanel({
           {inquiries.map((inquiry) => <article className="bamboo-operation-card" key={inquiry.inquiry_id}><strong>{inquiry.subject}</strong><span>{inquiry.status}</span>{inquiry.messages.map((item, index) => <p key={`${inquiry.inquiry_id}-${index}`}>{item.actor_name}：{item.body}</p>)}{inquiry.status !== "CLOSED" && <div className="bamboo-operation-form"><textarea placeholder="向财务说明具体情况" value={managerReply} onChange={(event) => setManagerReply(event.target.value)} /><button disabled={busy || !managerReply} onClick={() => void run(() => mobileApiClient.replyBambooFinanceInquiry(inquiry.inquiry_id, managerReply), "说明已回复财务")}>回复财务</button></div>}</article>)}
         </section>
       )}
+
+      {notifications.length > 0 && (
+        <section className="bamboo-sheet-section bamboo-operations-panel">
+          <h3>消息中心</h3>
+          {notifications.map((item) => <article className="bamboo-operation-card" key={item.notification_id}><strong>{item.title}</strong><p>{item.body}</p><time>{new Date(item.created_at).toLocaleString("zh-CN")}</time></article>)}
+        </section>
+      )}
     </>
   );
 }
 
 function stageLabel(stage: BambooStage): string {
   return ({ SORT: "分选", DIPPING: "浸胶", DRYING: "干燥", SUPERVISOR: "主管审核", PLANT_AUDIT: "厂长审核" })[stage];
+}
+
+function formatDuration(seconds: number): string {
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const rest = seconds % 60;
+  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(rest).padStart(2, "0")}`;
+}
+
+function inspectionStatus(status: string): string {
+  return ({ OPEN: "待领取", CLAIMED: "检测中", COMPLETED: "检测完成", EARLY_TERMINATED: "厂长提前终止", EXPIRED: "检测超时", APPEAL_CLAIMED: "申诉填写中", APPEAL_SUBMITTED: "申诉待审批", APPEAL_APPROVED: "申诉已通过", APPEAL_REJECTED: "申诉已驳回" } as Record<string, string>)[status] ?? status;
 }

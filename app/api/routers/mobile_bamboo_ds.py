@@ -518,7 +518,77 @@ def create_inspection(
             device_id=body.device_id,
             request_id=str(getattr(request.state, "request_id", "unknown")),
             idempotency_key=key,
+            has_file_evidence=False,
         )
+    except BambooOperationError as error:
+        raise _operation_error(error) from error
+
+
+@router.post(
+    "/records/{record_id}/inspection-submit",
+    status_code=status.HTTP_201_CREATED,
+)
+async def submit_inspection_with_evidence(
+    record_id: str,
+    request: Request,
+    conclusion: Annotated[str, Form()],
+    device_id: Annotated[str, Form()],
+    target_stage: Annotated[str | None, Form()] = None,
+    text_evidence: Annotated[str | None, Form()] = None,
+    photos: Annotated[list[UploadFile] | None, File()] = None,
+    audio: Annotated[UploadFile | None, File()] = None,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token"),
+) -> dict[str, object]:
+    actor = _bamboo_actor(request)
+    key = _require_write_headers(request, idempotency_key, x_csrf_token)
+    uploads = [*(photos or []), *([audio] if audio else [])]
+    contents: list[tuple[UploadFile, bytes]] = []
+    for upload in uploads:
+        content = await upload.read()
+        if not content or len(content) > 20 * 1024 * 1024:
+            raise HTTPException(
+                status_code=422,
+                detail={"code": "INVALID_EVIDENCE_SIZE", "detail": "留痕文件必须小于 20MB"},
+            )
+        contents.append((upload, content))
+    try:
+        stage = BambooStage(target_stage) if target_stage else None
+        created = _services(request).bamboo_operations.create_inspection(
+            record_id,
+            actor=actor,
+            serial_no=None,
+            target_stage=stage,
+            moisture_points=[],
+            conclusion=conclusion,
+            note=text_evidence,
+            text_evidence=text_evidence,
+            device_id=device_id,
+            request_id=str(getattr(request.state, "request_id", "unknown")),
+            idempotency_key=key,
+            has_file_evidence=bool(contents),
+        )
+        for upload, content in contents:
+            created.setdefault("evidence", []).append(
+                _services(request).bamboo_operations.add_file_evidence(
+                    str(created["inspection_id"]),
+                    actor=actor,
+                    evidence_type=(
+                        "AUDIO"
+                        if (upload.content_type or "").startswith("audio/")
+                        else "PHOTO"
+                    ),
+                    content=content,
+                    filename=upload.filename or "evidence.bin",
+                    mime_type=upload.content_type or "application/octet-stream",
+                )
+            )
+        return created
+    except ValueError as error:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "INVALID_INSPECTION_STAGE", "detail": "无效的检测流程"},
+        ) from error
     except BambooOperationError as error:
         raise _operation_error(error) from error
 

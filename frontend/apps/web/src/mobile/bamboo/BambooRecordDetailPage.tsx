@@ -26,6 +26,7 @@ const ROLE_STAGE: Record<string, BambooStage> = { SORT_OPERATOR: "SORT", DIPPING
 export function BambooRecordDetailPage({ recordId }: { recordId: string }) {
   const { sessionMetadata: session } = useMobileSession();
   const [record, setRecord] = useState<BambooRecord | null>(null);
+  const [inspectionBlocked, setInspectionBlocked] = useState(true);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const load = useCallback(async () => {
@@ -106,8 +107,8 @@ export function BambooRecordDetailPage({ recordId }: { recordId: string }) {
     </section>
 
     {!canSign && <div className="banner info bamboo-readonly-banner">当前记录以只读方式显示；你没有修改此工序的权限。</div>}
-    <BambooOperationsPanel record={record} role={session?.bamboo_role ?? ""} onRefresh={load} />
-    {canSign && record.current_stage && <BambooStageForm record={record} stage={record.current_stage} onSigned={setRecord} />}
+    <BambooOperationsPanel record={record} role={session?.bamboo_role ?? ""} onRefresh={load} onInspectionGateChange={setInspectionBlocked} />
+    {canSign && record.current_stage && !(record.current_stage === "PLANT_AUDIT" && inspectionBlocked) && <BambooStageForm record={record} stage={record.current_stage} onSigned={setRecord} />}
   </div>;
 }
 

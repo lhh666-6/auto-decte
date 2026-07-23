@@ -99,6 +99,8 @@ export {
   type BambooFormType,
   type BambooHistoryItem,
   type BambooInspection,
+  type BambooInspectionWindow,
+  type BambooNotification,
   type BambooOperationsSummary,
   type BambooPayrollFact,
   type BambooRecord,
@@ -126,6 +128,7 @@ export {
   type MobileSubmissionReceipt,
   type MobileTeamMember,
   type SubmitBambooStageInput,
+  type SubmitBambooInspectionInput,
 } from "./mobile_ds.js";
 
 // When generated types exist, uncomment:
