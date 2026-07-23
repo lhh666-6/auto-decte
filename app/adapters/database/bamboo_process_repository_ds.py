@@ -17,6 +17,7 @@ from app.adapters.database.models import (
     BambooDailyExportBatchRow,
     BambooDailyExportItemRow,
     BambooInspectionExceptionRow,
+    BambooInspectionWindowRow,
     BambooPayrollFactRow,
     BambooPayrollRuleVersionRow,
     BambooPlantAuditRow,
@@ -361,6 +362,16 @@ class SqlAlchemyBambooProcessRepository:
             if int(open_count or 0):
                 raise BambooPermissionDenied("open inspection exceptions must be closed")
         if submission.stage is BambooStage.PLANT_AUDIT:
+            open_count = session.scalar(
+                select(func.count())
+                .select_from(BambooInspectionExceptionRow)
+                .where(
+                    BambooInspectionExceptionRow.record_id == submission.record_id,
+                    BambooInspectionExceptionRow.status == "OPEN",
+                )
+            )
+            if int(open_count or 0):
+                raise BambooPermissionDenied("open inspection exceptions must be closed")
             supervisor_at = session.scalar(
                 select(BambooStageSubmissionRow.submitted_at)
                 .where(
@@ -372,7 +383,27 @@ class SqlAlchemyBambooProcessRepository:
             )
             if supervisor_at is None:
                 raise BambooPermissionDenied("supervisor signature is required")
-            if self._plant_audit_wait_hours > 0:
+            window = session.get(BambooInspectionWindowRow, submission.record_id)
+            if window is not None:
+                submitted_at = submission.submitted_at
+                if submitted_at is None:
+                    raise BambooPermissionDenied("厂长签字缺少服务器时间")
+                if window.status in {"OPEN", "CLAIMED"}:
+                    if submitted_at < _utc(window.deadline_at):
+                        raise BambooPermissionDenied(
+                            f"检测窗口将在 {_utc(window.deadline_at).isoformat()} 后结束"
+                        )
+                    window.status = "EXPIRED"
+                    window.appeal_deadline_at = _utc(window.deadline_at) + timedelta(hours=24)
+                    window.revision += 1
+                if window.status not in {
+                    "COMPLETED",
+                    "EARLY_TERMINATED",
+                    "EXPIRED",
+                    "APPEAL_REJECTED",
+                }:
+                    raise BambooPermissionDenied("当前检测或申诉尚未结束")
+            elif self._plant_audit_wait_hours > 0:
                 earliest = _utc(supervisor_at) + timedelta(
                     hours=self._plant_audit_wait_hours
                 )
@@ -401,6 +432,37 @@ class SqlAlchemyBambooProcessRepository:
             self._create_joint_fact(session, record, submission, signature)
         elif submission.stage is BambooStage.PLANT_AUDIT:
             self._activate_payroll_and_export(session, record, submission, signature)
+        if submission.stage is BambooStage.SUPERVISOR:
+            opened_at = submission.submitted_at
+            if opened_at is None:  # pragma: no cover - signed submissions have server time
+                raise RuntimeError("supervisor submission is missing server time")
+            window = session.get(BambooInspectionWindowRow, record.record_id)
+            if window is None:
+                session.add(
+                    BambooInspectionWindowRow(
+                        record_id=record.record_id,
+                        factory_id=record.factory_id,
+                        opened_at=opened_at,
+                        deadline_at=opened_at + timedelta(hours=2),
+                        status="OPEN",
+                        claimed_by=None,
+                        claimed_at=None,
+                        inspection_id=None,
+                        completed_at=None,
+                        terminated_by=None,
+                        terminated_at=None,
+                        appeal_deadline_at=None,
+                        appeal_claimed_by=None,
+                        appeal_claimed_at=None,
+                        appeal_payload=None,
+                        appeal_submitted_at=None,
+                        appeal_decision=None,
+                        appeal_decision_note=None,
+                        appeal_decided_by=None,
+                        appeal_decided_at=None,
+                        revision=1,
+                    )
+                )
         if (
             record.form_type is BambooFormType.DIPPING_DRYING
             and submission.stage is BambooStage.SUPERVISOR

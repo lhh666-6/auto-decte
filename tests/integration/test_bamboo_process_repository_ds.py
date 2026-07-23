@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from itertools import count
 from pathlib import Path
 
@@ -11,12 +11,14 @@ from app.adapters.database.bamboo_process_repository_ds import (
 )
 from app.adapters.database.models import (
     BambooFactoryRow,
+    BambooInspectionWindowRow,
     BambooPayrollFactRow,
     BambooRecordRow,
     BambooSignatureRow,
     BambooStageSubmissionRow,
     Base,
 )
+from app.modules.bamboo_process.errors_ds import BambooPermissionDenied
 from app.modules.bamboo_process.facade_ds import BambooProcessFacade
 from app.modules.bamboo_process.models_ds import (
     BambooActor,
@@ -273,3 +275,92 @@ def test_cage_occupancy_blocks_until_linked_supervisor_approval(tmp_path: Path) 
         source_ref="after-supervisor",
     )
     assert reused.record_id != sorting.record_id
+
+
+def test_supervisor_opens_two_hour_inspection_window_and_blocks_manager(
+    tmp_path: Path,
+) -> None:
+    engine = create_engine(f"sqlite:///{(tmp_path / 'inspection-window.db').as_posix()}")
+    Base.metadata.create_all(engine)
+    now = datetime(2026, 7, 23, 8, 0, tzinfo=UTC)
+    with Session(engine) as session, session.begin():
+        session.add(
+            BambooFactoryRow(
+                factory_id="FACTORY-A",
+                code="A",
+                name="竹丝一厂",
+                active=True,
+                revision=1,
+                created_at=now,
+                updated_at=now,
+            )
+        )
+    identifiers = count(1)
+    repository = SqlAlchemyBambooProcessRepository(engine)
+    service = BambooProcessFacade(
+        repository,
+        clock=lambda: now,
+        id_factory=lambda: f"WINDOW-{next(identifiers)}",
+    )
+    record = service.create_record(
+        actor=_actor(BambooRole.SORT_OPERATOR),
+        base_info={"cage_no": "W-1", "length": "2.3", "bundle_count": 10},
+        source_type="MOBILE_CREATED",
+        source_ref="window",
+    )
+    record = service.submit_stage(
+        record.record_id,
+        actor=_actor(BambooRole.SORT_OPERATOR),
+        stage=BambooStage.SORT,
+        values={"moisture": [12]},
+        expected_revision=1,
+        idempotency_key="window-sort",
+        device_id="phone",
+        request_id="request-sort",
+    )
+    record = service.submit_stage(
+        record.record_id,
+        actor=_actor(BambooRole.SUPERVISOR),
+        stage=BambooStage.SUPERVISOR,
+        values={"result": "APPROVED"},
+        expected_revision=2,
+        idempotency_key="window-supervisor",
+        device_id="phone",
+        request_id="request-supervisor",
+    )
+
+    with Session(engine) as session:
+        window = session.get(BambooInspectionWindowRow, record.record_id)
+        assert window is not None
+        assert window.status == "OPEN"
+        assert window.opened_at.replace(tzinfo=UTC) == now
+        assert window.deadline_at.replace(tzinfo=UTC) == now + timedelta(hours=2)
+
+    with pytest.raises(BambooPermissionDenied, match="检测窗口"):
+        service.submit_stage(
+            record.record_id,
+            actor=_actor(BambooRole.PLANT_MANAGER),
+            stage=BambooStage.PLANT_AUDIT,
+            values={"result": "APPROVED"},
+            expected_revision=3,
+            idempotency_key="window-manager-too-early",
+            device_id="phone",
+            request_id="request-manager-early",
+        )
+
+    expired_service = BambooProcessFacade(
+        repository,
+        clock=lambda: now + timedelta(hours=2),
+        id_factory=lambda: f"WINDOW-{next(identifiers)}",
+    )
+    completed = expired_service.submit_stage(
+        record.record_id,
+        actor=_actor(BambooRole.PLANT_MANAGER),
+        stage=BambooStage.PLANT_AUDIT,
+        values={"result": "APPROVED"},
+        expected_revision=3,
+        idempotency_key="window-manager-expired",
+        device_id="phone",
+        request_id="request-manager-expired",
+    )
+    assert completed.current_stage is None
