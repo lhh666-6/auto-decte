@@ -310,6 +310,7 @@ describe("independent bamboo forms", () => {
     const user = userEvent.setup();
     withSession(<BambooRecordDetailPage recordId="SORT-18" />, { ...worker, bamboo_role: "INSPECTOR", position: "检测人" });
     expect(await screen.findByText(/检测剩余时间/)).toBeTruthy();
+    expect(screen.getByLabelText("搜索表号或笼号")).toBeTruthy();
     expect(screen.getByText("3-018")).toBeTruthy();
     await user.click(screen.getByRole("button", { name: "检测合格" }));
     await waitFor(() => expect(mocks.submitBambooInspection).toHaveBeenCalledWith(

@@ -101,6 +101,12 @@ def test_inspection_queue_claims_once_and_accepts_one_click_conforming(
     assert [(item["record_id"], item["cage_no"]) for item in queue["items"]] == [
         (record_id, "QUEUE-01")
     ]
+    assert inspector.get(
+        "/api/v1/mobile/bamboo/inspection-queue", params={"q": "queue-01"}
+    ).json()["items"][0]["record_id"] == record_id
+    assert inspector.get(
+        "/api/v1/mobile/bamboo/inspection-queue", params={"q": "不存在"}
+    ).json()["items"] == []
     claimed = inspector.post(
         f"/api/v1/mobile/bamboo/inspection-queue/{record_id}/claim",
         headers=_headers(inspector, "queue-claim"),

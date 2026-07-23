@@ -36,6 +36,7 @@ export function BambooOperationsPanel({
   const [abnormalOpen, setAbnormalOpen] = useState(false);
   const [inspectionQueue, setInspectionQueue] = useState<BambooInspectionWindow[]>([]);
   const [inspectionHistory, setInspectionHistory] = useState<BambooInspectionWindow[]>([]);
+  const [inspectionSearch, setInspectionSearch] = useState("");
   const [notifications, setNotifications] = useState<BambooNotification[]>([]);
   const [clock, setClock] = useState(() => Date.now());
   const [returnStages, setReturnStages] = useState<BambooStage[]>([]);
@@ -133,6 +134,10 @@ export function BambooOperationsPanel({
 
   const payrollFacts = summary?.payroll_facts ?? [];
   const inspections = summary?.inspections ?? [];
+  const visibleInspectionQueue = inspectionQueue.filter((item) => {
+    const query = inspectionSearch.trim().toLocaleLowerCase();
+    return !query || item.display_no.toLocaleLowerCase().includes(query) || item.cage_no.toLocaleLowerCase().includes(query);
+  });
   const currentWindow = [...inspectionQueue, ...inspectionHistory].find((item) => item.record_id === record.record_id);
   const claimedByMe = currentWindow?.claimed_by === session?.employee_code;
   const remainingSeconds = currentWindow
@@ -165,11 +170,13 @@ export function BambooOperationsPanel({
           <h3>检测与证据留痕</h3>
           {role === "INSPECTOR" && inspectionQueue.length > 0 && (
             <div className="bamboo-inspection-queue" aria-label="本厂检测队列">
-              {inspectionQueue.map((item) => (
+              <label>搜索表号或笼号<input type="search" value={inspectionSearch} onChange={(event) => setInspectionSearch(event.target.value)} placeholder="可选，不搜索时显示全部" /></label>
+              {visibleInspectionQueue.map((item) => (
                 <article className={item.record_id === record.record_id ? "current" : ""} key={item.record_id}>
                   <strong>{item.display_no}</strong><span>笼号 {item.cage_no}</span>
                 </article>
               ))}
+              {visibleInspectionQueue.length === 0 && <p>没有匹配的待检表单</p>}
             </div>
           )}
           {currentWindow && (

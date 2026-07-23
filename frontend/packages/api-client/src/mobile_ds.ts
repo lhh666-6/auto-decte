@@ -676,11 +676,13 @@ export class MobileApiClient {
     });
   }
 
-  listBambooInspectionQueue(bucket: "active" | "history" = "active"): Promise<{
+  listBambooInspectionQueue(bucket: "active" | "history" = "active", query = ""): Promise<{
     bucket: string;
     items: BambooInspectionWindow[];
   }> {
-    return this.request(`/bamboo/inspection-queue?bucket=${bucket}`);
+    const params = new URLSearchParams({ bucket });
+    if (query.trim()) params.set("q", query.trim());
+    return this.request(`/bamboo/inspection-queue?${params.toString()}`);
   }
 
   claimBambooInspection(recordId: string, idempotencyKey: string): Promise<BambooInspectionWindow> {

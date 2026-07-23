@@ -357,11 +357,12 @@ def record_operations(record_id: str, request: Request) -> dict[str, object]:
 def inspection_queue(
     request: Request,
     bucket: str = "active",
+    q: str = "",
 ) -> dict[str, object]:
     actor = _bamboo_actor(request)
     try:
         return _services(request).bamboo_operations.list_inspection_queue(
-            actor, bucket=bucket
+            actor, bucket=bucket, query=q
         )
     except BambooOperationError as error:
         raise _operation_error(error) from error

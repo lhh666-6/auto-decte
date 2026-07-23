@@ -583,6 +583,7 @@ class BambooOperationsService:
         actor: BambooActor,
         *,
         bucket: str = "active",
+        query: str = "",
     ) -> dict[str, Any]:
         if actor.role not in {
             BambooRole.INSPECTOR,
@@ -611,6 +612,14 @@ class BambooOperationsService:
                     window.revision += 1
                 is_active = window.status in {"OPEN", "CLAIMED"}
                 if (bucket == "active") != is_active:
+                    continue
+                search = query.strip().casefold()
+                cage_no = str((record.base_info or {}).get("cage_no", ""))
+                if (
+                    search
+                    and search not in record.display_no.casefold()
+                    and search not in cage_no.casefold()
+                ):
                     continue
                 items.append(self._inspection_window(window, record, now))
             return {"bucket": bucket, "items": items}
