@@ -1,6 +1,7 @@
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 
 import { useMobileSession } from "../session/MobileSessionProvider";
+import { useBambooSystemNotifications } from "../notifications/useBambooSystemNotifications";
 import { MobileV3Icon } from "./MobileV3Icon";
 
 const MOBILE_V3_NAV = [
@@ -25,6 +26,7 @@ export function MobileV3Shell() {
   const isLogin = location.pathname === "/mobile/login";
   const role = sessionMetadata?.bamboo_role ?? "";
   const showProductionShell = !isLogin && status === "authenticated" && Boolean(role) && role !== "FINANCE_APPROVER";
+  useBambooSystemNotifications(sessionMetadata?.employee_code, showProductionShell);
   const pageCopy = PAGE_COPY.find((item) => item.match(location.pathname)) ?? PAGE_COPY[0];
 
   return (

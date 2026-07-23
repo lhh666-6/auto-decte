@@ -1,10 +1,15 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { MobileApiError } from "@form-detection/api-client";
 
 import { useMobileSession } from "../session/MobileSessionProvider";
 import { usePwaInstall } from "../pwa/usePwaInstall";
+import {
+  getBambooNotificationPreference,
+  requestBambooNotificationPermission,
+  type BambooNotificationPreference,
+} from "../notifications/system-notifications";
 import { getPendingLogoutCount } from "../storage/session-cleanup";
 
 const ROLE_LABELS: Record<string, string> = {
@@ -24,6 +29,11 @@ export function BambooV3ProfilePage() {
   const pwa = usePwaInstall();
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
+  const [notificationPreference, setNotificationPreference] = useState<BambooNotificationPreference>("disabled");
+
+  useEffect(() => {
+    if (profile) setNotificationPreference(getBambooNotificationPreference(profile.employee_code));
+  }, [profile]);
 
   if (!profile) return null;
   const role = profile.bamboo_role ?? "";
@@ -61,6 +71,12 @@ export function BambooV3ProfilePage() {
           <button type="button" onClick={() => navigate("/mobile/personnel")}>人员调度中心</button>
         )}
         {role === "FINANCE_APPROVER" && <a href="/">财务工作请前往网页端</a>}
+        <button type="button" disabled={notificationPreference !== "disabled"} onClick={() => void requestBambooNotificationPermission(profile.employee_code).then((preference) => {
+          setNotificationPreference(preference);
+          if (preference === "enabled") setMessage("消息弹窗已开启；消息中心仍会永久保存记录。");
+          else if (preference === "denied") setMessage("浏览器已拒绝通知，可在 Chrome 网站设置中重新允许。");
+          else if (preference === "unsupported") setMessage("当前浏览器不支持系统消息弹窗。");
+        })}>{notificationButtonLabel(notificationPreference)}</button>
         <button type="button" disabled={pwa.installed} onClick={() => void pwa.install().then((result) => {
           if (result === "unavailable") setMessage("当前没有直接安装提示，请点 Chrome 右上角菜单 → 安装应用/添加到主屏幕。");
           else if (result === "dismissed") setMessage("已取消安装，稍后仍可再次添加到桌面。");
@@ -71,4 +87,13 @@ export function BambooV3ProfilePage() {
       <p className="bamboo-v3-empty-copy">岗位调动需线下联系厂长，由厂长在人员调度中心提交；员工端不提供自行申请入口。</p>
     </div>
   );
+}
+
+function notificationButtonLabel(preference: BambooNotificationPreference): string {
+  return ({
+    disabled: "开启消息弹窗",
+    enabled: "消息弹窗已开启",
+    denied: "浏览器已拒绝通知",
+    unsupported: "浏览器不支持消息弹窗",
+  })[preference];
 }
