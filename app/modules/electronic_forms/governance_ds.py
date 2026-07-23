@@ -334,6 +334,36 @@ class ManagedFormService:
                 for definition, version in session.execute(statement)
             ]
 
+    def resolve_active_form(
+        self,
+        plant_id: str,
+        form_key: str,
+        roles: list[str],
+    ) -> dict[str, Any] | None:
+        statement = (
+            self._version_statement()
+            .join(
+                FormPlantActivationRow,
+                FormPlantActivationRow.form_version_id == ManagedFormVersionRow.version_id,
+            )
+            .where(
+                FormPlantActivationRow.plant_id == plant_id,
+                FormPlantActivationRow.status == ActivationStatus.ACTIVE.value,
+                ManagedFormDefinitionRow.form_key == form_key,
+                ManagedFormDefinitionRow.owner_role.in_(roles),
+            )
+        )
+        with Session(self._engine) as session:
+            row = session.execute(statement).one_or_none()
+            if row is None:
+                return None
+            definition, version = row
+            return {
+                **self._version_payload(definition, version),
+                "activation_status": ActivationStatus.ACTIVE.value,
+                "plant_id": plant_id,
+            }
+
     def list_notifications(self, plant_id: str) -> list[dict[str, Any]]:
         statement = (
             select(ManagementNotificationRow)

@@ -229,6 +229,57 @@ def test_plant_sees_only_own_active_forms_and_notice_does_not_block(
     assert schema.status_code == 200
     assert schema.json()["definition_version_id"] == version_id
     assert schema.json()["fields"][0]["field_name"] == "quantity"
+    submitted = mobile.post(
+        "/api/v1/mobile/submissions",
+        headers={
+            "Idempotency-Key": "managed-daily-output-1",
+            "X-CSRF-Token": mobile.cookies["mobile_csrf"],
+        },
+        json={
+            "form_type": "DAILY_OUTPUT",
+            "definition_version_id": version_id,
+            "mode": "SELF",
+            "subject_employee_code": "WORKER-A",
+            "device_id": "android-a",
+            "values": {"quantity": 12},
+        },
+    )
+    assert submitted.status_code == 200, submitted.text
+    assert submitted.json()["status"] == "NEEDS_REVIEW"
+    missing_required = mobile.post(
+        "/api/v1/mobile/submissions",
+        headers={
+            "Idempotency-Key": "managed-daily-output-missing",
+            "X-CSRF-Token": mobile.cookies["mobile_csrf"],
+        },
+        json={
+            "form_type": "DAILY_OUTPUT",
+            "definition_version_id": version_id,
+            "mode": "SELF",
+            "subject_employee_code": "WORKER-A",
+            "device_id": "android-a",
+            "values": {},
+        },
+    )
+    assert missing_required.status_code == 422
+    assert missing_required.json()["code"] == "SUBMISSION_FIELDS_INVALID"
+    wrong_type = mobile.post(
+        "/api/v1/mobile/submissions",
+        headers={
+            "Idempotency-Key": "managed-daily-output-type",
+            "X-CSRF-Token": mobile.cookies["mobile_csrf"],
+        },
+        json={
+            "form_type": "DAILY_OUTPUT",
+            "definition_version_id": version_id,
+            "mode": "SELF",
+            "subject_employee_code": "WORKER-A",
+            "device_id": "android-a",
+            "values": {"quantity": "not-a-number"},
+        },
+    )
+    assert wrong_type.status_code == 422
+    assert wrong_type.json()["code"] == "SUBMISSION_FIELDS_INVALID"
 
     notice_id = notices.json()["items"][0]["notification_id"]
     acknowledged = manager_a.post(

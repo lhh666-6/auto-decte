@@ -97,13 +97,10 @@ def available_forms(request: Request) -> AvailableFormsResponse:
 @router.get("/form-schemas/{form_type}", response_model=FormSchemaResponse)
 def form_schema(form_type: str, request: Request) -> FormSchemaResponse:
     actor = require_mobile_actor(request)
-    managed = next(
-        (
-            item
-            for item in _managed_forms(request, actor)
-            if item["form_key"] == form_type
-        ),
-        None,
+    managed = ManagedFormService(_services(request).engine).resolve_active_form(
+        actor.factory_id,
+        form_type,
+        actor.roles,
     )
     if managed is not None:
         schema = cast(dict[str, object], managed["schema_json"])
