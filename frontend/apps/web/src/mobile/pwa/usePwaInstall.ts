@@ -6,6 +6,7 @@ type InstallPromptEvent = Event & {
 };
 
 let deferredPrompt: InstallPromptEvent | null = null;
+let installedByPrompt = false;
 const listeners = new Set<() => void>();
 
 function notify(): void { listeners.forEach((listener) => listener()); }
@@ -19,7 +20,7 @@ if (typeof window !== "undefined") {
     deferredPrompt = event as InstallPromptEvent;
     notify();
   });
-  window.addEventListener("appinstalled", () => { deferredPrompt = null; notify(); });
+  window.addEventListener("appinstalled", () => { deferredPrompt = null; installedByPrompt = true; notify(); });
 }
 
 export function usePwaInstall() {
@@ -31,15 +32,18 @@ export function usePwaInstall() {
   }, []);
 
   const install = useCallback(async (): Promise<"installed" | "dismissed" | "unavailable"> => {
-    if (standalone()) return "installed";
+    if (standalone() || installedByPrompt) return "installed";
     const prompt = deferredPrompt;
     if (!prompt) return "unavailable";
     await prompt.prompt();
     const result = await prompt.userChoice;
-    if (result.outcome === "accepted") deferredPrompt = null;
+    if (result.outcome === "accepted") {
+      deferredPrompt = null;
+      installedByPrompt = true;
+    }
     notify();
     return result.outcome === "accepted" ? "installed" : "dismissed";
   }, []);
 
-  return { installed: standalone(), canInstall: deferredPrompt !== null, install };
+  return { installed: standalone() || installedByPrompt, canInstall: deferredPrompt !== null, install };
 }

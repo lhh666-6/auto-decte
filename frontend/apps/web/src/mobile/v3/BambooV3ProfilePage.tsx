@@ -62,7 +62,7 @@ export function BambooV3ProfilePage() {
         )}
         {role === "FINANCE_APPROVER" && <a href="/">财务工作请前往网页端</a>}
         <button type="button" disabled={pwa.installed} onClick={() => void pwa.install().then((result) => {
-          if (result === "unavailable") setMessage("当前浏览器未提供直接安装提示，请使用支持安装的 Android 浏览器打开。");
+          if (result === "unavailable") setMessage("当前没有直接安装提示，请点 Chrome 右上角菜单 → 安装应用/添加到主屏幕。");
           else if (result === "dismissed") setMessage("已取消安装，稍后仍可再次添加到桌面。");
           else setMessage("已添加到桌面，可像普通应用一样打开。");
         })}>{pwa.installed ? "已安装到桌面" : "一键添加到桌面"}</button>
