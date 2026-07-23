@@ -364,6 +364,10 @@ describe("V3 submissions and profile", () => {
     expect(screen.queryByRole("button", { name: "申请换岗" })).toBeNull();
     expect(screen.getByText(/员工端不提供自行申请入口/)).toBeTruthy();
     expect(screen.queryByRole("button", { name: /财务审批/ })).toBeNull();
+    expect(screen.getByRole("button", { name: "添加到桌面" })).toBeTruthy();
+    await userEvent.setup().click(screen.getByRole("button", { name: "添加到桌面" }));
+    expect(await screen.findByText(/浏览器菜单/)).toBeTruthy();
+    expect(screen.queryByText(/Chrome/)).toBeNull();
   });
 
   it("gives managers an independent responsive personnel workspace", async () => {

@@ -78,10 +78,10 @@ export function BambooV3ProfilePage() {
           else if (preference === "unsupported") setMessage("当前浏览器不支持系统消息弹窗。");
         })}>{notificationButtonLabel(notificationPreference)}</button>
         <button type="button" disabled={pwa.installed} onClick={() => void pwa.install().then((result) => {
-          if (result === "unavailable") setMessage("当前没有直接安装提示，请点 Chrome 右上角菜单 → 安装应用/添加到主屏幕。");
+          if (result === "unavailable") setMessage(installFallbackGuide());
           else if (result === "dismissed") setMessage("已取消安装，稍后仍可再次添加到桌面。");
           else setMessage("已添加到桌面，可像普通应用一样打开。");
-        })}>{pwa.installed ? "已安装到桌面" : "一键添加到桌面"}</button>
+        })}>{pwa.installed ? "已安装到桌面" : pwa.canInstall ? "一键添加到桌面" : "添加到桌面"}</button>
         <button type="button" className="danger" disabled={busy} onClick={() => void handleLogout()}>退出登录</button>
       </section>
       <p className="bamboo-v3-empty-copy">岗位调动需线下联系厂长，由厂长在人员调度中心提交；员工端不提供自行申请入口。</p>
@@ -96,4 +96,15 @@ function notificationButtonLabel(preference: BambooNotificationPreference): stri
     denied: "浏览器已拒绝通知",
     unsupported: "浏览器不支持消息弹窗",
   })[preference];
+}
+
+function installFallbackGuide(): string {
+  const userAgent = navigator.userAgent.toLowerCase();
+  if (/micromessenger|wxwork|qq\//.test(userAgent)) {
+    return "当前应用内浏览器不能直接安装，请先选择“在浏览器打开”，再使用浏览器菜单中的“安装应用”或“添加到主屏幕”。";
+  }
+  if (/iphone|ipad|ipod/.test(userAgent)) {
+    return "当前浏览器未提供直接安装，请打开分享菜单并选择“添加到主屏幕”。";
+  }
+  return "当前浏览器未提供直接安装，请打开浏览器菜单并选择“安装应用”或“添加到主屏幕”。";
 }
