@@ -171,3 +171,39 @@ export interface PayrollResult {
   original_amount?: string;
   delta_amount?: string;
 }
+
+export interface ReportTemplateVersion {
+  template_version_id: string;
+  filename: string;
+  format: string;
+  file_hash: string;
+  size_bytes: number;
+  structure: {
+    sheets: Array<{ name: string; max_row: number; max_column: number }>;
+  };
+  structure_hash: string;
+  warnings: string[];
+  status: string;
+}
+
+export interface ReportMappingVersion {
+  mapping_version_id: string;
+  template_version_id: string;
+  version: number;
+  mapping_json: {
+    sheet: string;
+    start_row: number;
+    columns: Array<{ column: number; source_field: string }>;
+  };
+  status: string;
+}
+
+export interface GovernedExportBatch {
+  export_batch_id: string;
+  template_version_id: string;
+  mapping_version_id: string;
+  data_watermark: string;
+  status: string;
+  file_hash: string;
+  download_name: string;
+}

@@ -1,0 +1,6 @@
+.report-template-page { display: grid; gap: 1rem; }
+.report-template-page header p { color: #596579; }
+.report-upload, .report-template-page > article, .report-card-list article { display: grid; gap: .6rem; background: #fff; border: 1px solid #dce3ec; border-radius: 12px; padding: 1rem; }
+.report-card-list { display: grid; gap: .7rem; }
+.report-card-list article { grid-template-columns: minmax(12rem, 1fr) minmax(14rem, 2fr) auto; align-items: center; }
+@media (max-width: 760px) { .report-card-list article { grid-template-columns: 1fr; } }

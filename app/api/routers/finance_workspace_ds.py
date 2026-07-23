@@ -1,6 +1,9 @@
 """Phase 1 finance workspace endpoints."""
 
+from urllib.parse import quote
+
 from fastapi import APIRouter, Header, HTTPException, Query, Request, status
+from fastapi.responses import Response
 
 from app.api.routers.web_auth_ds import require_web_actor, require_web_csrf
 from app.api.schemas.business_workflows_ds import (
@@ -19,6 +22,10 @@ from app.api.schemas.payroll_rules_ds import (
     CalculatePayrollRequest,
     CreatePayrollRuleRequest,
 )
+from app.api.schemas.report_templates_ds import (
+    CreateGovernedExportRequest,
+    CreateReportMappingRequest,
+)
 from app.api.schemas.submission_ledger_ds import (
     AttachReplacementRequest,
     ReviewCorrectionRequest,
@@ -31,6 +38,10 @@ from app.modules.business_discovery.service_ds import (
 from app.modules.electronic_forms.governance_ds import ManagedFormError, ManagedFormService
 from app.modules.identity_access.web_policy_ds import WebWorkspace, allows_workspace
 from app.modules.payroll_rules.service_ds import PayrollError, PayrollService
+from app.modules.report_templates.service_ds import (
+    ReportTemplateError,
+    ReportTemplateService,
+)
 from app.modules.submission_ledger.service_ds import (
     SubmissionLedgerError,
     SubmissionLedgerService,
@@ -68,6 +79,10 @@ def _ledger(request: Request) -> SubmissionLedgerService:
 
 def _payroll(request: Request) -> PayrollService:
     return PayrollService(request.app.state.services.engine)
+
+
+def _reports(request: Request) -> ReportTemplateService:
+    return ReportTemplateService(request.app.state.services.engine)
 
 
 def _form_error(error: ManagedFormError) -> HTTPException:
@@ -228,6 +243,164 @@ def finance_payroll(
         actor_id=actor.employee_code,
         actor_role="FINANCE",
     )
+
+
+@router.get("/report-templates")
+def report_templates(request: Request) -> dict[str, object]:
+    _finance_actor(request)
+    return _reports(request).list_templates()
+
+
+@router.post("/report-templates/{template_version_id}/analyze")
+def analyze_report_template(
+    template_version_id: str,
+    request: Request,
+    x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token"),
+) -> dict[str, object]:
+    _finance_actor(request)
+    require_web_csrf(request, x_csrf_token)
+    try:
+        return _reports(request).get_template(template_version_id)
+    except ReportTemplateError as error:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": error.code, "detail": error.detail},
+        ) from error
+
+
+@router.get("/report-mappings")
+def report_mappings(
+    request: Request,
+    template_version_id: str = Query(default=""),
+) -> dict[str, object]:
+    _finance_actor(request)
+    return _reports(request).list_mappings(template_version_id or None)
+
+
+@router.post("/report-mappings", status_code=201)
+def create_report_mapping(
+    body: CreateReportMappingRequest,
+    request: Request,
+    x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token"),
+) -> dict[str, object]:
+    actor = _finance_actor(request)
+    require_web_csrf(request, x_csrf_token)
+    try:
+        return _reports(request).create_mapping(
+            **body.model_dump(), actor_id=actor.employee_code
+        )
+    except ReportTemplateError as error:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": error.code, "detail": error.detail},
+        ) from error
+
+
+@router.post("/report-mappings/{mapping_version_id}/confirm")
+def confirm_report_mapping(
+    mapping_version_id: str,
+    request: Request,
+    x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token"),
+) -> dict[str, object]:
+    actor = _finance_actor(request)
+    require_web_csrf(request, x_csrf_token)
+    try:
+        return _reports(request).confirm_mapping(
+            mapping_version_id, actor_id=actor.employee_code
+        )
+    except ReportTemplateError as error:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": error.code, "detail": error.detail},
+        ) from error
+
+
+@router.post("/exports", status_code=201)
+def create_governed_export(
+    body: CreateGovernedExportRequest,
+    request: Request,
+    x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token"),
+) -> dict[str, object]:
+    actor = _finance_actor(request)
+    require_web_csrf(request, x_csrf_token)
+    ledger_service = _ledger(request)
+    factory_id = str(body.filters.get("factory_id", "")).strip() or None
+    source_records = ledger_service.list_ledger(factory_id)["items"]
+    records: list[dict[str, object]] = []
+    if not isinstance(source_records, list):
+        source_records = []
+    for item in source_records:
+        if not isinstance(item, dict):
+            continue
+        record = dict(item)
+        values = record.pop("values", {})
+        if isinstance(values, dict):
+            record.update(values)
+        record["submission_id"] = record["effective_submission_id"]
+        records.append(record)
+    try:
+        return _reports(request).create_export(
+            template_version_id=body.template_version_id,
+            mapping_version_id=body.mapping_version_id,
+            idempotency_key=body.idempotency_key,
+            filters=body.filters,
+            records=records,
+            data_watermark=ledger_service.watermark(),
+            actor_id=actor.employee_code,
+        )
+    except ReportTemplateError as error:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": error.code, "detail": error.detail},
+        ) from error
+
+
+@router.get("/exports")
+def governed_exports(request: Request) -> dict[str, object]:
+    _finance_actor(request)
+    return _reports(request).list_exports()
+
+
+@router.get("/exports/{export_batch_id}")
+def governed_export(export_batch_id: str, request: Request) -> dict[str, object]:
+    _finance_actor(request)
+    try:
+        return _reports(request).get_export(export_batch_id)
+    except ReportTemplateError as error:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": error.code, "detail": error.detail},
+        ) from error
+
+
+@router.get("/exports/{export_batch_id}/download")
+def download_governed_export(export_batch_id: str, request: Request) -> Response:
+    _finance_actor(request)
+    try:
+        batch = _reports(request).get_export(export_batch_id)
+        content = _reports(request).download(export_batch_id)
+    except ReportTemplateError as error:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": error.code, "detail": error.detail},
+        ) from error
+    return Response(
+        content,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": (
+                f"attachment; filename*=UTF-8''{quote(str(batch['download_name']))}"
+            )
+        },
+    )
+
+
+@router.get("/exports/{export_batch_id}/lineage")
+def governed_export_lineage(
+    export_batch_id: str, request: Request
+) -> dict[str, object]:
+    _finance_actor(request)
+    return _reports(request).lineage(export_batch_id)
 
 
 @router.post("/corrections/{correction_id}/replacement")

@@ -1,5 +1,7 @@
 """Phase 1 administrator workspace endpoints."""
 
+from urllib.parse import unquote
+
 from fastapi import APIRouter, Header, HTTPException, Query, Request
 
 from app.api.routers.web_auth_ds import require_web_actor, require_web_csrf
@@ -22,6 +24,10 @@ from app.api.schemas.web_workspaces_ds import OverviewCard, WorkspaceOverviewRes
 from app.modules.electronic_forms.governance_ds import ManagedFormError, ManagedFormService
 from app.modules.identity_access.web_policy_ds import WebWorkspace, allows_workspace
 from app.modules.payroll_rules.service_ds import PayrollError, PayrollService
+from app.modules.report_templates.service_ds import (
+    ReportTemplateError,
+    ReportTemplateService,
+)
 from app.modules.workflow_engine.service_ds import WorkflowError, WorkflowService
 
 router = APIRouter(prefix="/api/v1/admin", tags=["admin"])
@@ -47,6 +53,10 @@ def _workflows(request: Request) -> WorkflowService:
 
 def _payroll(request: Request) -> PayrollService:
     return PayrollService(request.app.state.services.engine)
+
+
+def _reports(request: Request) -> ReportTemplateService:
+    return ReportTemplateService(request.app.state.services.engine)
 
 
 def _form_error(error: ManagedFormError) -> HTTPException:
@@ -149,6 +159,29 @@ def admin_payroll(
         actor_id=actor.employee_code,
         actor_role="ADMIN",
     )
+
+
+@router.post("/report-templates", status_code=201)
+async def upload_report_template(
+    request: Request,
+    x_filename: str = Header(alias="X-Filename"),
+    x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token"),
+) -> dict[str, object]:
+    actor = _admin_actor(request)
+    require_web_csrf(request, x_csrf_token)
+    content = await request.body()
+    try:
+        return _reports(request).upload_template(
+            filename=unquote(x_filename),
+            mime_type=request.headers.get("content-type", "application/octet-stream"),
+            content=content,
+            actor_id=actor.employee_code,
+        )
+    except ReportTemplateError as error:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": error.code, "detail": error.detail},
+        ) from error
 
 
 @router.post(

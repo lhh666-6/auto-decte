@@ -378,6 +378,11 @@ class SubmissionLedgerService:
             items = session.scalars(statement).all()
             return {"items": [self._projection_payload(row) for row in items]}
 
+    def watermark(self) -> str:
+        with Session(self._engine) as session:
+            value = session.scalar(select(func.max(FinanceLedgerEventRow.occurred_at)))
+            return value.isoformat() if value is not None else self._clock().isoformat()
+
     def list_tasks(self, factory_id: str | None = None) -> dict[str, object]:
         with Session(self._engine) as session:
             statement = select(BusinessTaskRow).order_by(BusinessTaskRow.created_at.desc())

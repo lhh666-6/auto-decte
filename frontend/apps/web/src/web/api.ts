@@ -1,6 +1,7 @@
 import type {
   BusinessTask,
   FinanceRecord,
+  GovernedExportBatch,
   ManagedFormVersion,
   ManagedFormField,
   ManagementNotification,
@@ -8,6 +9,8 @@ import type {
   PayrollBatch,
   PayrollResult,
   PayrollRuleVersion,
+  ReportMappingVersion,
+  ReportTemplateVersion,
   SubmissionCorrection,
   WorkflowVersion,
   WebSession,
@@ -565,5 +568,87 @@ export function listOfficialPayroll(
 ) {
   return request<{ items: PayrollResult[] }>(
     `/api/v1/${workspace}/payroll`, {}, fetcher,
+  );
+}
+
+export async function uploadReportTemplate(file: File, fetcher: WebFetcher = fetch) {
+  const response = await fetcher("/api/v1/admin/report-templates", {
+    method: "POST",
+    credentials: "include",
+    headers: {
+      ...csrfHeaders(),
+      "Content-Type": file.type || "application/octet-stream",
+      "X-Filename": encodeURIComponent(file.name),
+    },
+    body: file,
+  });
+  if (!response.ok) throw new WebApiError(await readProblem(response));
+  return response.json() as Promise<ReportTemplateVersion>;
+}
+
+export function listReportTemplates(fetcher?: WebFetcher) {
+  return request<{ items: ReportTemplateVersion[] }>(
+    "/api/v1/finance/report-templates", {}, fetcher,
+  );
+}
+
+export function listReportMappings(fetcher?: WebFetcher) {
+  return request<{ items: ReportMappingVersion[] }>(
+    "/api/v1/finance/report-mappings", {}, fetcher,
+  );
+}
+
+export function createReportMapping(
+  templateVersionId: string,
+  mappingJson: ReportMappingVersion["mapping_json"],
+  fetcher?: WebFetcher,
+) {
+  return request<ReportMappingVersion>(
+    "/api/v1/finance/report-mappings",
+    {
+      method: "POST",
+      headers: csrfHeaders(true),
+      body: JSON.stringify({
+        template_version_id: templateVersionId,
+        mapping_json: mappingJson,
+      }),
+    },
+    fetcher,
+  );
+}
+
+export function confirmReportMapping(mappingVersionId: string, fetcher?: WebFetcher) {
+  return request<ReportMappingVersion>(
+    `/api/v1/finance/report-mappings/${mappingVersionId}/confirm`,
+    { method: "POST", headers: csrfHeaders() },
+    fetcher,
+  );
+}
+
+export function createGovernedExport(
+  templateVersionId: string,
+  mappingVersionId: string,
+  factoryId: string,
+  fetcher?: WebFetcher,
+) {
+  return request<GovernedExportBatch>(
+    "/api/v1/finance/exports",
+    {
+      method: "POST",
+      headers: csrfHeaders(true),
+      body: JSON.stringify({
+        template_version_id: templateVersionId,
+        mapping_version_id: mappingVersionId,
+        filters: factoryId ? { factory_id: factoryId } : {},
+        idempotency_key: crypto.randomUUID(),
+      }),
+    },
+    fetcher,
+  );
+}
+
+export function listGovernedExports(fetcher?: WebFetcher) {
+  return request<{ items: GovernedExportBatch[] }>(
+    "/api/v1/finance/exports", {}, fetcher,
   );
 }

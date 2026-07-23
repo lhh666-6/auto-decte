@@ -27,10 +27,13 @@ import { RequireMobileSession } from "../mobile/session/RequireMobileSession";
 import { RequireWebSession } from "../web/RequireWebSession";
 import { AdminFormApprovalsPage } from "../web/AdminFormApprovalsPage";
 import { AdminPayrollApprovalsPage } from "../web/AdminPayrollApprovalsPage";
+import { AdminReportTemplatesPage } from "../web/AdminReportTemplatesPage";
 import { AdminWorkflowApprovalsPage } from "../web/AdminWorkflowApprovalsPage";
 import { BusinessModelingPage } from "../web/BusinessModelingPage";
 import { FinanceFormsPage } from "../web/FinanceFormsPage";
 import { FinanceLedgerPage } from "../web/FinanceLedgerPage";
+import { FinanceGovernedExportsPage } from "../web/FinanceGovernedExportsPage";
+import { FinanceReportTemplatesPage } from "../web/FinanceReportTemplatesPage";
 import { PlantExceptionsPage } from "../web/PlantExceptionsPage";
 import { PlantFormsPage } from "../web/PlantFormsPage";
 import { PlantNotificationsPage } from "../web/PlantNotificationsPage";
@@ -178,6 +181,8 @@ export function AppRoutes() {
           <Route path="year" element={<FinanceLedgerPage />} />
           <Route path="exceptions" element={<FinanceLedgerPage />} />
           <Route path="payroll-rules" element={<PayrollRulesPage />} />
+          <Route path="report-templates" element={<FinanceReportTemplatesPage />} />
+          <Route path="exports" element={<FinanceGovernedExportsPage />} />
           <Route path="*" element={<WorkspaceComingSoon />} />
         </Route>
 
@@ -188,6 +193,7 @@ export function AppRoutes() {
           <Route path="workflow-approvals" element={<AdminWorkflowApprovalsPage />} />
           <Route path="payroll-approvals" element={<AdminPayrollApprovalsPage />} />
           <Route path="payroll" element={<PayrollResultsPage workspace="admin" />} />
+          <Route path="report-templates" element={<AdminReportTemplatesPage />} />
           <Route path="*" element={<WorkspaceComingSoon />} />
         </Route>
 

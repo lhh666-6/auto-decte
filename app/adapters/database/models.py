@@ -11,6 +11,7 @@ from sqlalchemy import (
     ForeignKeyConstraint,
     Index,
     Integer,
+    LargeBinary,
     String,
     UniqueConstraint,
     text,
@@ -1445,3 +1446,94 @@ class PayrollAccessAuditRow(Base):
     requested_employee_code: Mapped[str] = mapped_column(String, nullable=False)
     result_count: Mapped[int] = mapped_column(Integer, nullable=False)
     viewed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class ReportTemplateVersionRow(Base):
+    __tablename__ = "report_template_versions"
+    __table_args__ = (
+        Index("ix_report_template_status", "status", "created_at"),
+    )
+
+    template_version_id: Mapped[str] = mapped_column(String, primary_key=True)
+    filename: Mapped[str] = mapped_column(String, nullable=False)
+    format: Mapped[str] = mapped_column(String, nullable=False)
+    mime_type: Mapped[str] = mapped_column(String, nullable=False)
+    file_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+    content: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    structure: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    structure_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    warnings: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    status: Mapped[str] = mapped_column(String, nullable=False)
+    created_by: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class ReportMappingVersionRow(Base):
+    __tablename__ = "report_mapping_versions"
+    __table_args__ = (
+        UniqueConstraint(
+            "template_version_id", "version", name="ux_report_mapping_template_version"
+        ),
+        Index("ix_report_mapping_status", "template_version_id", "status"),
+    )
+
+    mapping_version_id: Mapped[str] = mapped_column(String, primary_key=True)
+    template_version_id: Mapped[str] = mapped_column(
+        ForeignKey("report_template_versions.template_version_id"), nullable=False
+    )
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    mapping_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String, nullable=False)
+    created_by: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    confirmed_by: Mapped[str | None] = mapped_column(String)
+    confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class GovernedExportBatchRow(Base):
+    __tablename__ = "governed_export_batches"
+    __table_args__ = (
+        UniqueConstraint("idempotency_key", name="ux_governed_export_idempotency"),
+        Index("ix_governed_export_status", "status", "created_at"),
+    )
+
+    export_batch_id: Mapped[str] = mapped_column(String, primary_key=True)
+    idempotency_key: Mapped[str] = mapped_column(String, nullable=False)
+    request_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    template_version_id: Mapped[str] = mapped_column(
+        ForeignKey("report_template_versions.template_version_id"), nullable=False
+    )
+    mapping_version_id: Mapped[str] = mapped_column(
+        ForeignKey("report_mapping_versions.mapping_version_id"), nullable=False
+    )
+    filters: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    data_watermark: Mapped[str] = mapped_column(String, nullable=False)
+    status: Mapped[str] = mapped_column(String, nullable=False)
+    file_content: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    file_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    download_name: Mapped[str] = mapped_column(String, nullable=False)
+    created_by: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class ExportCellLineageRow(Base):
+    __tablename__ = "export_cell_lineage"
+    __table_args__ = (
+        UniqueConstraint(
+            "export_batch_id", "sheet_name", "cell_address", name="ux_export_cell_lineage"
+        ),
+        Index("ix_export_lineage_submission", "submission_id", "field_key"),
+    )
+
+    lineage_id: Mapped[str] = mapped_column(String, primary_key=True)
+    export_batch_id: Mapped[str] = mapped_column(
+        ForeignKey("governed_export_batches.export_batch_id"), nullable=False
+    )
+    sheet_name: Mapped[str] = mapped_column(String, nullable=False)
+    row_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    column_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    cell_address: Mapped[str] = mapped_column(String, nullable=False)
+    submission_id: Mapped[str] = mapped_column(String, nullable=False)
+    field_key: Mapped[str] = mapped_column(String, nullable=False)
