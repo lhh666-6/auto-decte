@@ -36,22 +36,20 @@ it("shows real-time period projections and effective finance records", async () 
   expect(screen.getByText("FACTORY-A")).toBeTruthy();
 });
 
-it("shows plant correction and task status without cross-factory navigation", async () => {
+it("shows the shared Bamboo inspection queue", async () => {
   vi.stubGlobal("fetch", vi.fn().mockResolvedValue(response({
-    corrections: [{
-      correction_id: "COR-1",
-      original_submission_id: "SUB-1",
-      status: "RETURNED",
-      reason: "数量错误",
-    }],
-    tasks: [{
-      task_id: "BT-1",
-      task_type: "CORRECTION_REFILL",
-      status: "PENDING",
-      assigned_to: "E001",
+    bucket: "active",
+    items: [{
+      record_id: "REC-1",
+      display_no: "ZS-20260723-001",
+      cage_no: "L-01",
+      status: "APPEAL_SUBMITTED",
+      deadline_at: "2026-07-23T10:00:00Z",
+      appeal_payload: { text_evidence: "检测湿度不合格" },
     }],
   })));
   render(<PlantExceptionsPage />);
-  expect(await screen.findByText("数量错误")).toBeTruthy();
-  expect(screen.getByText("处理人：E001")).toBeTruthy();
+  expect(await screen.findByText("检测湿度不合格")).toBeTruthy();
+  expect(screen.getByText(/ZS-20260723-001/)).toBeTruthy();
+  expect(screen.getByRole("button", { name: "批准回溯" })).toBeTruthy();
 });

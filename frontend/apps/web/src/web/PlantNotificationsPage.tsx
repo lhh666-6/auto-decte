@@ -1,9 +1,6 @@
 import { useEffect, useState } from "react";
 
-import {
-  acknowledgePlantNotification,
-  listPlantNotifications,
-} from "./api";
+import { acknowledgePlantNotification, listPlantNotifications } from "./api";
 import type { ManagementNotification } from "./types";
 import "./managed-forms.css";
 
@@ -14,7 +11,9 @@ export function PlantNotificationsPage() {
   useEffect(() => {
     listPlantNotifications()
       .then((result) => setItems(result.items))
-      .catch((cause: unknown) => setError(cause instanceof Error ? cause.message : "加载失败"));
+      .catch((cause: unknown) => setError(
+        cause instanceof Error ? cause.message : "通知加载失败",
+      ));
   }, []);
 
   async function acknowledge(item: ManagementNotification) {
@@ -24,17 +23,14 @@ export function PlantNotificationsPage() {
         value.notification_id === updated.notification_id ? updated : value
       )));
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "确认失败");
+      setError(cause instanceof Error ? cause.message : "知悉失败");
     }
   }
 
   return (
     <section className="managed-forms-page">
       <header className="managed-page-heading">
-        <div>
-          <h1>通知与知悉</h1>
-          <p>知悉用于留痕，不会阻塞已启用表单生效。</p>
-        </div>
+        <div><h1>消息中心</h1><p>与移动业务共用同一通知和已读状态。</p></div>
       </header>
       {error && <div role="alert" className="error-banner">{error}</div>}
       <div className="managed-form-list">
@@ -42,12 +38,12 @@ export function PlantNotificationsPage() {
           <article key={item.notification_id} className="managed-form-card">
             <h2>{item.title}</h2>
             <p>{item.body}</p>
-            {item.acknowledged_at
+            {item.read_at
               ? <span className="managed-status">已知悉</span>
               : <button type="button" onClick={() => void acknowledge(item)}>确认知悉</button>}
           </article>
         ))}
-        {!items.length && <p>当前没有新通知。</p>}
+        {!items.length && <p>当前没有通知。</p>}
       </div>
     </section>
   );

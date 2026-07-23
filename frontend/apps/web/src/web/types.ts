@@ -52,15 +52,71 @@ export interface ManagedFormVersion {
 
 export interface ManagementNotification {
   notification_id: string;
-  type: string;
-  plant_id: string;
+  category: string;
   title: string;
   body: string;
-  resource_type: string;
-  resource_id: string;
+  link: string;
+  payload: Record<string, unknown>;
   created_at: string;
-  acknowledged_by?: string;
-  acknowledged_at?: string;
+  read_at?: string;
+}
+
+export interface BambooProductionRecord {
+  record_id: string;
+  display_no: string;
+  factory_id: string;
+  form_type: "SORTING" | "DIPPING_DRYING";
+  source_record_id?: string;
+  base_info: Record<string, unknown>;
+  cage_no: string;
+  current_stage?: string;
+  status: string;
+  revision: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BambooInspectionQueueItem {
+  record_id: string;
+  display_no: string;
+  cage_no?: string;
+  status: string;
+  deadline_at: string;
+  appeal_deadline_at?: string;
+  appeal_payload?: { text_evidence?: string; target_stage?: string };
+}
+
+export interface BambooEmployee {
+  employee_code: string;
+  employee_name: string;
+  factory_id: string;
+  role_code: string;
+  role_name: string;
+}
+
+export interface BambooPersonnelTransfer {
+  transfer_id: string;
+  employee_code: string;
+  transfer_type: string;
+  source_factory_id: string;
+  target_factory_id: string;
+  from_role: string;
+  to_role: string;
+  reason: string;
+  status: string;
+  revision: number;
+}
+
+export interface BambooPayrollItem {
+  employee_code: string;
+  amount: string;
+}
+
+export interface BambooWorkflowStage {
+  stage: string;
+  label: string;
+  editable_by_plant_manager: boolean;
+  returnable: boolean;
 }
 
 export interface ProposedBusinessRule {

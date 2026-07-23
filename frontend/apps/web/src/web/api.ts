@@ -1,4 +1,10 @@
 import type {
+  BambooEmployee,
+  BambooInspectionQueueItem,
+  BambooPayrollItem,
+  BambooPersonnelTransfer,
+  BambooProductionRecord,
+  BambooWorkflowStage,
   BusinessTask,
   FinanceRecord,
   GovernedExportBatch,
@@ -377,7 +383,7 @@ export function activateWorkflow(
 }
 
 export function listPlantWorkflows(fetcher?: WebFetcher) {
-  return request<{ items: WorkflowVersion[] }>(
+  return request<{ items: BambooWorkflowStage[] }>(
     "/api/v1/plant/workflows",
     {},
     fetcher,
@@ -445,33 +451,117 @@ export function reviewCorrection(
 
 export function getPlantProduction(fetcher?: WebFetcher) {
   return request<{
-    overview: { today: number; month: number; year: number };
-    records: FinanceRecord[];
+    overview: { total: number; active: number; completed: number };
+    records: BambooProductionRecord[];
   }>("/api/v1/plant/production", {}, fetcher);
 }
 
-export function getPlantExceptions(fetcher?: WebFetcher) {
-  return request<{
-    corrections: SubmissionCorrection[];
-    tasks: BusinessTask[];
-  }>("/api/v1/plant/exceptions", {}, fetcher);
+export function getPlantExceptions(bucket = "active", query = "", fetcher?: WebFetcher) {
+  const params = new URLSearchParams({ bucket, q: query });
+  return request<{ bucket: string; items: BambooInspectionQueueItem[] }>(
+    `/api/v1/plant/exceptions?${params}`, {}, fetcher,
+  );
 }
 
-export function returnPlantSubmission(
-  submissionId: string,
+export function returnPlantRecord(
+  recordId: string,
+  targetStages: string[],
   reason: string,
-  assignedTo: string,
+  expectedRevision: number,
   fetcher?: WebFetcher,
 ) {
-  return request<{ correction_id: string; task_id: string; status: string }>(
-    `/api/v1/plant/submissions/${submissionId}/return`,
+  return request<{ return_id: string; record_id: string; revision: number }>(
+    `/api/v1/plant/records/${recordId}/return`,
     {
       method: "POST",
-      headers: csrfHeaders(true),
-      body: JSON.stringify({ reason, assigned_to: assignedTo }),
+      headers: { ...csrfHeaders(true), "Idempotency-Key": crypto.randomUUID() },
+      body: JSON.stringify({
+        target_stages: targetStages,
+        reason,
+        expected_revision: expectedRevision,
+      }),
     },
     fetcher,
   );
+}
+
+export function decidePlantInspectionAppeal(
+  recordId: string,
+  approve: boolean,
+  note: string,
+  fetcher?: WebFetcher,
+) {
+  return request<Record<string, unknown>>(
+    `/api/v1/plant/inspection-queue/${recordId}/appeal/decision`,
+    {
+      method: "POST",
+      headers: { ...csrfHeaders(true), "Idempotency-Key": crypto.randomUUID() },
+      body: JSON.stringify({ approve, note }),
+    },
+    fetcher,
+  );
+}
+
+export function listPlantEmployees(fetcher?: WebFetcher) {
+  return request<{ items: BambooEmployee[] }>("/api/v1/plant/employees", {}, fetcher);
+}
+
+export function listPlantRoleOptions(fetcher?: WebFetcher) {
+  return request<{ items: Array<{ role_code: string; display_name: string }> }>(
+    "/api/v1/plant/role-options", {}, fetcher,
+  );
+}
+
+export function listPlantPersonnelTransfers(fetcher?: WebFetcher) {
+  return request<{ items: BambooPersonnelTransfer[] }>(
+    "/api/v1/plant/personnel-transfers", {}, fetcher,
+  );
+}
+
+export function createPlantPersonnelTransfer(
+  body: {
+    employee_code: string;
+    to_role: string;
+    target_factory_id: string;
+    reason: string;
+  },
+  fetcher?: WebFetcher,
+) {
+  return request<BambooPersonnelTransfer>(
+    "/api/v1/plant/personnel-transfers",
+    {
+      method: "POST",
+      headers: { ...csrfHeaders(true), "Idempotency-Key": crypto.randomUUID() },
+      body: JSON.stringify(body),
+    },
+    fetcher,
+  );
+}
+
+export function decidePlantPersonnelTransfer(
+  transferId: string,
+  approve: boolean,
+  note: string,
+  fetcher?: WebFetcher,
+) {
+  return request<BambooPersonnelTransfer>(
+    `/api/v1/plant/personnel-transfers/${transferId}/manager-decision`,
+    {
+      method: "POST",
+      headers: { ...csrfHeaders(true), "Idempotency-Key": crypto.randomUUID() },
+      body: JSON.stringify({ approve, note }),
+    },
+    fetcher,
+  );
+}
+
+export function listPlantPayroll(month: string, fetcher?: WebFetcher) {
+  return request<{
+    factory_id: string;
+    month: string;
+    items: BambooPayrollItem[];
+    total_amount: string;
+  }>(`/api/v1/plant/payroll?month=${encodeURIComponent(month)}`, {}, fetcher);
 }
 
 export function listPayrollRules(fetcher?: WebFetcher) {

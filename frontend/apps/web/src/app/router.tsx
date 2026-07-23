@@ -27,6 +27,7 @@ import { FinanceLedgerPage } from "../web/FinanceLedgerPage";
 import { FinanceGovernedExportsPage } from "../web/FinanceGovernedExportsPage";
 import { FinanceReportTemplatesPage } from "../web/FinanceReportTemplatesPage";
 import { PlantExceptionsPage } from "../web/PlantExceptionsPage";
+import { PlantEmployeesPage } from "../web/PlantEmployeesPage";
 import { PlantFormsPage } from "../web/PlantFormsPage";
 import { PlantNotificationsPage } from "../web/PlantNotificationsPage";
 import { PlantProductionPage } from "../web/PlantProductionPage";
@@ -134,6 +135,7 @@ export function AppRoutes() {
           <Route path="workflows" element={<PlantWorkflowsPage />} />
           <Route path="production" element={<PlantProductionPage />} />
           <Route path="exceptions" element={<PlantExceptionsPage />} />
+          <Route path="employees" element={<PlantEmployeesPage />} />
           <Route path="payroll" element={<PayrollResultsPage workspace="plant" />} />
           <Route path="*" element={<WorkspaceComingSoon />} />
         </Route>
