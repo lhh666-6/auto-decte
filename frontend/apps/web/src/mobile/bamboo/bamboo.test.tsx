@@ -54,6 +54,7 @@ const sortingRecord: BambooRecord = {
   created_by: "E-SORT",
   created_at: "2026-07-22T02:30:00Z",
   updated_at: "2026-07-22T02:30:00Z",
+  upstream_record: null,
   submissions: [],
 };
 

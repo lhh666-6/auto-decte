@@ -75,6 +75,7 @@ const sortingRecord: BambooRecord = {
   created_by: "ZS001",
   created_at: "2026-07-22T02:30:00Z",
   updated_at: "2026-07-22T04:30:00Z",
+  upstream_record: null,
   submissions: [
     { submission_id: "SORT-S1", stage: "SORT", version: 1, values: { moisture: [12, 13] }, actor_id: "1", actor_name: "王分选", role_code: "SORT_OPERATOR", submitted_at: "2026-07-22T03:00:00Z" },
   ],
@@ -96,6 +97,17 @@ const jointRecord: BambooRecord = {
     latest_revision: 3,
     source_status: "UPSTREAM_CHANGED",
     base_info: sortingRecord.base_info,
+  },
+  upstream_record: {
+    record_id: sortingRecord.record_id,
+    display_no: sortingRecord.display_no,
+    factory_id: sortingRecord.factory_id,
+    form_type: sortingRecord.form_type,
+    base_info: sortingRecord.base_info,
+    current_stage: sortingRecord.current_stage,
+    status: sortingRecord.status,
+    revision: sortingRecord.revision,
+    submissions: sortingRecord.submissions,
   },
   current_stage: "SUPERVISOR",
   revision: 3,
@@ -245,7 +257,9 @@ describe("independent bamboo forms", () => {
     expect(screen.getByText("上游数据已变更，待主管确认")).toBeTruthy();
     const sourceCard = screen.getByRole("heading", { name: "来源分选表" }).closest("section")!;
     expect(sourceCard.querySelector("p")?.textContent).toBe(`${sortingRecord.display_no} · 第 2 版`);
-    expect(screen.getByRole("link", { name: "查看上游分选表" }).getAttribute("href")).toBe("/mobile/records/SORT-18");
+    expect(screen.queryByRole("link", { name: "查看上游分选表" })).toBeNull();
+    expect(sourceCard.querySelector("details")).toBeTruthy();
+    expect(sourceCard.textContent).toContain("12");
     const flow = screen.getByRole("list", { name: "浸胶+干燥联合表表内进度" });
     expect(within(flow).getAllByRole("listitem").map((item) => item.querySelector("span")?.textContent)).toEqual(["浸胶记录", "干燥联合签字", "主管审核", "厂长审核", "已生效"]);
   });

@@ -2047,6 +2047,29 @@ button { cursor: pointer; }
   background: #f7fbf8;
   box-shadow: 0 4px 16px rgb(30 83 61 / 6%);
 }
+
+.bamboo-source-card details {
+  margin-top: 12px;
+  border-top: 1px solid var(--line-soft, #dfe6df);
+  padding-top: 10px;
+}
+
+.bamboo-source-card summary {
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.bamboo-upstream-submission {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--line-soft, #dfe6df);
+}
+
+.bamboo-upstream-submission header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
 .bamboo-source-card.changed { border-color: #d89161; background: #fffaf6; }
 .bamboo-source-card h3,
 .bamboo-source-card p { margin: 0; }

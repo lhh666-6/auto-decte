@@ -74,6 +74,18 @@ export interface BambooStageSubmission {
   submitted_at: string | null;
 }
 
+export interface BambooUpstreamRecord {
+  record_id: string;
+  display_no: string;
+  factory_id: string;
+  form_type: BambooFormType;
+  base_info: Record<string, unknown>;
+  current_stage: BambooStage | null;
+  status: "ACTIVE" | "COMPLETED";
+  revision: number;
+  submissions: BambooStageSubmission[];
+}
+
 export interface BambooRecord {
   record_id: string;
   display_no: string;
@@ -92,6 +104,7 @@ export interface BambooRecord {
   created_at: string;
   updated_at: string;
   submissions: BambooStageSubmission[];
+  upstream_record: BambooUpstreamRecord | null;
 }
 
 export interface BambooDashboard {

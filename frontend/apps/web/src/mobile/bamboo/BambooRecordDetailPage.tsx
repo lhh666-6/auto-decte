@@ -105,6 +105,7 @@ export function BambooRecordDetailPage({ recordId }: { recordId: string }) {
       })}
     </section>
 
+    {!canSign && <div className="banner info bamboo-readonly-banner">当前记录以只读方式显示；你没有修改此工序的权限。</div>}
     <BambooOperationsPanel record={record} role={session?.bamboo_role ?? ""} onRefresh={load} />
     {canSign && record.current_stage && <BambooStageForm record={record} stage={record.current_stage} onSigned={setRecord} />}
   </div>;
@@ -112,16 +113,25 @@ export function BambooRecordDetailPage({ recordId }: { recordId: string }) {
 
 function SourceCard({ record }: { record: BambooRecord }) {
   const snapshot = record.source_snapshot;
-  const sourceBase = isObject(snapshot.base_info) ? snapshot.base_info : {};
+  const upstream = record.upstream_record;
+  const sourceBase = upstream?.base_info ?? (isObject(snapshot.base_info) ? snapshot.base_info : {});
   const changed = snapshot.source_status === "UPSTREAM_CHANGED";
   return <section className={`bamboo-source-card${changed ? " changed" : ""}`}>
-    <div className="bamboo-section-title"><h3>来源分选表</h3><span>复用快照</span></div>
+    <div className="bamboo-section-title"><h3>来源分选表</h3><span>只读上游记录</span></div>
     {changed && <div className="banner danger" role="alert">上游数据已变更，待主管确认</div>}
-    <p><strong>{String(snapshot.display_no ?? record.source_ref ?? "—")}</strong> · 第 {String(snapshot.revision ?? "—")} 版</p>
-    <dl className="bamboo-sheet-grid">
-      {Object.entries(sourceBase).map(([key, value]) => <div key={key}><dt>{baseLabel(key)}</dt><dd>{formatValue(value)}</dd></div>)}
-    </dl>
-    {record.source_record_id && <Link to={`/mobile/records/${encodeURIComponent(record.source_record_id)}`}>查看上游分选表</Link>}
+    <p><strong>{String(upstream?.display_no ?? snapshot.display_no ?? record.source_ref ?? "—")}</strong> · 第 {String(upstream?.revision ?? snapshot.revision ?? "—")} 版</p>
+    <details open>
+      <summary>完整上游表单</summary>
+      <dl className="bamboo-sheet-grid">
+        {Object.entries(sourceBase).map(([key, value]) => <div key={key}><dt>{baseLabel(key)}</dt><dd>{formatValue(value)}</dd></div>)}
+      </dl>
+      {upstream?.submissions.map((submission) => <article className="bamboo-upstream-submission" key={submission.submission_id}>
+        <header><strong>{stageLabel(submission.stage)}</strong><span>{submission.actor_name}（{roleLabel(submission.role_code)}）</span></header>
+        <dl className="bamboo-sheet-grid">
+          {Object.entries(submission.values).map(([key, value]) => <div key={key}><dt>{valueLabel(key)}</dt><dd>{formatValue(value)}</dd></div>)}
+        </dl>
+      </article>)}
+    </details>
   </section>;
 }
 

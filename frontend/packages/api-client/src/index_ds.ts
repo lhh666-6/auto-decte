@@ -109,6 +109,7 @@ export {
   type BambooStage,
   type BambooStageSubmission,
   type BambooTaskBucket,
+  type BambooUpstreamRecord,
   type MobileActiveResource,
   type MobileAvailableForm,
   type MobileContext,
