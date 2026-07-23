@@ -76,6 +76,78 @@ export interface BambooProductionRecord {
   updated_at: string;
 }
 
+export interface BambooStageSubmission {
+  submission_id: string;
+  stage: string;
+  version: number;
+  values: Record<string, unknown>;
+  actor_id: string;
+  actor_name: string;
+  role_code: string;
+  factory_id?: string;
+  submitted_at?: string;
+  invalidated?: boolean;
+}
+
+export interface BambooInspectionEvidence {
+  asset_id: string;
+  evidence_type: string;
+  file_id?: string;
+  uri?: string;
+  mime_type?: string;
+  text_content?: string;
+}
+
+export interface BambooInspection {
+  inspection_id: string;
+  conclusion: string;
+  note?: string;
+  actor_name: string;
+  signed_at?: string;
+  moisture_points?: number[];
+  average_value?: number;
+  evidence: BambooInspectionEvidence[];
+}
+
+export interface BambooInspectionWindow {
+  status: string;
+  opened_at: string;
+  deadline_at: string;
+  inside_window: boolean;
+  remaining_seconds: number;
+  claimed_by?: string;
+  completed_at?: string;
+  terminated_by?: string;
+  terminated_at?: string;
+  appeal_deadline_at?: string;
+  appeal_payload?: {
+    text_evidence?: string;
+    target_stage?: string;
+  };
+  appeal_decision?: string;
+  appeal_decision_note?: string;
+  revision: number;
+}
+
+export interface BambooProductionDetail extends BambooProductionRecord {
+  source_type?: string;
+  source_snapshot?: Record<string, unknown>;
+  submissions: BambooStageSubmission[];
+  upstream_record?: {
+    record_id: string;
+    display_no: string;
+    revision: number;
+    base_info: Record<string, unknown>;
+    submissions: BambooStageSubmission[];
+  };
+  inspection_window?: BambooInspectionWindow;
+  signature_gate: {
+    can_sign: boolean;
+    reason: string;
+  };
+  inspections: BambooInspection[];
+}
+
 export interface BambooInspectionQueueItem {
   record_id: string;
   display_no: string;

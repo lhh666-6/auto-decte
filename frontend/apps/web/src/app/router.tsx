@@ -31,6 +31,7 @@ import { PlantEmployeesPage } from "../web/PlantEmployeesPage";
 import { PlantFormsPage } from "../web/PlantFormsPage";
 import { PlantNotificationsPage } from "../web/PlantNotificationsPage";
 import { PlantProductionPage } from "../web/PlantProductionPage";
+import { PlantSignaturePage } from "../web/PlantSignaturePage";
 import { PlantWorkflowsPage } from "../web/PlantWorkflowsPage";
 import { PayrollResultsPage } from "../web/PayrollResultsPage";
 import { PayrollRulesPage } from "../web/PayrollRulesPage";
@@ -134,6 +135,7 @@ export function AppRoutes() {
           <Route path="forms" element={<PlantFormsPage />} />
           <Route path="workflows" element={<PlantWorkflowsPage />} />
           <Route path="production" element={<PlantProductionPage />} />
+          <Route path="production/:recordId" element={<PlantSignaturePage />} />
           <Route path="exceptions" element={<PlantExceptionsPage />} />
           <Route path="employees" element={<PlantEmployeesPage />} />
           <Route path="payroll" element={<PayrollResultsPage workspace="plant" />} />

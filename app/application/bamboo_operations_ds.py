@@ -1640,6 +1640,92 @@ class BambooOperationsService:
     ) -> dict[str, Any]:
         with Session(self._engine) as session:
             row = self._record(session, record_id, actor)
+            submissions = session.scalars(
+                select(BambooStageSubmissionRow)
+                .where(BambooStageSubmissionRow.record_id == record_id)
+                .order_by(
+                    BambooStageSubmissionRow.submitted_at,
+                    BambooStageSubmissionRow.version,
+                )
+            ).all()
+            window = session.get(BambooInspectionWindowRow, record_id)
+            now = datetime.now(UTC)
+            inspection_window = None
+            if window is not None:
+                projected_window = self._inspection_window(window, row, now)
+                if (
+                    window.status in {"OPEN", "CLAIMED"}
+                    and now >= _utc(window.deadline_at)
+                ):
+                    projected_window["status"] = "EXPIRED"
+                    projected_window["inside_window"] = False
+                    projected_window["appeal_deadline_at"] = (
+                        _utc(window.deadline_at) + timedelta(hours=24)
+                    )
+                inspection_window = {
+                    **projected_window,
+                    "terminated_by": window.terminated_by,
+                    "terminated_at": window.terminated_at,
+                    "appeal_payload": window.appeal_payload,
+                    "appeal_decision_note": window.appeal_decision_note,
+                    "remaining_seconds": max(
+                        0,
+                        int((_utc(window.deadline_at) - now).total_seconds()),
+                    ),
+                }
+            blocking_statuses = {
+                "OPEN",
+                "CLAIMED",
+                "APPEAL_SUBMITTED",
+            }
+            can_sign = (
+                row.status == "ACTIVE"
+                and row.current_stage == BambooStage.PLANT_AUDIT.value
+                and (
+                    inspection_window is None
+                    or str(inspection_window["status"]) not in blocking_statuses
+                )
+            )
+            gate_reason = ""
+            if row.current_stage != BambooStage.PLANT_AUDIT.value:
+                gate_reason = "NOT_AT_PLANT_AUDIT"
+            elif inspection_window is not None and inspection_window["status"] in {
+                "OPEN",
+                "CLAIMED",
+            }:
+                gate_reason = "INSPECTION_IN_PROGRESS"
+            elif (
+                inspection_window is not None
+                and inspection_window["status"] == "APPEAL_SUBMITTED"
+            ):
+                gate_reason = "APPEAL_PENDING"
+            elif not can_sign:
+                gate_reason = "SIGNATURE_NOT_AVAILABLE"
+            upstream_record = None
+            if row.source_record_id:
+                upstream = session.get(BambooRecordRow, row.source_record_id)
+                if upstream is not None:
+                    upstream_submissions = session.scalars(
+                        select(BambooStageSubmissionRow)
+                        .where(
+                            BambooStageSubmissionRow.record_id
+                            == upstream.record_id
+                        )
+                        .order_by(
+                            BambooStageSubmissionRow.submitted_at,
+                            BambooStageSubmissionRow.version,
+                        )
+                    ).all()
+                    upstream_record = {
+                        "record_id": upstream.record_id,
+                        "display_no": upstream.display_no,
+                        "revision": upstream.revision,
+                        "base_info": upstream.base_info,
+                        "submissions": [
+                            self._stage_submission_payload(item)
+                            for item in upstream_submissions
+                        ],
+                    }
             record = {
                 "record_id": row.record_id,
                 "display_no": row.display_no,
@@ -1655,6 +1741,15 @@ class BambooOperationsService:
                 "revision": row.revision,
                 "created_at": row.created_at,
                 "updated_at": row.updated_at,
+                "submissions": [
+                    self._stage_submission_payload(item) for item in submissions
+                ],
+                "upstream_record": upstream_record,
+                "inspection_window": inspection_window,
+                "signature_gate": {
+                    "can_sign": can_sign,
+                    "reason": gate_reason,
+                },
             }
         return {**record, **self.record_summary(record_id, actor)}
 
@@ -2325,6 +2420,23 @@ class BambooOperationsService:
             "payload": row.payload,
             "read_at": row.read_at,
             "created_at": row.created_at,
+        }
+
+    @staticmethod
+    def _stage_submission_payload(
+        row: BambooStageSubmissionRow,
+    ) -> dict[str, Any]:
+        return {
+            "submission_id": row.submission_id,
+            "stage": row.stage_key,
+            "version": row.version,
+            "values": row.values,
+            "actor_id": row.actor_id,
+            "actor_name": row.actor_name,
+            "role_code": row.role_code,
+            "factory_id": row.factory_id,
+            "submitted_at": row.submitted_at,
+            "invalidated": row.invalidated,
         }
 
     @staticmethod

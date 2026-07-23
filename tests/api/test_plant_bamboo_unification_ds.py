@@ -208,3 +208,70 @@ def test_two_plant_web_returns_cannot_both_commit(tmp_path: Path) -> None:
 
     assert sorted(status for status, _ in results) == [200, 409]
     assert "REVISION_CONFLICT" in {code for _, code in results}
+
+
+def test_plant_signature_detail_exposes_mobile_audit_context(tmp_path: Path) -> None:
+    services = build_services(
+        Settings(data_root=tmp_path, bamboo_plant_audit_wait_hours=0)
+    )
+    _add_user(services, "SORT-1", "SORT_OPERATOR")
+    _add_user(services, "SUP-1", "SUPERVISOR")
+    _add_user(services, "MANAGER-1", "PLANT_MANAGER")
+    sort = _mobile(services, "SORT-1")
+    supervisor = _mobile(services, "SUP-1")
+    manager = _web(services, "MANAGER-1")
+
+    created = sort.post(
+        "/api/v1/mobile/bamboo/records",
+        headers={
+            "X-CSRF-Token": sort.cookies["mobile_csrf"],
+            "Idempotency-Key": "signature-detail-create",
+        },
+        json={
+            "base_info": {
+                "cage_no": "SIGN-01",
+                "length": "2.3",
+                "shade": "深",
+                "grade": "A",
+                "bundle_count": 8,
+            }
+        },
+    ).json()
+    record_id = created["record_id"]
+    sort.post(
+        f"/api/v1/mobile/bamboo/records/{record_id}/stages/SORT/submit",
+        headers={
+            "X-CSRF-Token": sort.cookies["mobile_csrf"],
+            "Idempotency-Key": "signature-detail-sort",
+        },
+        json={
+            "expected_revision": 1,
+            "device_id": "sort-phone",
+            "values": {"moisture": [12], "note": "分选正常"},
+        },
+    ).raise_for_status()
+    supervisor.post(
+        f"/api/v1/mobile/bamboo/records/{record_id}/stages/SUPERVISOR/submit",
+        headers={
+            "X-CSRF-Token": supervisor.cookies["mobile_csrf"],
+            "Idempotency-Key": "signature-detail-supervisor",
+        },
+        json={
+            "expected_revision": 2,
+            "device_id": "supervisor-phone",
+            "values": {"result": "APPROVED", "note": "主管已核对"},
+        },
+    ).raise_for_status()
+
+    detail = manager.get(f"/api/v1/plant/production/{record_id}")
+
+    assert detail.status_code == 200
+    payload = detail.json()
+    assert payload["current_stage"] == "PLANT_AUDIT"
+    assert [item["stage"] for item in payload["submissions"]] == [
+        "SORT",
+        "SUPERVISOR",
+    ]
+    assert payload["inspection_window"]["status"] == "OPEN"
+    assert payload["signature_gate"]["can_sign"] is False
+    assert payload["signature_gate"]["reason"] == "INSPECTION_IN_PROGRESS"

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 
 import { getPlantProduction, returnPlantRecord } from "./api";
 import type { BambooProductionRecord } from "./types";
@@ -57,6 +58,9 @@ export function PlantProductionPage() {
           <article key={record.record_id}>
             <strong>{record.display_no} · 笼号 {record.cage_no || "—"}</strong>
             <span>{record.current_stage || "已完成"} · {record.status}</span>
+            <Link to={`/plant/production/${record.record_id}`}>
+              {record.current_stage === "PLANT_AUDIT" ? "查看并签字" : "查看详情"}
+            </Link>
             <button type="button" onClick={() => {
               setSelected(record);
               setTargetStages([]);

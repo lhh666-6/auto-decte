@@ -3,6 +3,7 @@ import type {
   BambooInspectionQueueItem,
   BambooPayrollItem,
   BambooPersonnelTransfer,
+  BambooProductionDetail,
   BambooProductionRecord,
   BambooWorkflowStage,
   BusinessTask,
@@ -454,6 +455,57 @@ export function getPlantProduction(fetcher?: WebFetcher) {
     overview: { total: number; active: number; completed: number };
     records: BambooProductionRecord[];
   }>("/api/v1/plant/production", {}, fetcher);
+}
+
+export function getPlantProductionDetail(recordId: string, fetcher?: WebFetcher) {
+  return request<BambooProductionDetail>(
+    `/api/v1/plant/production/${encodeURIComponent(recordId)}`,
+    {},
+    fetcher,
+  );
+}
+
+export function auditPlantRecord(
+  recordId: string,
+  expectedRevision: number,
+  note: string,
+  idempotencyKey: string,
+  fetcher?: WebFetcher,
+) {
+  return request<{
+    record_id: string;
+    status: string;
+    current_stage?: string;
+    revision: number;
+  }>(
+    `/api/v1/plant/records/${encodeURIComponent(recordId)}/audit`,
+    {
+      method: "POST",
+      headers: { ...csrfHeaders(true), "Idempotency-Key": idempotencyKey },
+      body: JSON.stringify({
+        expected_revision: expectedRevision,
+        device_id: "plant-web",
+        values: { result: "APPROVED", note: note.trim() },
+      }),
+    },
+    fetcher,
+  );
+}
+
+export function terminatePlantInspection(
+  recordId: string,
+  idempotencyKey: string,
+  fetcher?: WebFetcher,
+) {
+  return request<Record<string, unknown>>(
+    `/api/v1/plant/inspection-queue/${encodeURIComponent(recordId)}/terminate`,
+    {
+      method: "POST",
+      headers: { ...csrfHeaders(true), "Idempotency-Key": idempotencyKey },
+      body: JSON.stringify({ confirm: true }),
+    },
+    fetcher,
+  );
 }
 
 export function getPlantExceptions(bucket = "active", query = "", fetcher?: WebFetcher) {
