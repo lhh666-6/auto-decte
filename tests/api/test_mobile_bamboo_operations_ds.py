@@ -11,7 +11,13 @@ from app.services.container import Services, build_services
 from config.settings import Settings
 
 
-def _add_user(services: Services, code: str, role: str) -> None:
+def _add_user(
+    services: Services,
+    code: str,
+    role: str,
+    factory_id: str = "FACTORY-A",
+    factory_name: str = "竹丝一厂",
+) -> None:
     services.master_data.create(
         MasterDataCatalog.EMPLOYEES, code, code, {}, "test", "bamboo operations"
     )
@@ -24,8 +30,8 @@ def _add_user(services: Services, code: str, role: str) -> None:
         roles=["WORKER"],
         allowed_form_types=[],
         allowed_processes=["BAMBOO_PROCESS"],
-        factory_id="FACTORY-A",
-        factory_name="竹丝一厂",
+        factory_id=factory_id,
+        factory_name=factory_name,
         bamboo_role=role,
     )
 
@@ -613,33 +619,103 @@ def test_returning_sorting_marks_linked_source_snapshot_upstream_changed(
     assert snapshot["latest_revision"] == 3
 
 
-def test_worker_role_change_requires_factory_manager_approval(tmp_path: Path) -> None:
+def test_personnel_transfers_require_managers_and_admin_execution(tmp_path: Path) -> None:
     services = build_services(Settings(data_root=tmp_path))
     _add_user(services, "SORT-1", "SORT_OPERATOR")
-    _add_user(services, "MANAGER-1", "PLANT_MANAGER")
+    _add_user(services, "MANAGER-A", "PLANT_MANAGER")
+    _add_user(services, "MANAGER-B", "PLANT_MANAGER", "FACTORY-B", "竹丝二厂")
+    _add_user(services, "ADMIN-1", "SYSTEM_ADMIN")
+    _add_user(services, "FUTURE-MANAGER", "SUPERVISOR", "FACTORY-B", "竹丝二厂")
     worker = _client(services, "SORT-1")
-    manager = _client(services, "MANAGER-1")
+    manager_a = _client(services, "MANAGER-A")
+    manager_b = _client(services, "MANAGER-B")
+    admin = _client(services, "ADMIN-1")
 
     requested = worker.post(
         "/api/v1/mobile/bamboo/role-change-requests",
         headers=_headers(worker, "role-change"),
         json={"to_role": "DIPPING_OPERATOR", "reason": "转岗培训已完成"},
     )
-    assert requested.status_code == 201
-    request_id = requested.json()["request_id"]
-    listed = manager.get("/api/v1/mobile/bamboo/role-change-requests").json()
-    assert listed[0]["status"] == "PENDING"
-    decision = manager.post(
-        f"/api/v1/mobile/bamboo/role-change-requests/{request_id}/decision",
-        headers=_headers(manager, "approve-role-change"),
-        json={"approve": True, "note": "同意"},
+    assert requested.status_code == 409
+    assert requested.json()["code"] == "WORKER_TRANSFER_FORBIDDEN"
+
+    internal = manager_a.post(
+        "/api/v1/mobile/bamboo/personnel-transfers",
+        headers=_headers(manager_a, "internal-transfer"),
+        json={
+            "employee_code": "SORT-1",
+            "to_role": "DIPPING_OPERATOR",
+            "target_factory_id": "FACTORY-A",
+            "reason": "线下沟通后调整岗位",
+        },
     )
-    assert decision.status_code == 200
-    assert decision.json()["status"] == "APPROVED"
+    assert internal.status_code == 201
+    assert internal.json()["status"] == "ADMIN_PENDING"
+    internal_id = internal.json()["transfer_id"]
+    admin.post(
+        f"/api/v1/mobile/bamboo/personnel-transfers/{internal_id}/execute",
+        headers=_headers(admin, "internal-execute"),
+        json={"approve": True, "note": "管理员执行"},
+    ).raise_for_status()
 
     refreshed = _client(services, "SORT-1")
-    me = refreshed.get("/api/v1/mobile/auth/session").json()
-    assert me["bamboo_role"] == "DIPPING_OPERATOR"
+    assert refreshed.get("/api/v1/mobile/auth/session").json()["bamboo_role"] == "DIPPING_OPERATOR"
+    assert refreshed.get("/api/v1/mobile/bamboo/notifications").json()["items"][0][
+        "category"
+    ] == "PERSONNEL_TRANSFER_COMPLETED"
+
+    cross = manager_a.post(
+        "/api/v1/mobile/bamboo/personnel-transfers",
+        headers=_headers(manager_a, "cross-transfer"),
+        json={
+            "employee_code": "SORT-1",
+            "to_role": "SORT_OPERATOR",
+            "target_factory_id": "FACTORY-B",
+            "reason": "跨厂补充人员",
+        },
+    )
+    assert cross.status_code == 201
+    assert cross.json()["status"] == "TARGET_MANAGER_PENDING"
+    cross_id = cross.json()["transfer_id"]
+    bypass = admin.post(
+        f"/api/v1/mobile/bamboo/personnel-transfers/{cross_id}/execute",
+        headers=_headers(admin, "cross-bypass"),
+        json={"approve": True, "note": "尝试跳过"},
+    )
+    assert bypass.status_code == 409
+    assert bypass.json()["code"] == "BOTH_MANAGERS_REQUIRED"
+    manager_b.post(
+        f"/api/v1/mobile/bamboo/personnel-transfers/{cross_id}/manager-decision",
+        headers=_headers(manager_b, "target-manager-approve"),
+        json={"approve": True, "note": "二厂厂长同意"},
+    ).raise_for_status()
+    admin.post(
+        f"/api/v1/mobile/bamboo/personnel-transfers/{cross_id}/execute",
+        headers=_headers(admin, "cross-execute"),
+        json={"approve": True, "note": "管理员执行跨厂调动"},
+    ).raise_for_status()
+    transferred = _client(services, "SORT-1").get("/api/v1/mobile/auth/session").json()
+    assert transferred["factory_id"] == "FACTORY-B"
+    assert transferred["bamboo_role"] == "SORT_OPERATOR"
+
+    replacement = admin.post(
+        "/api/v1/mobile/bamboo/personnel-transfers",
+        headers=_headers(admin, "replace-manager"),
+        json={
+            "employee_code": "FUTURE-MANAGER",
+            "to_role": "PLANT_MANAGER",
+            "target_factory_id": "FACTORY-B",
+            "reason": "管理员更换二厂厂长",
+        },
+    )
+    assert replacement.status_code == 201
+    admin.post(
+        f"/api/v1/mobile/bamboo/personnel-transfers/{replacement.json()['transfer_id']}/execute",
+        headers=_headers(admin, "replace-manager-execute"),
+        json={"approve": True, "note": "执行厂长更换"},
+    ).raise_for_status()
+    new_manager = _client(services, "FUTURE-MANAGER")
+    assert new_manager.get("/api/v1/mobile/auth/session").json()["bamboo_role"] == "PLANT_MANAGER"
 
 
 def test_manager_configures_factory_rule_and_assigns_new_hire(tmp_path: Path) -> None:

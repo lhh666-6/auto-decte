@@ -25,6 +25,7 @@ from app.adapters.database.models import (
     BambooInspectionWindowRow,
     BambooPayrollFactRow,
     BambooPayrollRuleVersionRow,
+    BambooPersonnelTransferRow,
     BambooRecordRow,
     BambooReturnRow,
     BambooRoleChangeRequestRow,
@@ -516,6 +517,11 @@ class BambooOperationsService:
                     EmployeeBambooAssignmentRow.status == "ACTIVE",
                 )
             )
+            if active_assignment is not None:
+                raise BambooOperationError(
+                    "TRANSFER_REQUEST_REQUIRED",
+                    "已有在岗员工必须通过人员调动流程变更职务或工厂",
+                )
             if (
                 actor.role is BambooRole.PLANT_MANAGER
                 and active_assignment is not None
@@ -1496,44 +1502,260 @@ class BambooOperationsService:
     def request_role_change(
         self, *, actor: BambooActor, to_role: str, reason: str
     ) -> dict[str, Any]:
-        if actor.role.value not in PRODUCTION_ROLES or to_role not in PRODUCTION_ROLES:
-            raise BambooOperationError("ROLE_CHANGE_FORBIDDEN", "仅生产工人可申请切换生产职务")
-        if to_role == actor.role.value:
-            raise BambooOperationError("ROLE_UNCHANGED", "目标职务与当前职务相同")
+        del actor, to_role, reason
+        raise BambooOperationError(
+            "WORKER_TRANSFER_FORBIDDEN",
+            "员工不能在线自行申请换岗，请线下联系厂长",
+        )
+
+    def create_personnel_transfer(
+        self,
+        *,
+        actor: BambooActor,
+        employee_code: str,
+        to_role: str,
+        target_factory_id: str,
+        reason: str,
+    ) -> dict[str, Any]:
+        if actor.role not in {BambooRole.PLANT_MANAGER, BambooRole.SYSTEM_ADMIN}:
+            raise BambooOperationError(
+                "WORKER_TRANSFER_FORBIDDEN",
+                "员工不能在线自行申请换岗，请线下联系厂长",
+            )
         now = datetime.now(UTC)
         with Session(self._engine) as session, session.begin():
-            target = session.get(BambooRoleDefinitionRow, to_role)
-            if target is None or not target.active or not target.self_requestable:
-                raise BambooOperationError(
-                    "ROLE_NOT_REQUESTABLE",
-                    "该职位未开放换岗申请",
-                )
-            duplicate = session.scalar(
-                select(BambooRoleChangeRequestRow).where(
-                    BambooRoleChangeRequestRow.employee_code == actor.employee_code,
-                    BambooRoleChangeRequestRow.status == "PENDING",
+            assignment = session.scalar(
+                select(EmployeeBambooAssignmentRow).where(
+                    EmployeeBambooAssignmentRow.employee_catalog == "employees",
+                    EmployeeBambooAssignmentRow.employee_code == employee_code,
+                    EmployeeBambooAssignmentRow.status == "ACTIVE",
                 )
             )
-            if duplicate is not None:
-                raise BambooOperationError("ROLE_CHANGE_PENDING", "已有待厂长处理的职务申请")
-            row = BambooRoleChangeRequestRow(
-                request_id=str(uuid4()),
-                employee_code=actor.employee_code,
-                factory_id=actor.factory_id,
-                from_role=actor.role.value,
+            if assignment is None:
+                raise BambooOperationError("EMPLOYEE_NOT_FOUND", "员工没有有效在岗信息")
+            target_factory = session.get(BambooFactoryRow, target_factory_id)
+            target = session.get(BambooRoleDefinitionRow, to_role)
+            if target_factory is None or not target_factory.active:
+                raise BambooOperationError("FACTORY_NOT_FOUND", "目标工厂不存在或已停用")
+            if target is None or not target.active:
+                raise BambooOperationError("ROLE_NOT_PUBLISHED", "目标职位不存在或已停用")
+            pending = session.scalar(
+                select(BambooPersonnelTransferRow).where(
+                    BambooPersonnelTransferRow.employee_code == employee_code,
+                    BambooPersonnelTransferRow.status.in_(
+                        ["TARGET_MANAGER_PENDING", "ADMIN_PENDING"]
+                    ),
+                )
+            )
+            if pending is not None:
+                raise BambooOperationError("TRANSFER_ALREADY_PENDING", "员工已有待处理调动")
+            if actor.role is BambooRole.SYSTEM_ADMIN:
+                if to_role != BambooRole.PLANT_MANAGER.value:
+                    raise BambooOperationError(
+                        "MANAGER_REQUEST_REQUIRED",
+                        "普通人员调动必须由原工厂厂长发起",
+                    )
+                transfer_type = "MANAGER_REPLACEMENT"
+                status = "ADMIN_PENDING"
+                source_decision = None
+                source_manager_id = None
+                source_decided_at = None
+            else:
+                if assignment.factory_id != actor.factory_id:
+                    raise BambooOperationError(
+                        "EMPLOYEE_OUTSIDE_FACTORY",
+                        "厂长只能发起本厂员工调动",
+                    )
+                if to_role in {
+                    BambooRole.PLANT_MANAGER.value,
+                    BambooRole.FINANCE_APPROVER.value,
+                    BambooRole.SYSTEM_ADMIN.value,
+                }:
+                    raise BambooOperationError(
+                        "ADMIN_ONLY_ROLE",
+                        "厂长、财务和管理员职位只能由管理员管理",
+                    )
+                transfer_type = (
+                    "INTERNAL"
+                    if assignment.factory_id == target_factory_id
+                    else "CROSS_FACTORY"
+                )
+                status = (
+                    "ADMIN_PENDING"
+                    if transfer_type == "INTERNAL"
+                    else "TARGET_MANAGER_PENDING"
+                )
+                source_decision = "APPROVED"
+                source_manager_id = actor.actor_id
+                source_decided_at = now
+            if assignment.factory_id == target_factory_id and assignment.role_code == to_role:
+                raise BambooOperationError("ROLE_UNCHANGED", "目标工厂和职位均未变化")
+            row = BambooPersonnelTransferRow(
+                transfer_id=str(uuid4()),
+                employee_code=employee_code,
+                transfer_type=transfer_type,
+                source_factory_id=assignment.factory_id,
+                target_factory_id=target_factory_id,
+                from_role=assignment.role_code,
                 to_role=to_role,
-                reason=reason,
-                status="PENDING",
+                reason=reason.strip(),
+                status=status,
                 requested_by=actor.actor_id,
                 requested_at=now,
-                decided_by=None,
-                decided_at=None,
-                decision_note=None,
+                source_manager_id=source_manager_id,
+                source_manager_decision=source_decision,
+                source_manager_decided_at=source_decided_at,
+                target_manager_id=None,
+                target_manager_decision=None,
+                target_manager_decided_at=None,
+                admin_id=None,
+                admin_decision=None,
+                admin_note=None,
+                admin_decided_at=None,
+                executed_at=None,
                 revision=1,
             )
             session.add(row)
-            return self._role_request(row)
+            session.flush()
+            return self._personnel_transfer(row)
 
+    def list_personnel_transfers(self, actor: BambooActor) -> list[dict[str, Any]]:
+        if actor.role not in {BambooRole.PLANT_MANAGER, BambooRole.SYSTEM_ADMIN}:
+            raise BambooOperationError("TRANSFER_VIEW_FORBIDDEN", "当前职务不能查看人员调动")
+        with Session(self._engine) as session:
+            query = select(BambooPersonnelTransferRow)
+            if actor.role is BambooRole.PLANT_MANAGER:
+                query = query.where(
+                    (BambooPersonnelTransferRow.source_factory_id == actor.factory_id)
+                    | (BambooPersonnelTransferRow.target_factory_id == actor.factory_id)
+                )
+            rows = session.scalars(
+                query.order_by(BambooPersonnelTransferRow.requested_at.desc())
+            ).all()
+            return [self._personnel_transfer(row) for row in rows]
+
+    def decide_personnel_transfer_as_manager(
+        self,
+        transfer_id: str,
+        *,
+        actor: BambooActor,
+        approve: bool,
+        note: str,
+    ) -> dict[str, Any]:
+        del note
+        if actor.role is not BambooRole.PLANT_MANAGER:
+            raise BambooOperationError("MANAGER_REQUIRED", "仅目标工厂厂长可以审批跨厂调动")
+        now = datetime.now(UTC)
+        with Session(self._engine) as session, session.begin():
+            row = session.get(BambooPersonnelTransferRow, transfer_id)
+            if (
+                row is None
+                or row.transfer_type != "CROSS_FACTORY"
+                or row.target_factory_id != actor.factory_id
+            ):
+                raise BambooOperationError("TRANSFER_NOT_FOUND", "跨厂调动不存在")
+            if row.status != "TARGET_MANAGER_PENDING":
+                raise BambooOperationError("TRANSFER_ALREADY_DECIDED", "调动已处理")
+            row.target_manager_id = actor.actor_id
+            row.target_manager_decision = "APPROVED" if approve else "REJECTED"
+            row.target_manager_decided_at = now
+            row.status = "ADMIN_PENDING" if approve else "REJECTED"
+            row.revision += 1
+            return self._personnel_transfer(row)
+
+    def execute_personnel_transfer(
+        self,
+        transfer_id: str,
+        *,
+        actor: BambooActor,
+        approve: bool,
+        note: str,
+    ) -> dict[str, Any]:
+        if actor.role is not BambooRole.SYSTEM_ADMIN:
+            raise BambooOperationError("ADMIN_REQUIRED", "仅管理员可以最终执行人员调动")
+        now = datetime.now(UTC)
+        with Session(self._engine) as session, session.begin():
+            row = session.get(BambooPersonnelTransferRow, transfer_id)
+            if row is None:
+                raise BambooOperationError("TRANSFER_NOT_FOUND", "人员调动不存在")
+            if row.transfer_type == "CROSS_FACTORY" and not (
+                row.source_manager_decision == "APPROVED"
+                and row.target_manager_decision == "APPROVED"
+            ):
+                raise BambooOperationError(
+                    "BOTH_MANAGERS_REQUIRED",
+                    "跨厂调动必须由两厂厂长同时同意",
+                )
+            if row.status != "ADMIN_PENDING":
+                raise BambooOperationError("TRANSFER_NOT_READY", "人员调动尚未满足执行条件")
+            row.admin_id = actor.actor_id
+            row.admin_decision = "APPROVED" if approve else "REJECTED"
+            row.admin_note = note
+            row.admin_decided_at = now
+            row.revision += 1
+            if not approve:
+                row.status = "REJECTED"
+                return self._personnel_transfer(row)
+            target_role = session.get(BambooRoleDefinitionRow, row.to_role)
+            target_factory = session.get(BambooFactoryRow, row.target_factory_id)
+            if target_role is None or not target_role.active:
+                raise BambooOperationError("ROLE_NOT_PUBLISHED", "目标职位不存在或已停用")
+            if target_factory is None or not target_factory.active:
+                raise BambooOperationError("FACTORY_NOT_FOUND", "目标工厂不存在或已停用")
+            if row.transfer_type == "MANAGER_REPLACEMENT":
+                session.execute(
+                    update(EmployeeBambooAssignmentRow)
+                    .where(
+                        EmployeeBambooAssignmentRow.factory_id == row.target_factory_id,
+                        EmployeeBambooAssignmentRow.role_code == BambooRole.PLANT_MANAGER.value,
+                        EmployeeBambooAssignmentRow.status == "ACTIVE",
+                    )
+                    .values(status="INACTIVE", ended_at=now)
+                )
+            session.execute(
+                update(EmployeeBambooAssignmentRow)
+                .where(
+                    EmployeeBambooAssignmentRow.employee_code == row.employee_code,
+                    EmployeeBambooAssignmentRow.status == "ACTIVE",
+                )
+                .values(status="INACTIVE", ended_at=now)
+            )
+            session.add(
+                EmployeeBambooAssignmentRow(
+                    assignment_id=f"MBA-{uuid4().hex}",
+                    employee_catalog="employees",
+                    employee_code=row.employee_code,
+                    factory_id=row.target_factory_id,
+                    role_code=row.to_role,
+                    status="ACTIVE",
+                    effective_at=now,
+                    ended_at=None,
+                    created_by=actor.actor_id,
+                    created_at=now,
+                )
+            )
+            profile = session.get(
+                MobileAccessProfileRow,
+                ("employees", row.employee_code),
+            )
+            if profile is not None:
+                profile.team_id = f"TEAM-{row.target_factory_id}"
+                profile.team_name = target_factory.name
+                profile.position = target_role.display_name
+            row.status = "EXECUTED"
+            row.executed_at = now
+            self._notify(
+                session,
+                recipient_actor_id=row.employee_code,
+                category="PERSONNEL_TRANSFER_COMPLETED",
+                title="人员调动已完成",
+                body=f"你的工厂/职位已调整为 {target_factory.name} · {target_role.display_name}。",
+                link="/mobile/profile",
+                payload={"transfer_id": row.transfer_id},
+                now=now,
+            )
+            session.flush()
+            return self._personnel_transfer(row)
     def list_role_changes(self, actor: BambooActor) -> list[dict[str, Any]]:
         if actor.role is not BambooRole.PLANT_MANAGER:
             raise BambooOperationError("MANAGER_REQUIRED", "仅厂长可以处理职务申请")
@@ -1964,6 +2186,28 @@ class BambooOperationsService:
             "requested_at": row.requested_at,
             "decided_at": row.decided_at,
             "decision_note": row.decision_note,
+            "revision": row.revision,
+        }
+
+    @staticmethod
+    def _personnel_transfer(row: BambooPersonnelTransferRow) -> dict[str, Any]:
+        return {
+            "transfer_id": row.transfer_id,
+            "employee_code": row.employee_code,
+            "transfer_type": row.transfer_type,
+            "source_factory_id": row.source_factory_id,
+            "target_factory_id": row.target_factory_id,
+            "from_role": row.from_role,
+            "to_role": row.to_role,
+            "reason": row.reason,
+            "status": row.status,
+            "requested_by": row.requested_by,
+            "requested_at": row.requested_at,
+            "source_manager_decision": row.source_manager_decision,
+            "target_manager_decision": row.target_manager_decision,
+            "admin_decision": row.admin_decision,
+            "admin_note": row.admin_note,
+            "executed_at": row.executed_at,
             "revision": row.revision,
         }
 

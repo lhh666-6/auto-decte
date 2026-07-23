@@ -125,6 +125,18 @@ class RoleChangeDecisionRequest(BaseModel):
     note: str = Field(default="", max_length=1000)
 
 
+class CreatePersonnelTransferRequest(BaseModel):
+    employee_code: str = Field(min_length=1, max_length=64)
+    to_role: str = Field(min_length=1, max_length=64)
+    target_factory_id: str = Field(min_length=1, max_length=64)
+    reason: str = Field(min_length=1, max_length=2000)
+
+
+class PersonnelTransferDecisionRequest(BaseModel):
+    approve: bool
+    note: str = Field(default="", max_length=2000)
+
+
 class FinanceDecisionRequest(BaseModel):
     decision: str
     note: str = Field(default="", max_length=2000)

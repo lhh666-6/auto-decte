@@ -22,12 +22,14 @@ from app.api.schemas.bamboo_process_ds import (
     CreateFactoryEmployeeRequest,
     CreateFactoryRequest,
     CreateInspectionRequest,
+    CreatePersonnelTransferRequest,
     EmployeeRoleAssignmentRequest,
     FinanceDecisionRequest,
     FinanceInquiryReplyRequest,
     FinanceInquiryRequest,
     InspectionAppealDecisionRequest,
     PayrollRuleRequest,
+    PersonnelTransferDecisionRequest,
     RoleChangeDecisionRequest,
     RoleChangeRequest,
     SelectiveReturnRequest,
@@ -677,6 +679,78 @@ def request_role_change(
     try:
         return _services(request).bamboo_operations.request_role_change(
             actor=actor, to_role=body.to_role, reason=body.reason
+        )
+    except BambooOperationError as error:
+        raise _operation_error(error) from error
+
+
+@router.post("/personnel-transfers", status_code=status.HTTP_201_CREATED)
+def create_personnel_transfer(
+    body: CreatePersonnelTransferRequest,
+    request: Request,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token"),
+) -> dict[str, object]:
+    actor = _bamboo_actor(request)
+    _require_write_headers(request, idempotency_key, x_csrf_token)
+    try:
+        return _services(request).bamboo_operations.create_personnel_transfer(
+            actor=actor,
+            employee_code=body.employee_code,
+            to_role=body.to_role,
+            target_factory_id=body.target_factory_id,
+            reason=body.reason,
+        )
+    except BambooOperationError as error:
+        raise _operation_error(error) from error
+
+
+@router.get("/personnel-transfers")
+def list_personnel_transfers(request: Request) -> list[dict[str, object]]:
+    actor = _bamboo_actor(request)
+    try:
+        return _services(request).bamboo_operations.list_personnel_transfers(actor)
+    except BambooOperationError as error:
+        raise _operation_error(error) from error
+
+
+@router.post("/personnel-transfers/{transfer_id}/manager-decision")
+def decide_personnel_transfer_as_manager(
+    transfer_id: str,
+    body: PersonnelTransferDecisionRequest,
+    request: Request,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token"),
+) -> dict[str, object]:
+    actor = _bamboo_actor(request)
+    _require_write_headers(request, idempotency_key, x_csrf_token)
+    try:
+        return _services(request).bamboo_operations.decide_personnel_transfer_as_manager(
+            transfer_id,
+            actor=actor,
+            approve=body.approve,
+            note=body.note,
+        )
+    except BambooOperationError as error:
+        raise _operation_error(error) from error
+
+
+@router.post("/personnel-transfers/{transfer_id}/execute")
+def execute_personnel_transfer(
+    transfer_id: str,
+    body: PersonnelTransferDecisionRequest,
+    request: Request,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token"),
+) -> dict[str, object]:
+    actor = _bamboo_actor(request)
+    _require_write_headers(request, idempotency_key, x_csrf_token)
+    try:
+        return _services(request).bamboo_operations.execute_personnel_transfer(
+            transfer_id,
+            actor=actor,
+            approve=body.approve,
+            note=body.note,
         )
     except BambooOperationError as error:
         raise _operation_error(error) from error
