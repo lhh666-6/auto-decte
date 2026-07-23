@@ -3,12 +3,13 @@
 import hashlib
 import json
 from collections import defaultdict
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from typing import Any
+from typing import Any, cast
 from uuid import uuid4
 
 from sqlalchemy import Engine, func, select, update
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.orm import Session
 
 from app.adapters.database.models import (
@@ -21,6 +22,7 @@ from app.adapters.database.models import (
     BambooFinanceInquiryRow,
     BambooInspectionExceptionRow,
     BambooInspectionRow,
+    BambooInspectionWindowRow,
     BambooPayrollFactRow,
     BambooPayrollRuleVersionRow,
     BambooRecordRow,
@@ -90,6 +92,10 @@ def _string_list(value: Any) -> list[str]:
     if isinstance(value, list):
         return [str(item).strip() for item in value if str(item).strip()]
     return [str(value).strip()]
+
+
+def _utc(value: datetime) -> datetime:
+    return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
 
 
 def _option_list(configuration: dict[str, Any], key: str, fallback: list[str]) -> list[str]:
@@ -571,6 +577,91 @@ class BambooOperationsService:
                 "status": "ACTIVE",
             }
 
+    def list_inspection_queue(
+        self,
+        actor: BambooActor,
+        *,
+        bucket: str = "active",
+    ) -> dict[str, Any]:
+        if actor.role not in {
+            BambooRole.INSPECTOR,
+            BambooRole.SUPERVISOR,
+            BambooRole.PLANT_MANAGER,
+        }:
+            raise BambooOperationError("INSPECTION_QUEUE_FORBIDDEN", "当前职务不能查看检测队列")
+        if bucket not in {"active", "history"}:
+            raise BambooOperationError("INVALID_INSPECTION_BUCKET", "检测队列分组无效")
+        now = datetime.now(UTC)
+        with Session(self._engine) as session, session.begin():
+            rows = session.execute(
+                select(BambooInspectionWindowRow, BambooRecordRow)
+                .join(
+                    BambooRecordRow,
+                    BambooRecordRow.record_id == BambooInspectionWindowRow.record_id,
+                )
+                .where(BambooInspectionWindowRow.factory_id == actor.factory_id)
+                .order_by(BambooInspectionWindowRow.deadline_at, BambooRecordRow.display_no)
+            ).all()
+            items: list[dict[str, Any]] = []
+            for window, record in rows:
+                if window.status in {"OPEN", "CLAIMED"} and now >= _utc(window.deadline_at):
+                    window.status = "EXPIRED"
+                    window.appeal_deadline_at = _utc(window.deadline_at) + timedelta(hours=24)
+                    window.revision += 1
+                is_active = window.status in {"OPEN", "CLAIMED"}
+                if (bucket == "active") != is_active:
+                    continue
+                items.append(self._inspection_window(window, record, now))
+            return {"bucket": bucket, "items": items}
+
+    def claim_inspection(self, record_id: str, *, actor: BambooActor) -> dict[str, Any]:
+        if actor.role is not BambooRole.INSPECTOR:
+            raise BambooOperationError("INSPECTOR_REQUIRED", "仅检测人可以领取检测任务")
+        now = datetime.now(UTC)
+        with Session(self._engine) as session, session.begin():
+            window = session.get(BambooInspectionWindowRow, record_id)
+            if window is None or window.factory_id != actor.factory_id:
+                raise BambooOperationError("INSPECTION_WINDOW_NOT_FOUND", "检测任务不存在")
+            if now >= _utc(window.deadline_at):
+                if window.status in {"OPEN", "CLAIMED"}:
+                    window.status = "EXPIRED"
+                    window.appeal_deadline_at = _utc(window.deadline_at) + timedelta(hours=24)
+                    window.revision += 1
+                raise BambooOperationError("INSPECTION_WINDOW_EXPIRED", "两小时检测窗口已结束")
+            if window.claimed_by == actor.actor_id and window.status == "CLAIMED":
+                record = session.get(BambooRecordRow, record_id)
+                if record is None:  # pragma: no cover
+                    raise BambooOperationError("INSPECTION_WINDOW_NOT_FOUND", "检测任务不存在")
+                return self._inspection_window(window, record, now)
+            result = cast(
+                CursorResult[Any],
+                session.execute(
+                    update(BambooInspectionWindowRow)
+                    .where(
+                        BambooInspectionWindowRow.record_id == record_id,
+                        BambooInspectionWindowRow.status == "OPEN",
+                        BambooInspectionWindowRow.claimed_by.is_(None),
+                    )
+                    .values(
+                        status="CLAIMED",
+                        claimed_by=actor.actor_id,
+                        claimed_at=now,
+                        revision=BambooInspectionWindowRow.revision + 1,
+                    )
+                )
+            )
+            if result.rowcount != 1:
+                raise BambooOperationError(
+                    "INSPECTION_ALREADY_CLAIMED",
+                    "该表单已由另一名检测员领取",
+                )
+            session.flush()
+            window = session.get(BambooInspectionWindowRow, record_id)
+            record = session.get(BambooRecordRow, record_id)
+            if window is None or record is None:  # pragma: no cover
+                raise BambooOperationError("INSPECTION_WINDOW_NOT_FOUND", "检测任务不存在")
+            return self._inspection_window(window, record, now)
+
     def list_role_options(self, actor: BambooActor) -> list[dict[str, Any]]:
         manager_roles = PRODUCTION_ROLES | {
             BambooRole.INSPECTOR.value,
@@ -824,8 +915,8 @@ class BambooOperationsService:
         record_id: str,
         *,
         actor: BambooActor,
-        serial_no: str,
-        target_stage: BambooStage,
+        serial_no: str | None,
+        target_stage: BambooStage | None,
         moisture_points: list[Decimal],
         conclusion: str,
         note: str | None,
@@ -836,14 +927,18 @@ class BambooOperationsService:
     ) -> dict[str, Any]:
         if actor.role is not BambooRole.INSPECTOR:
             raise BambooOperationError("INSPECTOR_REQUIRED", "仅检测人可以登记检测记录")
-        if target_stage not in {BambooStage.SORT, BambooStage.DIPPING, BambooStage.DRYING}:
+        if target_stage is not None and target_stage not in {
+            BambooStage.SORT,
+            BambooStage.DIPPING,
+            BambooStage.DRYING,
+        }:
             raise BambooOperationError("INVALID_INSPECTION_STAGE", "检测流程只能选择前三个生产环节")
         now = datetime.now(UTC)
         canonical = json.dumps(
             {
                 "record_id": record_id,
                 "serial_no": serial_no,
-                "target_stage": target_stage.value,
+                "target_stage": target_stage.value if target_stage else None,
                 "moisture_points": [str(value) for value in moisture_points],
                 "conclusion": conclusion,
                 "note": note,
@@ -862,47 +957,65 @@ class BambooOperationsService:
             if existing is not None:
                 return self._inspection(session, existing)
             record = self._record(session, record_id, actor)
-            signed = set(
-                session.scalars(
-                    select(BambooStageSubmissionRow.stage_key).where(
-                        BambooStageSubmissionRow.record_id == record_id,
-                        BambooStageSubmissionRow.invalidated.is_(False),
-                    )
-                ).all()
+            window = session.get(BambooInspectionWindowRow, record_id)
+            if window is None:
+                raise BambooOperationError("INSPECTION_WINDOW_NOT_OPEN", "主管审核后才开放检测")
+            submitted = session.scalar(
+                select(BambooInspectionRow).where(
+                    BambooInspectionRow.record_id == record_id,
+                    BambooInspectionRow.inspection_kind == "FORMAL",
+                )
             )
+            if submitted is not None:
+                raise BambooOperationError(
+                    "INSPECTION_ALREADY_SUBMITTED",
+                    "该表单已完成一次正式检测",
+                )
+            if now >= _utc(window.deadline_at):
+                if window.status in {"OPEN", "CLAIMED"}:
+                    window.status = "EXPIRED"
+                    window.appeal_deadline_at = _utc(window.deadline_at) + timedelta(hours=24)
+                    window.revision += 1
+                raise BambooOperationError("INSPECTION_WINDOW_EXPIRED", "两小时检测窗口已结束")
+            if window.status != "CLAIMED" or window.claimed_by != actor.actor_id:
+                raise BambooOperationError("INSPECTION_CLAIM_REQUIRED", "请先领取该检测任务")
             form_type = BambooFormType(record.form_type)
-            required_stages = (
-                {BambooStage.SORT.value}
-                if form_type is BambooFormType.SORTING
-                else {BambooStage.DIPPING.value, BambooStage.DRYING.value}
-            )
             allowed_targets = (
                 {BambooStage.SORT}
                 if form_type is BambooFormType.SORTING
                 else {BambooStage.DIPPING, BambooStage.DRYING}
             )
+            if target_stage is None:
+                target_stage = (
+                    BambooStage.SORT
+                    if form_type is BambooFormType.SORTING
+                    else BambooStage.DRYING
+                )
             if target_stage not in allowed_targets:
                 raise BambooOperationError(
                     "INVALID_INSPECTION_STAGE",
                     "检测目标必须属于当前独立表单",
                 )
-            if not required_stages <= signed:
+            if conclusion not in {"CONFORMING", "NONCONFORMING"}:
+                raise BambooOperationError("INVALID_INSPECTION_CONCLUSION", "检测结论无效")
+            text = (text_evidence or note or "").strip()
+            if conclusion == "NONCONFORMING" and not text:
                 raise BambooOperationError(
-                    "INSPECTION_WINDOW_NOT_OPEN",
-                    "当前表单生产签字完成后才开放检测",
+                    "INSPECTION_EVIDENCE_REQUIRED",
+                    "不合格检测至少填写文字或提交照片、录音",
                 )
-            if "SUPERVISOR" in signed:
-                raise BambooOperationError("INSPECTION_WINDOW_CLOSED", "主管签字后检测窗口已关闭")
-            if not moisture_points:
-                raise BambooOperationError("MOISTURE_REQUIRED", "至少填写一个检测数值")
-            average = sum(moisture_points, Decimal("0")) / len(moisture_points)
+            average = (
+                sum(moisture_points, Decimal("0")) / len(moisture_points)
+                if moisture_points
+                else None
+            )
             row = BambooInspectionRow(
                 inspection_id=str(uuid4()),
                 record_id=record_id,
-                serial_no=serial_no.strip(),
+                serial_no=(serial_no or record.display_no).strip(),
                 target_stage=target_stage.value,
                 moisture_points=[str(value) for value in moisture_points],
-                average_value=str(average.quantize(Decimal("0.01"))),
+                average_value=(str(average.quantize(Decimal("0.01"))) if average else ""),
                 conclusion=conclusion,
                 note=note,
                 actor_id=actor.actor_id,
@@ -915,10 +1028,11 @@ class BambooOperationsService:
                 request_id=request_id,
                 idempotency_key=idempotency_key,
                 window_revision=record.revision,
+                inspection_kind="FORMAL",
             )
             session.add(row)
             session.flush()
-            if text_evidence:
+            if text:
                 session.add(
                     BambooEvidenceAssetRow(
                         asset_id=str(uuid4()),
@@ -927,9 +1041,9 @@ class BambooOperationsService:
                         file_id=None,
                         uri=None,
                         mime_type="text/plain",
-                        size_bytes=len(text_evidence.encode()),
-                        sha256=hashlib.sha256(text_evidence.encode()).hexdigest(),
-                        text_content=text_evidence,
+                        size_bytes=len(text.encode()),
+                        sha256=hashlib.sha256(text.encode()).hexdigest(),
+                        text_content=text,
                         actor_id=actor.actor_id,
                         created_at=now,
                     )
@@ -947,8 +1061,14 @@ class BambooOperationsService:
                         revision=1,
                     )
                 )
+            window.status = "COMPLETED"
+            window.inspection_id = row.inspection_id
+            window.completed_at = now
+            window.revision += 1
             session.flush()
-            return self._inspection(session, row)
+            result = self._inspection(session, row)
+            result["display_text"] = "检测合格" if conclusion == "CONFORMING" else "检测不合格"
+            return result
 
     def add_file_evidence(
         self,
@@ -1457,6 +1577,28 @@ class BambooOperationsService:
             "payload_hash": row.payload_hash,
             "evidence": [self._evidence(item) for item in evidence],
             "exception": self._exception(exception) if exception else None,
+        }
+
+    @staticmethod
+    def _inspection_window(
+        window: BambooInspectionWindowRow,
+        record: BambooRecordRow,
+        now: datetime,
+    ) -> dict[str, Any]:
+        return {
+            "record_id": record.record_id,
+            "display_no": record.display_no,
+            "form_type": record.form_type,
+            "cage_no": str((record.base_info or {}).get("cage_no", "")),
+            "status": window.status,
+            "opened_at": window.opened_at,
+            "deadline_at": window.deadline_at,
+            "inside_window": now < _utc(window.deadline_at),
+            "claimed_by": window.claimed_by,
+            "claimed_at": window.claimed_at,
+            "completed_at": window.completed_at,
+            "appeal_deadline_at": window.appeal_deadline_at,
+            "revision": window.revision,
         }
 
     @staticmethod

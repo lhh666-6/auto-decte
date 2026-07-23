@@ -82,9 +82,9 @@ class BambooDashboardResponse(BaseModel):
 
 
 class CreateInspectionRequest(BaseModel):
-    serial_no: str = Field(min_length=1, max_length=64)
-    target_stage: str
-    moisture_points: list[float] = Field(min_length=1, max_length=20)
+    serial_no: str | None = Field(default=None, max_length=64)
+    target_stage: str | None = None
+    moisture_points: list[float] = Field(default_factory=list, max_length=20)
     conclusion: str
     note: str | None = Field(default=None, max_length=1000)
     text_evidence: str | None = Field(default=None, max_length=10000)

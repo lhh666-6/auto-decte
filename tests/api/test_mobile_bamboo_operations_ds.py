@@ -61,6 +61,119 @@ def _submit(
     return result.json()
 
 
+def test_inspection_queue_claims_once_and_accepts_one_click_conforming(
+    tmp_path: Path,
+) -> None:
+    services = build_services(Settings(data_root=tmp_path, bamboo_plant_audit_wait_hours=0))
+    for code, role in (
+        ("SORT-Q", "SORT_OPERATOR"),
+        ("INSPECT-Q1", "INSPECTOR"),
+        ("INSPECT-Q2", "INSPECTOR"),
+        ("SUP-Q", "SUPERVISOR"),
+        ("MANAGER-Q", "PLANT_MANAGER"),
+    ):
+        _add_user(services, code, role)
+    sort = _client(services, "SORT-Q")
+    inspector = _client(services, "INSPECT-Q1")
+    other_inspector = _client(services, "INSPECT-Q2")
+    supervisor = _client(services, "SUP-Q")
+    manager = _client(services, "MANAGER-Q")
+    record = sort.post(
+        "/api/v1/mobile/bamboo/records",
+        headers=_headers(sort, "queue-create"),
+        json={
+            "base_info": {
+                "cage_no": "QUEUE-01",
+                "length": "2.3",
+                "shade": "深",
+                "grade": "A",
+                "bundle_count": 8,
+            }
+        },
+    ).json()
+    record_id = str(record["record_id"])
+    _submit(sort, record_id, "SORT", 1, {"moisture": [12]})
+    _submit(supervisor, record_id, "SUPERVISOR", 2, {"result": "APPROVED"})
+
+    queue = inspector.get("/api/v1/mobile/bamboo/inspection-queue").json()
+    assert [(item["record_id"], item["cage_no"]) for item in queue["items"]] == [
+        (record_id, "QUEUE-01")
+    ]
+    claimed = inspector.post(
+        f"/api/v1/mobile/bamboo/inspection-queue/{record_id}/claim",
+        headers=_headers(inspector, "queue-claim"),
+    )
+    assert claimed.status_code == 200
+    assert claimed.json()["claimed_by"] == "INSPECT-Q1"
+    rejected = other_inspector.post(
+        f"/api/v1/mobile/bamboo/inspection-queue/{record_id}/claim",
+        headers=_headers(other_inspector, "queue-other-claim"),
+    )
+    assert rejected.status_code == 409
+    assert rejected.json()["code"] == "INSPECTION_ALREADY_CLAIMED"
+
+    inspection = inspector.post(
+        f"/api/v1/mobile/bamboo/records/{record_id}/inspections",
+        headers=_headers(inspector, "queue-result"),
+        json={"conclusion": "CONFORMING", "device_id": "inspect-phone"},
+    )
+    assert inspection.status_code == 201, inspection.text
+    assert inspection.json()["display_text"] == "检测合格"
+    duplicate = inspector.post(
+        f"/api/v1/mobile/bamboo/records/{record_id}/inspections",
+        headers=_headers(inspector, "queue-result-duplicate"),
+        json={"conclusion": "CONFORMING", "device_id": "inspect-phone"},
+    )
+    assert duplicate.status_code == 409
+    assert duplicate.json()["code"] == "INSPECTION_ALREADY_SUBMITTED"
+    audited = _submit(manager, record_id, "PLANT_AUDIT", 3, {"result": "APPROVED"})
+    assert audited["status"] == "COMPLETED"
+
+    second = sort.post(
+        "/api/v1/mobile/bamboo/records",
+        headers=_headers(sort, "queue-create-abnormal"),
+        json={
+            "base_info": {
+                "cage_no": "QUEUE-02",
+                "length": "2.3",
+                "shade": "浅",
+                "grade": "B",
+                "bundle_count": 4,
+            }
+        },
+    ).json()
+    second_id = str(second["record_id"])
+    _submit(sort, second_id, "SORT", 1, {"moisture": [11]})
+    _submit(supervisor, second_id, "SUPERVISOR", 2, {"result": "APPROVED"})
+    inspector.post(
+        f"/api/v1/mobile/bamboo/inspection-queue/{second_id}/claim",
+        headers=_headers(inspector, "queue-claim-abnormal"),
+    ).raise_for_status()
+    missing_evidence = inspector.post(
+        f"/api/v1/mobile/bamboo/records/{second_id}/inspections",
+        headers=_headers(inspector, "queue-result-no-evidence"),
+        json={"conclusion": "NONCONFORMING", "device_id": "inspect-phone"},
+    )
+    assert missing_evidence.status_code == 409
+    assert missing_evidence.json()["code"] == "INSPECTION_EVIDENCE_REQUIRED"
+    abnormal = inspector.post(
+        f"/api/v1/mobile/bamboo/records/{second_id}/inspections",
+        headers=_headers(inspector, "queue-result-abnormal"),
+        json={
+            "conclusion": "NONCONFORMING",
+            "target_stage": "SORT",
+            "text_evidence": "竹丝含水率异常",
+            "device_id": "inspect-phone",
+        },
+    )
+    assert abnormal.status_code == 201
+    assert abnormal.json()["exception"]["status"] == "OPEN"
+    history = inspector.get(
+        "/api/v1/mobile/bamboo/inspection-queue", params={"bucket": "history"}
+    ).json()["items"]
+    assert {item["record_id"] for item in history} == {record_id, second_id}
+
+
 def test_complete_bamboo_operations_from_payroll_through_finance(tmp_path: Path) -> None:
     services = build_services(Settings(data_root=tmp_path, bamboo_plant_audit_wait_hours=0))
     for code, role in (
@@ -137,6 +250,11 @@ def test_complete_bamboo_operations_from_payroll_through_finance(tmp_path: Path)
         params={"bucket": "available", "cage_no": "不存在"},
     ).json()["tasks"] == []
 
+    _submit(supervisor, linked_id, "SUPERVISOR", 3, {"result": "APPROVED"})
+    inspector.post(
+        f"/api/v1/mobile/bamboo/inspection-queue/{linked_id}/claim",
+        headers=_headers(inspector, "inspect-claim-1"),
+    ).raise_for_status()
     inspection = inspector.post(
         f"/api/v1/mobile/bamboo/records/{linked_id}/inspections",
         headers=_headers(inspector, "inspect-1"),
@@ -159,10 +277,10 @@ def test_complete_bamboo_operations_from_payroll_through_finance(tmp_path: Path)
     assert inspector_history[0]["action"] == "INSPECTION"
     assert inspector_history[0]["cage_no"] == "L-207"
 
-    blocked = supervisor.post(
-        f"/api/v1/mobile/bamboo/records/{linked_id}/stages/SUPERVISOR/submit",
-        headers=_headers(supervisor, "supervisor-blocked"),
-        json={"expected_revision": 3, "device_id": "phone", "values": {}},
+    blocked = manager.post(
+        f"/api/v1/mobile/bamboo/records/{linked_id}/stages/PLANT_AUDIT/submit",
+        headers=_headers(manager, "manager-blocked"),
+        json={"expected_revision": 4, "device_id": "phone", "values": {}},
     )
     assert blocked.status_code == 409
     inspector.post(
@@ -171,7 +289,6 @@ def test_complete_bamboo_operations_from_payroll_through_finance(tmp_path: Path)
         json={"resolution": "复测合格"},
     ).raise_for_status()
 
-    _submit(supervisor, linked_id, "SUPERVISOR", 3, {"result": "APPROVED"})
     linked_audit = _submit(
         manager,
         linked_id,
@@ -180,6 +297,15 @@ def test_complete_bamboo_operations_from_payroll_through_finance(tmp_path: Path)
         {"result": "APPROVED"},
     )
     _submit(supervisor, sorting_id, "SUPERVISOR", 2, {"result": "APPROVED"})
+    inspector.post(
+        f"/api/v1/mobile/bamboo/inspection-queue/{sorting_id}/claim",
+        headers=_headers(inspector, "inspect-claim-sort"),
+    ).raise_for_status()
+    inspector.post(
+        f"/api/v1/mobile/bamboo/records/{sorting_id}/inspections",
+        headers=_headers(inspector, "inspect-sort"),
+        json={"conclusion": "CONFORMING", "device_id": "inspect-phone"},
+    ).raise_for_status()
     sorting_audit = _submit(
         manager,
         sorting_id,

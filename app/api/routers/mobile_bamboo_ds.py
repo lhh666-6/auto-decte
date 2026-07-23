@@ -350,6 +350,35 @@ def record_operations(record_id: str, request: Request) -> dict[str, object]:
         raise _operation_error(error) from error
 
 
+@router.get("/inspection-queue")
+def inspection_queue(
+    request: Request,
+    bucket: str = "active",
+) -> dict[str, object]:
+    actor = _bamboo_actor(request)
+    try:
+        return _services(request).bamboo_operations.list_inspection_queue(
+            actor, bucket=bucket
+        )
+    except BambooOperationError as error:
+        raise _operation_error(error) from error
+
+
+@router.post("/inspection-queue/{record_id}/claim")
+def claim_inspection(
+    record_id: str,
+    request: Request,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+    x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token"),
+) -> dict[str, object]:
+    actor = _bamboo_actor(request)
+    _require_write_headers(request, idempotency_key, x_csrf_token)
+    try:
+        return _services(request).bamboo_operations.claim_inspection(record_id, actor=actor)
+    except BambooOperationError as error:
+        raise _operation_error(error) from error
+
+
 @router.post("/records/{record_id}/inspections", status_code=status.HTTP_201_CREATED)
 def create_inspection(
     record_id: str,
@@ -361,7 +390,7 @@ def create_inspection(
     actor = _bamboo_actor(request)
     key = _require_write_headers(request, idempotency_key, x_csrf_token)
     try:
-        target_stage = BambooStage(body.target_stage)
+        target_stage = BambooStage(body.target_stage) if body.target_stage else None
     except ValueError as error:
         raise HTTPException(
             status_code=422,
