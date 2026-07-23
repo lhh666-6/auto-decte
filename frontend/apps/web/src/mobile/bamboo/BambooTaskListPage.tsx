@@ -420,81 +420,93 @@ export function BambooTaskListPage() {
             {presetsError && <div className="banner danger bamboo-preset-error" role="alert"><span>{presetsError}</span><button type="button" className="btn secondary small" disabled={presetsLoading || saving} onClick={() => void loadPresets()}>重新加载</button></div>}
             {hasPendingSubmission && <div className="banner info" role="status">待继续提交，字段已锁定。继续操作将使用已保存的原始数据。</div>}
             {formError && <div className="banner danger" role="alert">{formError}</div>}
-            <div className="field">
-              <span className="field-label">作业模式</span>
-              <div className="mode-toggle" aria-label="作业模式">
-                {(["分选", "分选+装笼"] as const).map((mode) => (
-                  <button
-                    key={mode}
-                    type="button"
-                    className={`mode-btn${baseInfo.mode === mode ? " on" : ""}`}
-                    aria-pressed={baseInfo.mode === mode}
-                    disabled={hasPendingSubmission || saving}
-                    onClick={() => setBaseInfo({ ...baseInfo, mode })}
-                  >
-                    {mode}
-                  </button>
-                ))}
+            <div className="field-group field-group--production-method">
+              <div className="field">
+                <span className="field-label">作业模式</span>
+                <div className="mode-toggle" aria-label="作业模式">
+                  {(["分选", "分选+装笼"] as const).map((mode) => (
+                    <button
+                      key={mode}
+                      type="button"
+                      className={`mode-btn${baseInfo.mode === mode ? " on" : ""}`}
+                      aria-pressed={baseInfo.mode === mode}
+                      disabled={hasPendingSubmission || saving}
+                      onClick={() => setBaseInfo({ ...baseInfo, mode })}
+                    >
+                      {mode}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
-            <PickerField
-              label="特殊类"
-              value={baseInfo.special_classes.join("、")}
-              placeholder="选填，可多选（防霉、直装等）"
-              required={false}
-              disabled={hasPendingSubmission || !presets || presetsLoading || saving}
-              onOpen={() => setPicker("special_classes")}
-            />
-            <PickerField label="长度（m）" value={baseInfo.length} placeholder="点开选择长度" required disabled={hasPendingSubmission || !presets || presetsLoading || saving} onOpen={() => setPicker("length")} />
-            <PickerField label="深浅" value={baseInfo.shade} placeholder="点开选择深浅" required disabled={hasPendingSubmission || !presets || presetsLoading || saving} onOpen={() => setPicker("shade")} />
-            <PickerField label="品级" value={baseInfo.grade} placeholder="点开选择品级" required disabled={hasPendingSubmission || !presets || presetsLoading || saving} onOpen={() => setPicker("grade")} />
-            <label className="field">
-              <span className="field-label">供应商</span>
-              <input placeholder="选填，可留空" readOnly={hasPendingSubmission} value={baseInfo.supplier} onChange={(event) => setBaseInfo({ ...baseInfo, supplier: event.target.value })} />
-            </label>
-            <label className="field">
-              <span className="field-label">笼号 <em>*</em></span>
-              <input required placeholder="如：L-207" readOnly={hasPendingSubmission} value={baseInfo.cage_no} onChange={(event) => setBaseInfo({ ...baseInfo, cage_no: event.target.value })} />
-            </label>
-            <label className="field">
-              <span className="field-label">把数 <em>*</em></span>
-              <input required type="number" min="1" inputMode="numeric" readOnly={hasPendingSubmission} placeholder="本笼把数（整数）" value={baseInfo.bundle_count} onChange={(event) => setBaseInfo({ ...baseInfo, bundle_count: event.target.value })} />
-            </label>
-            <div className="kv">
-              <span className="k">净重（自动）</span>
-              {summaryNetWeight != null ? (
-                <span className="v">{summaryNetWeight} kg {netWeight && <small>（{baseInfo.bundle_count} 把 × {netWeight.factor}）</small>}</span>
-              ) : (
-                <span className="v muted">填完把数和长度后自动计算</span>
-              )}
+            <div className="field-group field-group--spec-info">
+              <PickerField
+                label="特殊类"
+                value={baseInfo.special_classes.join("、")}
+                placeholder="选填，可多选（防霉、直装等）"
+                required={false}
+                disabled={hasPendingSubmission || !presets || presetsLoading || saving}
+                onOpen={() => setPicker("special_classes")}
+              />
+              <PickerField label="长度（m）" value={baseInfo.length} placeholder="点开选择长度" required disabled={hasPendingSubmission || !presets || presetsLoading || saving} onOpen={() => setPicker("length")} />
+              <PickerField label="深浅" value={baseInfo.shade} placeholder="点开选择深浅" required disabled={hasPendingSubmission || !presets || presetsLoading || saving} onOpen={() => setPicker("shade")} />
+              <PickerField label="品级" value={baseInfo.grade} placeholder="点开选择品级" required disabled={hasPendingSubmission || !presets || presetsLoading || saving} onOpen={() => setPicker("grade")} />
             </div>
-            <fieldset className="bamboo-moisture-fieldset bamboo-create-moisture">
-              <legend>含水率检测点（%）<em>*</em></legend>
-              <div className="bamboo-moisture-grid">
-                {moisture.map((value, index) => (
-                  <label key={index}>
-                    <span>检测点 {index + 1}</span>
-                    <input
-                      type="text"
-                      inputMode="numeric"
-                      pattern="[0-9]*"
-                      readOnly={hasPendingSubmission}
-                      value={value}
-                      placeholder="1-100"
-                      onChange={(event) => setMoisture(moisture.map((item, itemIndex) => itemIndex === index ? event.target.value : item))}
-                    />
-                  </label>
-                ))}
+            <div className="field-group field-group--production-target">
+              <label className="field">
+                <span className="field-label">供应商</span>
+                <input placeholder="选填，可留空" readOnly={hasPendingSubmission} value={baseInfo.supplier} onChange={(event) => setBaseInfo({ ...baseInfo, supplier: event.target.value })} />
+              </label>
+              <label className="field">
+                <span className="field-label">笼号 <em>*</em></span>
+                <input required placeholder="如：L-207" readOnly={hasPendingSubmission} value={baseInfo.cage_no} onChange={(event) => setBaseInfo({ ...baseInfo, cage_no: event.target.value })} />
+              </label>
+              <label className="field">
+                <span className="field-label">把数 <em>*</em></span>
+                <input required type="number" min="1" inputMode="numeric" readOnly={hasPendingSubmission} placeholder="本笼把数（整数）" value={baseInfo.bundle_count} onChange={(event) => setBaseInfo({ ...baseInfo, bundle_count: event.target.value })} />
+              </label>
+            </div>
+            <div className="field-group field-group--auto-summary">
+              <div className="kv">
+                <span className="k">净重（自动）</span>
+                {summaryNetWeight != null ? (
+                  <span className="v">{summaryNetWeight} kg {netWeight && <small>（{baseInfo.bundle_count} 把 × {netWeight.factor}）</small>}</span>
+                ) : (
+                  <span className="v muted">填完把数和长度后自动计算</span>
+                )}
               </div>
-              <div className="bamboo-point-actions">
-                <button type="button" disabled={hasPendingSubmission || moisture.length >= 20} onClick={() => setMoisture([...moisture, ""])}>增加检测点</button>
-                <button type="button" disabled={hasPendingSubmission || moisture.length <= 1} onClick={() => setMoisture(moisture.slice(0, -1))}>删除最后一个</button>
+            </div>
+            <div className="field-group field-group--test-data">
+              <fieldset className="bamboo-moisture-fieldset bamboo-create-moisture">
+                <legend>含水率检测点（%）<em>*</em></legend>
+                <div className="bamboo-moisture-grid">
+                  {moisture.map((value, index) => (
+                    <label key={index}>
+                      <span>检测点 {index + 1}</span>
+                      <input
+                        type="text"
+                        inputMode="numeric"
+                        pattern="[0-9]*"
+                        readOnly={hasPendingSubmission}
+                        value={value}
+                        placeholder="1-100"
+                        onChange={(event) => setMoisture(moisture.map((item, itemIndex) => itemIndex === index ? event.target.value : item))}
+                      />
+                    </label>
+                  ))}
+                </div>
+                <div className="bamboo-point-actions">
+                  <button type="button" disabled={hasPendingSubmission || moisture.length >= 20} onClick={() => setMoisture([...moisture, ""])}>增加检测点</button>
+                  <button type="button" disabled={hasPendingSubmission || moisture.length <= 1} onClick={() => setMoisture(moisture.slice(0, -1))}>删除最后一个</button>
+                </div>
+                <p className="bamboo-moisture-average">已填写 {moistureValues.length} 点 · 平均值 {moistureAverage ?? "—"}%</p>
+              </fieldset>
+            </div>
+            <div className="field-group field-group--confirmation">
+              <div className="bamboo-v3-form-actions">
+                <button type="button" className="btn secondary" disabled={saving} onClick={closeCreateSheet}>{hasPendingSubmission ? "稍后继续" : "取消"}</button>
+                <button type="submit" className="btn primary" disabled={saving || (!hasPendingSubmission && (presetsLoading || !presets))}>{hasPendingSubmission ? "继续提交" : "核对并提交分选/装笼记录"}</button>
               </div>
-              <p className="bamboo-moisture-average">已填写 {moistureValues.length} 点 · 平均值 {moistureAverage ?? "—"}%</p>
-            </fieldset>
-            <div className="bamboo-v3-form-actions">
-              <button type="button" className="btn secondary" disabled={saving} onClick={closeCreateSheet}>{hasPendingSubmission ? "稍后继续" : "取消"}</button>
-              <button type="submit" className="btn primary" disabled={saving || (!hasPendingSubmission && (presetsLoading || !presets))}>{hasPendingSubmission ? "继续提交" : "核对并提交分选/装笼记录"}</button>
             </div>
           </form>
           {picker && presets && (

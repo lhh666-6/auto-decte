@@ -343,6 +343,12 @@ class SqlAlchemyBambooProcessRepository:
             repeated = self.find_idempotent_result(
                 signature.actor_id,
                 signature.idempotency_key,
+                idempotency_payload_hash=signature.idempotency_payload_hash,
+                legacy_comparison_hash=(
+                    signature.payload_hash
+                    if signature.idempotency_hash_version == 0
+                    else None
+                ),
             )
             if repeated is not None:
                 return repeated

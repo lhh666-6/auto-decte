@@ -1,0 +1,51 @@
+/* ================================================================
+   Mobile V3 Design Tokens — canonical single source
+   Imported before styles.css so all V3 rules can reference these.
+   ================================================================ */
+.mobile-v3-shell {
+  /* ---- Palette (aligned to design spec: 主色 #176B5B) ---- */
+  --brand:      #176B5B;
+  --brand2:     #26804d;
+  --brand-weak: #e6f2ed;
+  --bg:         #F4F7F6;
+  --card:       #FFFFFF;
+  --text:       #17211F;
+  --sub:        #66736b;
+  --line:       #dde4df;
+  --muted:      #eff2f0;
+  --ok:         #168a4d;
+  --warn:       #c77a0a;
+  --danger:     #c43f35;
+  --blue:       #2f67d8;
+
+  /* ---- Spacing scale ---- */
+  --space-xs:   4px;
+  --space-sm:   8px;
+  --space-md:   12px;
+  --space-lg:   16px;
+  --space-xl:   20px;
+  --space-2xl:  24px;
+
+  /* ---- Typography ---- */
+  --font-display: 25px;
+  --font-heading: 18px;
+  --font-body:    15px;
+  --font-caption: 13px;
+  --font-label:   12px;
+  --font-micro:   11px;
+
+  /* ---- Radius ---- */
+  --radius-sm:    8px;
+  --radius-md:    12px;
+  --radius-card:  16px;
+  --radius-sheet: 22px;
+
+  /* ---- Touch targets ---- */
+  --touch-min:     44px;
+  --touch-btn:     48px;
+  --touch-primary: 52px;
+
+  /* ---- Effects ---- */
+  --shadow:       0 8px 24px rgba(19, 50, 33, 0.08);
+  --shadow-heavy: 0 12px 32px rgba(19, 50, 33, 0.12);
+}

@@ -193,11 +193,22 @@ def create_record(
             detail={"code": error.code, "detail": str(error)},
         ) from error
     # Compute canonical payload hash for idempotency binding.
+    # Only include client-supplied fields so that server-injected data
+    # (options_version, net_weight) changing across preset updates does
+    # not cause false IDEMPOTENCY_CONFLICT on replay.
+    _CLIENT_BASE_INFO_KEYS = frozenset({
+        "mode", "special_classes", "length", "shade", "grade",
+        "supplier", "cage_no", "bundle_count",
+    })
     form_type = BambooFormType(body.form_type)
     create_payload = {
         "actor_id": actor.actor_id,
         "form_type": form_type.value,
-        "base_info": base_info,
+        "base_info": {
+            key: value
+            for key, value in base_info.items()
+            if key in _CLIENT_BASE_INFO_KEYS
+        },
     }
     canonical = _json.dumps(
         create_payload,
