@@ -107,6 +107,8 @@ class SqlAlchemyMobileIdentityRepository:
             if assignment is not None:
                 factory = session.get(BambooFactoryRow, assignment.factory_id)
                 factory_name = factory.name if factory is not None else ""
+            else:
+                factory_name = row.factory_name
             return _profile(row, assignment, factory_name)
 
     def list_team_members(self, team_id: str) -> list[tuple[str, str]]:
@@ -157,6 +159,8 @@ class SqlAlchemyMobileIdentityRepository:
                     roles=list(roles),
                     allowed_form_types=list(allowed_form_types),
                     allowed_processes=list(allowed_processes),
+                    factory_id=factory_id,
+                    factory_name=factory_name,
                     active=active,
                 )
             )
@@ -265,7 +269,7 @@ def _profile(
         allowed_form_types=list(row.allowed_form_types),
         allowed_processes=list(row.allowed_processes),
         active=row.active,
-        factory_id=assignment.factory_id if assignment is not None else "",
+        factory_id=assignment.factory_id if assignment is not None else row.factory_id,
         factory_name=factory_name,
         bamboo_role=assignment.role_code if assignment is not None else "",
     )

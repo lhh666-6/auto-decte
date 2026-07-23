@@ -5,16 +5,20 @@ from fastapi.responses import JSONResponse
 
 from app.api.errors.problem_ds import ProblemDetails
 from app.api.middleware.request_id_ds import RequestIdMiddleware
+from app.api.routers import admin_console_ds as admin_console
 from app.api.routers import classification_ds as classification
 from app.api.routers import exports_ds as exports
+from app.api.routers import finance_workspace_ds as finance_workspace
 from app.api.routers import health_ds as health
 from app.api.routers import identity_ds as identity
 from app.api.routers import imports_ds as imports
 from app.api.routers import master_data_ds as master_data
 from app.api.routers import mobile_ds as mobile
+from app.api.routers import plant_workspace_ds as plant_workspace
 from app.api.routers import review_ds as review
 from app.api.routers import tasks_ds as tasks
 from app.api.routers import templates_ds as templates
+from app.api.routers import web_auth_ds as web_auth
 from app.api.routers import workbench_ds as workbench
 from app.services.container import Services
 
@@ -34,6 +38,10 @@ def create_app(services: Services) -> FastAPI:
     app.include_router(templates.router)
     app.include_router(tasks.router)
     app.include_router(mobile.router)
+    app.include_router(web_auth.router)
+    app.include_router(admin_console.router)
+    app.include_router(finance_workspace.router)
+    app.include_router(plant_workspace.router)
 
     @app.exception_handler(HTTPException)
     async def http_error(request: Request, error: HTTPException) -> JSONResponse:

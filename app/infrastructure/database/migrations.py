@@ -9,7 +9,7 @@ from sqlalchemy import Connection, Engine, inspect, text
 from alembic import command
 from app.domain.models import stable_json_sha256
 
-HEAD_REVISION = "020"
+HEAD_REVISION = "021"
 
 _EMPTY_MAPPING_HASH = "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
 
@@ -63,6 +63,26 @@ def ensure_auto_created_schema_compatibility(engine: Engine) -> None:
     """Add columns that SQLAlchemy create_all cannot add to legacy local databases."""
     inspector = inspect(engine)
     tables = set(inspector.get_table_names())
+    if "mobile_access_profiles" in tables:
+        profile_columns = {
+            column["name"]
+            for column in inspector.get_columns("mobile_access_profiles")
+        }
+        with engine.begin() as connection:
+            if "factory_id" not in profile_columns:
+                connection.execute(
+                    text(
+                        "ALTER TABLE mobile_access_profiles "
+                        "ADD COLUMN factory_id VARCHAR NOT NULL DEFAULT ''"
+                    )
+                )
+            if "factory_name" not in profile_columns:
+                connection.execute(
+                    text(
+                        "ALTER TABLE mobile_access_profiles "
+                        "ADD COLUMN factory_name VARCHAR NOT NULL DEFAULT ''"
+                    )
+                )
     if "forms" in tables:
         form_columns = {column["name"] for column in inspector.get_columns("forms")}
         with engine.begin() as connection:

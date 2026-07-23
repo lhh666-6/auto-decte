@@ -57,6 +57,11 @@ def test_alembic_upgrade_creates_persistent_mobile_identity_tables(
         "mobile_sessions",
         "mobile_access_profiles",
     } <= tables
+    access_profile_columns = {
+        column["name"]
+        for column in inspect(engine).get_columns("mobile_access_profiles")
+    }
+    assert {"factory_id", "factory_name"} <= access_profile_columns
     with engine.connect() as connection:
         assert connection.scalar(text("SELECT version_num FROM alembic_version")) == HEAD_REVISION
 

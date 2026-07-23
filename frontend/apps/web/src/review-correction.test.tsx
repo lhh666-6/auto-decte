@@ -2,7 +2,7 @@
 
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "./App";
 
@@ -64,9 +64,14 @@ function workbench(version: 0 | 1 | 2) {
   };
 }
 
+beforeEach(() => {
+  window.history.replaceState({}, "", "/workbench/review");
+});
+
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
+  window.history.replaceState({}, "", "/");
 });
 
 describe("review correction", () => {

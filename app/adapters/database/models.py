@@ -478,6 +478,8 @@ class MobileAccessProfileRow(Base):
     roles: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
     allowed_form_types: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
     allowed_processes: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    factory_id: Mapped[str] = mapped_column(String, nullable=False, default="")
+    factory_name: Mapped[str] = mapped_column(String, nullable=False, default="")
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
 

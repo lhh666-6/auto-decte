@@ -1,4 +1,13 @@
-import { Link, Navigate, Route, Routes, useLocation, useNavigate, useParams } from "react-router-dom";
+import {
+  Link,
+  Navigate,
+  Outlet,
+  Route,
+  Routes,
+  useLocation,
+  useNavigate,
+  useParams,
+} from "react-router-dom";
 
 import type { MasterDataCatalog } from "@form-detection/api-client";
 
@@ -15,7 +24,49 @@ import { BambooV3ProfilePage } from "../mobile/v3/BambooV3ProfilePage";
 import { BambooPersonnelPage } from "../mobile/personnel/BambooPersonnelPage";
 import { MobileSessionProvider } from "../mobile/session/MobileSessionProvider";
 import { RequireMobileSession } from "../mobile/session/RequireMobileSession";
+import { RequireWebSession } from "../web/RequireWebSession";
+import { WebLoginPage } from "../web/WebLoginPage";
+import {
+  WebSessionProvider,
+  useWebSession,
+} from "../web/WebSessionProvider";
+import { WorkspaceOverviewPage } from "../web/WorkspaceOverviewPage";
+import { WorkspaceShell } from "../web/WorkspaceShell";
+import type { WorkspaceRole } from "../web/types";
 import { AppShell } from "./AppShell";
+
+function WebSessionLayout() {
+  return (
+    <WebSessionProvider>
+      <Outlet />
+    </WebSessionProvider>
+  );
+}
+
+function WebRoot() {
+  const { status, session } = useWebSession();
+  if (status === "loading") return <div role="status">正在验证登录状态…</div>;
+  return <Navigate to={session?.landing_path ?? "/login"} replace />;
+}
+
+function WebWorkspaceLayout({ workspace }: { workspace: WorkspaceRole }) {
+  return (
+    <RequireWebSession workspace={workspace}>
+      <WorkspaceShell workspace={workspace}>
+        <Outlet />
+      </WorkspaceShell>
+    </RequireWebSession>
+  );
+}
+
+function WorkspaceComingSoon() {
+  return (
+    <section>
+      <h1>功能建设中</h1>
+      <p>该模块将在后续开发阶段接入。</p>
+    </section>
+  );
+}
 
 function ReviewRoute() {
   const navigate = useNavigate();
@@ -97,9 +148,32 @@ function NotFound() {
 export function AppRoutes() {
   return (
     <Routes>
+      {/* Unified desktop management entry and role workspaces. */}
+      <Route element={<WebSessionLayout />}>
+        <Route index element={<WebRoot />} />
+        <Route path="login" element={<WebLoginPage />} />
+
+        <Route path="finance" element={<WebWorkspaceLayout workspace="FINANCE" />}>
+          <Route index element={<Navigate to="/finance/overview" replace />} />
+          <Route path="overview" element={<WorkspaceOverviewPage workspace="FINANCE" />} />
+          <Route path="*" element={<WorkspaceComingSoon />} />
+        </Route>
+
+        <Route path="admin" element={<WebWorkspaceLayout workspace="ADMIN" />}>
+          <Route index element={<Navigate to="/admin/overview" replace />} />
+          <Route path="overview" element={<WorkspaceOverviewPage workspace="ADMIN" />} />
+          <Route path="*" element={<WorkspaceComingSoon />} />
+        </Route>
+
+        <Route path="plant" element={<WebWorkspaceLayout workspace="PLANT_MANAGER" />}>
+          <Route index element={<Navigate to="/plant/overview" replace />} />
+          <Route path="overview" element={<WorkspaceOverviewPage workspace="PLANT_MANAGER" />} />
+          <Route path="*" element={<WorkspaceComingSoon />} />
+        </Route>
+      </Route>
+
       {/* Desktop routes */}
       <Route element={<AppShell />}>
-        <Route index element={<Navigate to="/workbench/review" replace />} />
         <Route path="workbench/type-confirmation" element={<ReviewRoute />} />
         <Route path="workbench/review" element={<ReviewRoute />} />
         <Route path="workbench/recapture" element={<ReviewRoute />} />
