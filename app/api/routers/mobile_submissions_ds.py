@@ -121,6 +121,7 @@ def create_submission(
         template_id=definition.template_version_id,
         template_version=str(definition.version),
         job_profile_version=definition.job_profile_version_id,
+        factory_id=actor.factory_id,
     )
     try:
         receipt = services.electronic_integration.accept(command)

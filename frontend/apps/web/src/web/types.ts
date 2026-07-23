@@ -90,3 +90,43 @@ export interface WorkflowVersion {
   };
   status: string;
 }
+
+export interface FinanceRecord {
+  root_submission_id: string;
+  effective_submission_id: string;
+  factory_id: string;
+  subject_employee_code: string;
+  definition_version_id: string;
+  business_date: string;
+  submitted_at: string;
+  values: Record<string, unknown>;
+  status: string;
+}
+
+export interface SubmissionCorrection {
+  correction_id: string;
+  root_submission_id: string;
+  original_submission_id: string;
+  replacement_submission_id?: string;
+  factory_id: string;
+  reason: string;
+  delegate_reason: string;
+  original_actor_id: string;
+  actual_actor_id?: string;
+  requested_by: string;
+  reviewed_by?: string;
+  review_note: string;
+  status: string;
+  created_at: string;
+}
+
+export interface BusinessTask {
+  task_id: string;
+  task_type: string;
+  resource_id: string;
+  factory_id: string;
+  assigned_to: string;
+  status: string;
+  payload: Record<string, unknown>;
+  created_at: string;
+}

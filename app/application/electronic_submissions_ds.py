@@ -55,6 +55,7 @@ class ElectronicFormCommand:
     template_version: str
     job_profile_key: str | None = None
     job_profile_version: str | None = None
+    factory_id: str = ""
 
 
 class SubmissionRejectedError(ValueError):
@@ -160,6 +161,7 @@ class ElectronicFormIntegration:
                 receipt, payload, employee_name=command.subject_employee_name,
             ):
                 uow.facts.add(record)
+            uow.record_finance_acceptance(receipt, command)
 
             return receipt
 

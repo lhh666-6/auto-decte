@@ -71,6 +71,7 @@ class _FakeUnitOfWork:
         self.forms = _FakeForms()
         self.receipts = _FakeReceiptRepo()
         self.facts = _FakeFactRecordRepo()
+        self.finance_acceptances: list[tuple[object, object]] = []
 
     def __enter__(self):  # type: ignore[no-untyped-def]
         return self
@@ -80,6 +81,9 @@ class _FakeUnitOfWork:
 
     def flush(self) -> None:
         return None
+
+    def record_finance_acceptance(self, receipt, command) -> None:  # type: ignore[no-untyped-def]
+        self.finance_acceptances.append((receipt, command))
 
 
 def _make_command(**overrides) -> ElectronicFormCommand:

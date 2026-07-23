@@ -13,6 +13,8 @@ from app.adapters.database.models import (
     AuditEventRow,
     ElectronicSubmissionReceiptRow,
     FactRecordRow,
+    FinanceEffectiveRecordRow,
+    FinanceLedgerEventRow,
     FormFieldRow,
     FormRow,
 )
@@ -47,7 +49,7 @@ def _command(client_submission_id: str = "client-atomic") -> ElectronicFormComma
     )
 
 
-def _counts(database_path: Path) -> tuple[int, int, int, int, int]:
+def _counts(database_path: Path) -> tuple[int, ...]:
     engine = create_engine(f"sqlite:///{database_path.as_posix()}")
     with Session(engine) as session:
         return tuple(
@@ -58,6 +60,8 @@ def _counts(database_path: Path) -> tuple[int, int, int, int, int]:
                 AuditEventRow,
                 ElectronicSubmissionReceiptRow,
                 FactRecordRow,
+                FinanceLedgerEventRow,
+                FinanceEffectiveRecordRow,
             )
         )  # type: ignore[return-value]
 
@@ -74,7 +78,7 @@ def test_submission_commits_form_receipt_and_fact_together(tmp_path: Path) -> No
 
     integration.accept(_command())
 
-    assert _counts(database_path) == (1, 3, 1, 1, 1)
+    assert _counts(database_path) == (1, 3, 1, 1, 1, 1, 1)
 
 
 class _FailingReceiptRepository(SqlAlchemyElectronicSubmissionReceiptRepository):
@@ -104,4 +108,4 @@ def test_receipt_failure_rolls_back_form_fields_audit_and_fact(tmp_path: Path) -
     with pytest.raises(RuntimeError, match="receipt write failed"):
         integration.accept(_command("client-failure"))
 
-    assert _counts(database_path) == (0, 0, 0, 0, 0)
+    assert _counts(database_path) == (0, 0, 0, 0, 0, 0, 0)

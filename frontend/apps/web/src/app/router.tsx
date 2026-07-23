@@ -29,8 +29,11 @@ import { AdminFormApprovalsPage } from "../web/AdminFormApprovalsPage";
 import { AdminWorkflowApprovalsPage } from "../web/AdminWorkflowApprovalsPage";
 import { BusinessModelingPage } from "../web/BusinessModelingPage";
 import { FinanceFormsPage } from "../web/FinanceFormsPage";
+import { FinanceLedgerPage } from "../web/FinanceLedgerPage";
+import { PlantExceptionsPage } from "../web/PlantExceptionsPage";
 import { PlantFormsPage } from "../web/PlantFormsPage";
 import { PlantNotificationsPage } from "../web/PlantNotificationsPage";
+import { PlantProductionPage } from "../web/PlantProductionPage";
 import { PlantWorkflowsPage } from "../web/PlantWorkflowsPage";
 import { WorkflowDesignerPage } from "../web/WorkflowDesignerPage";
 import { WebLoginPage } from "../web/WebLoginPage";
@@ -167,6 +170,10 @@ export function AppRoutes() {
           <Route path="forms" element={<FinanceFormsPage />} />
           <Route path="workflows" element={<WorkflowDesignerPage />} />
           <Route path="business-modeling" element={<BusinessModelingPage />} />
+          <Route path="today" element={<FinanceLedgerPage />} />
+          <Route path="month" element={<FinanceLedgerPage />} />
+          <Route path="year" element={<FinanceLedgerPage />} />
+          <Route path="exceptions" element={<FinanceLedgerPage />} />
           <Route path="*" element={<WorkspaceComingSoon />} />
         </Route>
 
@@ -184,6 +191,8 @@ export function AppRoutes() {
           <Route path="notifications" element={<PlantNotificationsPage />} />
           <Route path="forms" element={<PlantFormsPage />} />
           <Route path="workflows" element={<PlantWorkflowsPage />} />
+          <Route path="production" element={<PlantProductionPage />} />
+          <Route path="exceptions" element={<PlantExceptionsPage />} />
           <Route path="*" element={<WorkspaceComingSoon />} />
         </Route>
       </Route>

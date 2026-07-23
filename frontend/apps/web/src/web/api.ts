@@ -1,8 +1,11 @@
 import type {
+  BusinessTask,
+  FinanceRecord,
   ManagedFormVersion,
   ManagedFormField,
   ManagementNotification,
   ProposedBusinessRule,
+  SubmissionCorrection,
   WorkflowVersion,
   WebSession,
   WorkspaceOverview,
@@ -371,6 +374,96 @@ export function listPlantWorkflows(fetcher?: WebFetcher) {
   return request<{ items: WorkflowVersion[] }>(
     "/api/v1/plant/workflows",
     {},
+    fetcher,
+  );
+}
+
+export function getFinanceLedgerOverview(fetcher?: WebFetcher) {
+  return request<{ today: number; month: number; year: number }>(
+    "/api/v1/finance/ledger/overview", {}, fetcher,
+  );
+}
+
+export function listFinanceLedger(fetcher?: WebFetcher) {
+  return request<{ items: FinanceRecord[] }>("/api/v1/finance/ledger", {}, fetcher);
+}
+
+export function listFinanceCorrections(fetcher?: WebFetcher) {
+  return request<{ items: SubmissionCorrection[] }>(
+    "/api/v1/finance/corrections", {}, fetcher,
+  );
+}
+
+export function listFinanceTasks(fetcher?: WebFetcher) {
+  return request<{ items: BusinessTask[] }>(
+    "/api/v1/finance/business-tasks", {}, fetcher,
+  );
+}
+
+export function attachCorrectionReplacement(
+  correctionId: string,
+  body: {
+    replacement_submission_id: string;
+    actual_actor_id: string;
+    delegate_reason: string;
+  },
+  fetcher?: WebFetcher,
+) {
+  return request<{ correction_id: string; status: string }>(
+    `/api/v1/finance/corrections/${correctionId}/replacement`,
+    {
+      method: "POST",
+      headers: csrfHeaders(true),
+      body: JSON.stringify(body),
+    },
+    fetcher,
+  );
+}
+
+export function reviewCorrection(
+  correctionId: string,
+  approved: boolean,
+  note: string,
+  fetcher?: WebFetcher,
+) {
+  return request<{ correction_id: string; status: string }>(
+    `/api/v1/finance/corrections/${correctionId}/review`,
+    {
+      method: "POST",
+      headers: csrfHeaders(true),
+      body: JSON.stringify({ approved, note }),
+    },
+    fetcher,
+  );
+}
+
+export function getPlantProduction(fetcher?: WebFetcher) {
+  return request<{
+    overview: { today: number; month: number; year: number };
+    records: FinanceRecord[];
+  }>("/api/v1/plant/production", {}, fetcher);
+}
+
+export function getPlantExceptions(fetcher?: WebFetcher) {
+  return request<{
+    corrections: SubmissionCorrection[];
+    tasks: BusinessTask[];
+  }>("/api/v1/plant/exceptions", {}, fetcher);
+}
+
+export function returnPlantSubmission(
+  submissionId: string,
+  reason: string,
+  assignedTo: string,
+  fetcher?: WebFetcher,
+) {
+  return request<{ correction_id: string; task_id: string; status: string }>(
+    `/api/v1/plant/submissions/${submissionId}/return`,
+    {
+      method: "POST",
+      headers: csrfHeaders(true),
+      body: JSON.stringify({ reason, assigned_to: assignedTo }),
+    },
     fetcher,
   );
 }

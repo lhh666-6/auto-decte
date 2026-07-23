@@ -1,0 +1,19 @@
+.ledger-page { display: grid; gap: 1rem; }
+.ledger-page header p { color: #596579; }
+.ledger-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .8rem; }
+.ledger-summary article, .ledger-case-list article, .ledger-return-panel {
+  background: #fff; border: 1px solid #dce3ec; border-radius: 12px; padding: 1rem;
+}
+.ledger-summary article { display: grid; gap: .35rem; }
+.ledger-summary strong { font-size: 1.8rem; color: #155eef; }
+.ledger-table-wrap { overflow-x: auto; background: #fff; border-radius: 12px; }
+.ledger-table-wrap table { width: 100%; border-collapse: collapse; }
+.ledger-table-wrap th, .ledger-table-wrap td { padding: .75rem; border-bottom: 1px solid #e7ecf2; text-align: left; }
+.ledger-case-list { display: grid; gap: .7rem; }
+.ledger-case-list article { display: flex; gap: .75rem; align-items: center; justify-content: space-between; }
+.ledger-return-panel { display: grid; gap: .75rem; max-width: 520px; }
+.ledger-return-panel label { display: grid; gap: .35rem; }
+@media (max-width: 720px) {
+  .ledger-summary { grid-template-columns: 1fr; }
+  .ledger-case-list article { align-items: stretch; flex-direction: column; }
+}

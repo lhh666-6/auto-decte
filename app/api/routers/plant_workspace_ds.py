@@ -9,12 +9,17 @@ from app.api.schemas.managed_forms_ds import (
     ManagementNotificationListResponse,
     ManagementNotificationResponse,
 )
+from app.api.schemas.submission_ledger_ds import ReturnSubmissionRequest
 from app.api.schemas.web_workspaces_ds import OverviewCard, WorkspaceOverviewResponse
 from app.modules.electronic_forms.governance_ds import ManagedFormError, ManagedFormService
 from app.modules.identity_access.web_policy_ds import (
     WebWorkspace,
     allows_workspace,
     resolve_plant_factory,
+)
+from app.modules.submission_ledger.service_ds import (
+    SubmissionLedgerError,
+    SubmissionLedgerService,
 )
 from app.modules.workflow_engine.service_ds import WorkflowService
 
@@ -44,6 +49,10 @@ def _forms(request: Request) -> ManagedFormService:
 
 def _workflows(request: Request) -> WorkflowService:
     return WorkflowService(request.app.state.services.engine)
+
+
+def _ledger(request: Request) -> SubmissionLedgerService:
+    return SubmissionLedgerService(request.app.state.services.engine)
 
 
 @router.get("/overview", response_model=WorkspaceOverviewResponse)
@@ -102,6 +111,51 @@ def forms(request: Request) -> ManagedFormListResponse:
 def workflows(request: Request) -> dict[str, object]:
     _, plant_id = _plant_actor(request)
     return {"items": _workflows(request).list_plant(plant_id)}
+
+
+@router.get("/production")
+def production(request: Request) -> dict[str, object]:
+    _, plant_id = _plant_actor(request)
+    service = _ledger(request)
+    return {
+        "overview": service.overview(plant_id),
+        "records": service.list_ledger(plant_id)["items"],
+    }
+
+
+@router.get("/exceptions")
+def exceptions(request: Request) -> dict[str, object]:
+    _, plant_id = _plant_actor(request)
+    service = _ledger(request)
+    return {
+        "corrections": service.list_corrections(plant_id)["items"],
+        "tasks": service.list_tasks(plant_id)["items"],
+    }
+
+
+@router.post("/submissions/{submission_id}/return")
+def return_submission(
+    submission_id: str,
+    body: ReturnSubmissionRequest,
+    request: Request,
+    x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token"),
+) -> dict[str, str]:
+    actor, plant_id = _plant_actor(request)
+    require_web_csrf(request, x_csrf_token)
+    try:
+        return _ledger(request).return_submission(
+            submission_id,
+            factory_id=plant_id,
+            reason=body.reason,
+            requested_by=actor.employee_code,
+            assigned_to=body.assigned_to,
+        )
+    except SubmissionLedgerError as error:
+        status_code = 403 if error.code == "CROSS_FACTORY_FORBIDDEN" else 409
+        raise HTTPException(
+            status_code=status_code,
+            detail={"code": error.code, "detail": error.detail},
+        ) from error
 
 
 @router.get("/notifications", response_model=ManagementNotificationListResponse)

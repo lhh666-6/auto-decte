@@ -1270,3 +1270,88 @@ class BambooCorrectionCaseRow(Base):
     supplement_batch_id: Mapped[str | None] = mapped_column(
         ForeignKey("bamboo_daily_export_batches.batch_id")
     )
+
+
+class FinanceLedgerEventRow(Base):
+    """Append-only finance fact; projections are disposable derivatives."""
+
+    __tablename__ = "finance_ledger_events"
+    __table_args__ = (
+        UniqueConstraint("event_type", "submission_id", name="ux_finance_event_submission_type"),
+        Index("ix_finance_ledger_period", "factory_id", "business_date", "occurred_at"),
+    )
+
+    event_id: Mapped[str] = mapped_column(String, primary_key=True)
+    event_type: Mapped[str] = mapped_column(String, nullable=False)
+    submission_id: Mapped[str] = mapped_column(String, nullable=False)
+    root_submission_id: Mapped[str] = mapped_column(String, nullable=False)
+    factory_id: Mapped[str] = mapped_column(String, nullable=False)
+    business_date: Mapped[str] = mapped_column(String, nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    actor_id: Mapped[str] = mapped_column(String, nullable=False)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class FinanceEffectiveRecordRow(Base):
+    """Exactly one current finance record for each correction root."""
+
+    __tablename__ = "finance_effective_records"
+    __table_args__ = (
+        UniqueConstraint(
+            "effective_submission_id", name="ux_finance_effective_submission"
+        ),
+        Index("ix_finance_effective_period", "factory_id", "business_date", "status"),
+    )
+
+    root_submission_id: Mapped[str] = mapped_column(String, primary_key=True)
+    effective_submission_id: Mapped[str] = mapped_column(String, nullable=False)
+    factory_id: Mapped[str] = mapped_column(String, nullable=False)
+    subject_employee_code: Mapped[str] = mapped_column(String, nullable=False)
+    definition_version_id: Mapped[str] = mapped_column(String, nullable=False)
+    business_date: Mapped[str] = mapped_column(String, nullable=False)
+    submitted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    values: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    status: Mapped[str] = mapped_column(String, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class SubmissionCorrectionRow(Base):
+    __tablename__ = "submission_corrections"
+    __table_args__ = (
+        Index("ix_submission_correction_queue", "factory_id", "status", "created_at"),
+    )
+
+    correction_id: Mapped[str] = mapped_column(String, primary_key=True)
+    root_submission_id: Mapped[str] = mapped_column(String, nullable=False)
+    original_submission_id: Mapped[str] = mapped_column(String, nullable=False)
+    replacement_submission_id: Mapped[str | None] = mapped_column(String)
+    factory_id: Mapped[str] = mapped_column(String, nullable=False)
+    reason: Mapped[str] = mapped_column(String, nullable=False)
+    delegate_reason: Mapped[str] = mapped_column(String, nullable=False, default="")
+    original_actor_id: Mapped[str] = mapped_column(String, nullable=False)
+    actual_actor_id: Mapped[str | None] = mapped_column(String)
+    requested_by: Mapped[str] = mapped_column(String, nullable=False)
+    reviewed_by: Mapped[str | None] = mapped_column(String)
+    review_note: Mapped[str] = mapped_column(String, nullable=False, default="")
+    status: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    replaced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class BusinessTaskRow(Base):
+    __tablename__ = "business_tasks"
+    __table_args__ = (
+        Index("ix_business_task_inbox", "assigned_to", "status", "created_at"),
+        Index("ix_business_task_factory", "factory_id", "status", "created_at"),
+    )
+
+    task_id: Mapped[str] = mapped_column(String, primary_key=True)
+    task_type: Mapped[str] = mapped_column(String, nullable=False)
+    resource_id: Mapped[str] = mapped_column(String, nullable=False)
+    factory_id: Mapped[str] = mapped_column(String, nullable=False)
+    assigned_to: Mapped[str] = mapped_column(String, nullable=False)
+    status: Mapped[str] = mapped_column(String, nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

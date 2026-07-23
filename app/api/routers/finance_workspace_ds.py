@@ -15,6 +15,10 @@ from app.api.schemas.managed_forms_ds import (
     ManagedFormVersionResponse,
     UpdateManagedFormVersionRequest,
 )
+from app.api.schemas.submission_ledger_ds import (
+    AttachReplacementRequest,
+    ReviewCorrectionRequest,
+)
 from app.api.schemas.web_workspaces_ds import OverviewCard, WorkspaceOverviewResponse
 from app.modules.business_discovery.service_ds import (
     BusinessDiscoveryError,
@@ -22,6 +26,10 @@ from app.modules.business_discovery.service_ds import (
 )
 from app.modules.electronic_forms.governance_ds import ManagedFormError, ManagedFormService
 from app.modules.identity_access.web_policy_ds import WebWorkspace, allows_workspace
+from app.modules.submission_ledger.service_ds import (
+    SubmissionLedgerError,
+    SubmissionLedgerService,
+)
 from app.modules.workflow_engine.service_ds import WorkflowError, WorkflowService
 
 router = APIRouter(prefix="/api/v1/finance", tags=["finance"])
@@ -47,6 +55,10 @@ def _discovery(request: Request) -> BusinessDiscoveryService:
 
 def _workflows(request: Request) -> WorkflowService:
     return WorkflowService(request.app.state.services.engine)
+
+
+def _ledger(request: Request) -> SubmissionLedgerService:
+    return SubmissionLedgerService(request.app.state.services.engine)
 
 
 def _form_error(error: ManagedFormError) -> HTTPException:
@@ -84,6 +96,71 @@ def overview(
             OverviewCard(key="exceptions", label="异常记录", value=0),
         ],
     )
+
+
+@router.get("/ledger/overview")
+def ledger_overview(request: Request, factory_id: str = Query(default="")) -> dict[str, int]:
+    _finance_actor(request)
+    return _ledger(request).overview(factory_id or None)
+
+
+@router.get("/ledger")
+def ledger(request: Request, factory_id: str = Query(default="")) -> dict[str, object]:
+    _finance_actor(request)
+    return _ledger(request).list_ledger(factory_id or None)
+
+
+@router.get("/corrections")
+def corrections(request: Request, factory_id: str = Query(default="")) -> dict[str, object]:
+    _finance_actor(request)
+    return _ledger(request).list_corrections(factory_id or None)
+
+
+@router.get("/business-tasks")
+def business_tasks(request: Request, factory_id: str = Query(default="")) -> dict[str, object]:
+    _finance_actor(request)
+    return _ledger(request).list_tasks(factory_id or None)
+
+
+@router.post("/corrections/{correction_id}/replacement")
+def attach_correction_replacement(
+    correction_id: str,
+    body: AttachReplacementRequest,
+    request: Request,
+    x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token"),
+) -> dict[str, str]:
+    _finance_actor(request)
+    require_web_csrf(request, x_csrf_token)
+    try:
+        return _ledger(request).attach_replacement(correction_id, **body.model_dump())
+    except SubmissionLedgerError as error:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": error.code, "detail": error.detail},
+        ) from error
+
+
+@router.post("/corrections/{correction_id}/review")
+def review_correction(
+    correction_id: str,
+    body: ReviewCorrectionRequest,
+    request: Request,
+    x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token"),
+) -> dict[str, str]:
+    actor = _finance_actor(request)
+    require_web_csrf(request, x_csrf_token)
+    try:
+        return _ledger(request).review_correction(
+            correction_id,
+            approved=body.approved,
+            reviewer_id=actor.employee_code,
+            note=body.note,
+        )
+    except SubmissionLedgerError as error:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": error.code, "detail": error.detail},
+        ) from error
 
 
 @router.get("/form-definitions", response_model=ManagedFormListResponse)

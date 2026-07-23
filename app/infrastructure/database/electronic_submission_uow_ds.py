@@ -1,7 +1,9 @@
 """Atomic transaction boundary for electronic form submissions."""
 
+from __future__ import annotations
+
 from collections.abc import Callable
-from typing import Protocol, Self
+from typing import TYPE_CHECKING, Protocol, Self
 
 from sqlalchemy import Engine
 from sqlalchemy.orm import Session, sessionmaker
@@ -13,6 +15,11 @@ from app.adapters.database.fact_record_repository_ds import (
     SqlAlchemyFactRecordRepository,
 )
 from app.adapters.database.repositories import SqlAlchemyFormRepository
+from app.modules.submission_ledger.service_ds import SubmissionLedgerService
+
+if TYPE_CHECKING:
+    from app.application.electronic_submissions_ds import ElectronicFormCommand
+    from app.modules.electronic_forms.models_ds import ElectronicSubmissionReceipt
 
 
 class ElectronicSubmissionUnitOfWork(Protocol):
@@ -30,6 +37,12 @@ class ElectronicSubmissionUnitOfWork(Protocol):
     ) -> None: ...
 
     def flush(self) -> None: ...
+
+    def record_finance_acceptance(
+        self,
+        receipt: ElectronicSubmissionReceipt,
+        command: ElectronicFormCommand,
+    ) -> None: ...
 
 
 class SqlAlchemyElectronicSubmissionUnitOfWork:
@@ -78,3 +91,21 @@ class SqlAlchemyElectronicSubmissionUnitOfWork:
         if self.session is None:
             raise RuntimeError("UnitOfWork has not been entered")
         self.session.flush()
+
+    def record_finance_acceptance(
+        self,
+        receipt: ElectronicSubmissionReceipt,
+        command: ElectronicFormCommand,
+    ) -> None:
+        if self.session is None:
+            raise RuntimeError("UnitOfWork has not been entered")
+        SubmissionLedgerService(self._engine).record_acceptance(
+            submission_id=receipt.receipt_id,
+            factory_id=command.factory_id,
+            subject_employee_code=command.subject_employee_code,
+            actor_id=command.actor_id,
+            definition_version_id=command.definition_version_id,
+            values=command.values,
+            submitted_at=receipt.submitted_at,
+            session=self.session,
+        )
