@@ -84,6 +84,7 @@ from app.modules.templates.seed_templates_ds import (
     SeedTemplateConflict,
     install_legacy_payroll_seed_templates,
 )
+from app.services.demo_web_accounts_ds import install_demo_web_accounts
 from config.settings import Settings
 
 logger = logging.getLogger(__name__)
@@ -287,6 +288,8 @@ def build_services(settings: Settings, *, install_seed_templates: bool = False) 
         bamboo_operations=BambooOperationsService(engine, storage),
     )
     # Legacy recognition/export tasks are no longer started by the Web mainline.
+    if install_seed_templates and settings.environment == "development":
+        install_demo_web_accounts(master_data, mobile_identity_repository)
     if install_seed_templates:
         try:
             install_legacy_payroll_seed_templates(template_repository, template_renderer)

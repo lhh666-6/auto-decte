@@ -207,3 +207,30 @@ def test_workspace_endpoints_require_web_session(services: Services) -> None:
         response = client.get(path)
         assert response.status_code == 401
         assert response.json()["code"] == "WEB_SESSION_REQUIRED"
+
+
+def test_development_seed_installs_web_test_accounts_idempotently(
+    tmp_path: Path,
+) -> None:
+    first = build_services(
+        Settings(data_root=tmp_path, environment="development"),
+        install_seed_templates=True,
+    )
+
+    expected = {
+        "GLY001": ("ADMIN", "/admin/overview"),
+        "CW001": ("FINANCE", "/finance/overview"),
+    }
+    for employee_code, (role, landing_path) in expected.items():
+        client = _login(first, employee_code)
+        session = client.get("/api/v1/web/auth/session").json()
+        assert session["workspace_role"] == role
+        assert session["landing_path"] == landing_path
+
+    restarted = build_services(
+        Settings(data_root=tmp_path, environment="development"),
+        install_seed_templates=True,
+    )
+    for employee_code in expected:
+        client = _login(restarted, employee_code)
+        assert client.get("/api/v1/web/auth/session").status_code == 200
