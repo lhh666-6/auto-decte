@@ -25,7 +25,7 @@ export function MobileV3Shell() {
   const { status, sessionMetadata } = useMobileSession();
   const isLogin = location.pathname === "/mobile/login";
   const role = sessionMetadata?.bamboo_role ?? "";
-  const showProductionShell = !isLogin && status === "authenticated" && Boolean(role) && role !== "FINANCE_APPROVER";
+  const showProductionShell = !isLogin && status === "authenticated" && Boolean(role) && role !== "FINANCE_APPROVER" && role !== "PLANT_MANAGER";
   useBambooSystemNotifications(sessionMetadata?.employee_code, showProductionShell);
   const pageCopy = PAGE_COPY.find((item) => item.match(location.pathname)) ?? PAGE_COPY[0];
 

@@ -156,8 +156,7 @@ export function AppRoutes() {
           <Route path="mobile/home" element={<BambooV3HomePage />} />
           <Route path="mobile/work" element={<MobileBambooProcessPage />} />
           <Route path="mobile/records/:recordId" element={<MobileBambooProcessPage />} />
-          <Route path="mobile/record/sheet-piece" element={<Navigate to="/mobile/work" replace />} />
-          <Route path="mobile/record/team-sheet-piece" element={<Navigate to="/mobile/work" replace />} />
+
           <Route path="mobile/submissions" element={<BambooV3SubmissionsPage />} />
           <Route path="mobile/profile" element={<BambooV3ProfilePage />} />
           <Route path="mobile/personnel" element={<BambooPersonnelPage />} />

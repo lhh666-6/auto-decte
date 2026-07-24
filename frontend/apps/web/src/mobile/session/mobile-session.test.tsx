@@ -101,6 +101,7 @@ describe("mobile session guard", () => {
   it.each([
     [{ bamboo_role: "FINANCE_APPROVER", position: "财务审批" }, "/mobile/home"],
     [{ bamboo_role: "", position: "待分配" }, "/mobile/home"],
+    [{ bamboo_role: "PLANT_MANAGER", position: "厂长" }, "/mobile/home"],
   ] as const)("redirects non-mobile production roles away from protected deep links", async (overrides, expectedPath) => {
     function LocationProbe() {
       return <output data-testid="location">{useLocation().pathname}</output>;
@@ -121,5 +122,27 @@ describe("mobile session guard", () => {
 
     await waitFor(() => expect(screen.getByTestId("location").textContent).toBe(expectedPath));
     expect(screen.queryByText("work")).toBeNull();
+  });
+
+  it("redirects PLANT_MANAGER away from records deep links", async () => {
+    function LocationProbe() {
+      return <output data-testid="location">{useLocation().pathname}</output>;
+    }
+    render(
+      <MemoryRouter initialEntries={["/mobile/records/fake-id"]}>
+        <MobileSessionProvider client={authenticatedClient({ bamboo_role: "PLANT_MANAGER", position: "厂长" })}>
+          <Routes>
+            <Route element={<RequireMobileSession />}>
+              <Route path="mobile/home" element={<div>home</div>} />
+              <Route path="mobile/records/:id" element={<div>records</div>} />
+            </Route>
+          </Routes>
+          <LocationProbe />
+        </MobileSessionProvider>
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => expect(screen.getByTestId("location").textContent).toBe("/mobile/home"));
+    expect(screen.queryByText("records")).toBeNull();
   });
 });

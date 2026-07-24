@@ -88,11 +88,21 @@ describe("mobile V3 compatibility redirects", () => {
     ["/mobile/drafts", "/mobile/submissions"],
     ["/mobile/outbox", "/mobile/submissions"],
     ["/mobile/record/bamboo-process/record-42", "/mobile/records/record-42"],
-    ["/mobile/record/sheet-piece", "/mobile/work"],
-    ["/mobile/record/team-sheet-piece", "/mobile/work"],
   ])("redirects %s to %s", async (legacyPath, v3Path) => {
     renderRoute(legacyPath);
 
     expect((await screen.findByTestId("location")).textContent).toBe(v3Path);
+  });
+});
+
+describe("old sheet-piece routes return NotFound", () => {
+  it.each([
+    "/mobile/record/sheet-piece",
+    "/mobile/record/team-sheet-piece",
+  ])("shows NotFound for %s (no redirect)", (path) => {
+    renderRoute(path);
+
+    expect(screen.getByText("找不到这个页面")).toBeDefined();
+    expect(screen.getByTestId("location").textContent).toBe(path);
   });
 });

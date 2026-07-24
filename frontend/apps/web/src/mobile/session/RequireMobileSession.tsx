@@ -35,7 +35,7 @@ export function RequireMobileSession() {
     );
   }
   const role = sessionMetadata?.bamboo_role ?? "";
-  if ((role === "FINANCE_APPROVER" || !role) && location.pathname !== "/mobile/home") {
+  if ((role === "FINANCE_APPROVER" || role === "PLANT_MANAGER" || !role) && location.pathname !== "/mobile/home") {
     return <Navigate to="/mobile/home" replace />;
   }
   return <Outlet />;

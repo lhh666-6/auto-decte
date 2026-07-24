@@ -65,8 +65,9 @@ export function BambooV3HomePage() {
 
   const role = session?.bamboo_role ?? "";
   const isFinance = role === "FINANCE_APPROVER";
+  const isPlantManager = role === "PLANT_MANAGER";
   const action = ROLE_ACTIONS[role];
-  const hasMobileWork = Boolean(action);
+  const hasMobileWork = Boolean(action) && !isPlantManager;
 
   const loadDashboard = useCallback(async () => {
     if (!hasMobileWork) return;
@@ -129,7 +130,7 @@ export function BambooV3HomePage() {
           <div className="section-note">完成后主动填写</div>
         </div>
 
-        {action && (
+        {action && !isPlantManager && (
           <div className="action-grid">
             <Link className="action-card" to="/mobile/work">
               <span className="visually-hidden">开始记录工作</span>
@@ -165,6 +166,16 @@ export function BambooV3HomePage() {
             <div className="card-body">
               <div className="card-title">财务审批请前往网页端</div>
               <p className="empty-copy">移动端不提供财务审批操作，请使用电脑访问系统。</p>
+              <a className="btn secondary full" href="/">进入网页端</a>
+            </div>
+          </div>
+        )}
+
+        {isPlantManager && (
+          <div className="card">
+            <div className="card-body">
+              <div className="card-title">厂长业务请使用 Web 工作区</div>
+              <p className="empty-copy">人员调度、审批把关等管理操作请在电脑端完成。</p>
               <a className="btn secondary full" href="/">进入网页端</a>
             </div>
           </div>
