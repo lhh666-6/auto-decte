@@ -47,8 +47,8 @@ it("builds structured cards and shows workflow preflight result", async () => {
   const user = userEvent.setup();
   render(<WorkflowDesignerPage />);
 
-  await user.click(screen.getByRole("button", { name: "添加通知节点" }));
-  await user.click(screen.getByRole("button", { name: "添加结束节点" }));
+  await user.click(screen.getByRole("button", { name: "+ 通知" }));
+  await user.click(screen.getByRole("button", { name: "+ 结束" }));
   await user.click(screen.getByRole("button", { name: "保存并预检" }));
 
   expect(await screen.findByText(/流程预检通过/)).toBeTruthy();

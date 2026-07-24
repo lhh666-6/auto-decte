@@ -11,6 +11,10 @@ import { WebSessionProvider } from "./WebSessionProvider";
 import { WorkspaceOverviewPage } from "./WorkspaceOverviewPage";
 import { WorkspaceShell } from "./WorkspaceShell";
 import { logoutWebSession } from "./api";
+import { AdminAuditPage } from "./AdminAuditPage";
+import { AdminNotificationsPage } from "./AdminNotificationsPage";
+import { AdminOrganizationPage } from "./AdminOrganizationPage";
+import { AdminRolesPage } from "./AdminRolesPage";
 import type { WebSession } from "./types";
 
 const MANAGER_SESSION: WebSession = {
@@ -210,5 +214,73 @@ describe("Web three-role workspaces", () => {
         headers: { "X-CSRF-Token": "csrf-token" },
       }),
     );
+  });
+});
+
+describe("Admin governance pages", () => {
+  it("renders AdminOrganizationPage and loads employees", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({ items: [{ factory_id: "F1", code: "F1", name: "工厂一" }] }))
+      .mockResolvedValueOnce(jsonResponse({ items: [] }))
+      .mockResolvedValueOnce(jsonResponse({ items: [{ employee_code: "E1", employee_name: "张三", factory_id: "F1", role_code: "SORT_OPERATOR", role_name: "分拣工" }] }))
+      .mockResolvedValueOnce(jsonResponse({ items: [] }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<AdminOrganizationPage />);
+
+    expect(await screen.findByText("组织架构")).toBeTruthy();
+    expect(screen.getByText("张三")).toBeTruthy();
+  });
+
+  it("renders AdminRolesPage with web workspace roles", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({ items: [
+        { role_code: "SORT_OPERATOR", display_name: "分拣工" },
+        { role_code: "INSPECTOR", display_name: "检验员" },
+      ] }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<AdminRolesPage />);
+
+    expect(await screen.findByText("角色权限")).toBeTruthy();
+    expect(screen.getByText("系统管理员")).toBeTruthy();
+    expect(screen.getByText("分拣工")).toBeTruthy();
+  });
+
+  it("renders AdminAuditPage and shows empty state when API unavailable", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({ code: "NOT_FOUND", detail: "审计日志服务暂不可用" }, 404));
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<AdminAuditPage />);
+
+    expect(await screen.findByText("审计日志")).toBeTruthy();
+    expect(screen.getByText("审计日志服务暂不可用")).toBeTruthy();
+  });
+
+  it("renders AdminNotificationsPage and loads notifications", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({ items: [
+        { notification_id: "N1", category: "form", title: "新表单待审批", body: "表单 X 需要审批", link: "", payload: {}, created_at: "2026-01-01" },
+      ] }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<AdminNotificationsPage />);
+
+    expect(await screen.findByText("通知管理")).toBeTruthy();
+    expect(screen.getByText("新表单待审批")).toBeTruthy();
+  });
+
+  it("renders AdminOrganizationPage error state when API fails", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({ items: [] }))
+      .mockResolvedValueOnce(jsonResponse({ items: [] }))
+      .mockRejectedValueOnce(new Error("网络错误"))
+      .mockRejectedValueOnce(new Error("网络错误"));
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<AdminOrganizationPage />);
+
+    expect(await screen.findByText("网络错误")).toBeTruthy();
   });
 });

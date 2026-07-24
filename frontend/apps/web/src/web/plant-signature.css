@@ -162,6 +162,217 @@
   gap: .75rem;
 }
 
+/* 工资事实 */
+.signature-payroll-list {
+  display: grid;
+  gap: .75rem;
+}
+
+.signature-payroll-item {
+  border: 1px solid #e4e7ec;
+  border-radius: 10px;
+  padding: .85rem;
+}
+
+.signature-payroll-item > header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: .5rem;
+}
+
+.signature-payroll-amount {
+  font-weight: 700;
+  color: #155eef;
+  font-size: 1.1rem;
+}
+
+.signature-allocations {
+  margin-top: .5rem;
+  color: #596579;
+  font-size: .9rem;
+}
+
+.signature-allocations ul {
+  margin: .35rem 0 0 1.2rem;
+  padding: 0;
+}
+
+/* 检测状态增强 */
+.signature-inspection-summary {
+  margin-bottom: .75rem;
+}
+
+.signature-inspection-status {
+  margin-left: .35rem;
+  font-weight: 600;
+}
+
+.signature-inspection-status.qualified,
+.signature-inspection-status.appeal_approved {
+  color: #124e35;
+}
+
+.signature-inspection-status.open,
+.signature-inspection-status.claimed {
+  color: #155eef;
+}
+
+.signature-inspection-status.expired,
+.signature-inspection-status.terminated {
+  color: #b42318;
+}
+
+.signature-inspection-status.appeal_submitted {
+  color: #b54708;
+}
+
+.signature-inspection-header {
+  display: flex;
+  gap: .75rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.signature-inspection-header time {
+  margin-left: auto;
+  color: #667085;
+}
+
+.signature-evidence {
+  margin-top: .5rem;
+  font-size: .9rem;
+}
+
+.signature-evidence ul {
+  margin: .35rem 0 0 1.2rem;
+  padding: 0;
+}
+
+.signature-terminate {
+  margin-top: .75rem;
+}
+
+/* 上诉区块增强 */
+.signature-appeal {
+  border: 1px solid #fecaca;
+  background: #fff7ed;
+}
+
+.signature-appeal-label {
+  font-weight: 600;
+  margin-top: .5rem;
+}
+
+.signature-appeal-quote {
+  margin: .5rem 0;
+  padding: .65rem;
+  border-left: 3px solid #f97316;
+  background: #fff;
+  border-radius: 0 8px 8px 0;
+  color: #596579;
+}
+
+.signature-appeal-evidence {
+  margin: .5rem 0;
+}
+
+.signature-appeal-evidence summary {
+  cursor: pointer;
+  color: #155eef;
+}
+
+.signature-appeal-inspection {
+  margin-top: .5rem;
+  padding: .5rem;
+  background: #f8fafc;
+  border-radius: 6px;
+}
+
+.signature-appeal-result {
+  margin-top: .75rem;
+  padding: .75rem;
+  background: #f0fdf4;
+  border-radius: 8px;
+  border: 1px solid #bbf7d0;
+}
+
+/* 打回区块增强 */
+.signature-return-stages {
+  border: none;
+  padding: 0;
+  margin: 0;
+}
+
+.signature-return-stages legend {
+  font-weight: 600;
+  margin-bottom: .35rem;
+}
+
+.signature-return-impact {
+  margin: .5rem 0;
+  padding: .65rem;
+  background: #fef3f2;
+  border-radius: 8px;
+  border: 1px solid #fecaca;
+}
+
+.signature-return-impact h4 {
+  margin: 0 0 .35rem;
+  color: #b42318;
+}
+
+.signature-return-impact ul {
+  margin: 0;
+  padding: 0 0 0 1.2rem;
+  font-size: .9rem;
+}
+
+/* 签字弹窗字段 */
+.signature-dialog-fields {
+  display: grid;
+  gap: .5rem;
+  margin: .5rem 0;
+}
+
+.signature-dialog-fields div {
+  display: flex;
+  justify-content: space-between;
+}
+
+.signature-dialog-fields dt {
+  color: #667085;
+}
+
+.signature-dialog-fields dd {
+  font-weight: 600;
+}
+
+/* 纠错案件 */
+.signature-corrections {
+  display: grid;
+  gap: .75rem;
+}
+
+.signature-correction-item {
+  border: 1px solid #e4e7ec;
+  border-radius: 10px;
+  padding: .85rem;
+}
+
+.signature-correction-item p {
+  margin: .25rem 0;
+}
+
+/* 加载状态 */
+.signature-loading {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 200px;
+  color: #667085;
+}
+
 @media (max-width: 720px) {
   .signature-hero {
     align-items: flex-start;
@@ -174,6 +385,16 @@
   }
 
   .signature-submissions time {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .signature-payroll-item > header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .signature-inspection-header time {
     width: 100%;
     margin-left: 0;
   }

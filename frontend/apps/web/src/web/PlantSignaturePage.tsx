@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
 import {
@@ -23,6 +23,15 @@ const STAGE_LABELS: Record<string, string> = {
   PLANT_AUDIT: "厂长签字",
 };
 
+const FACT_TYPE_LABELS: Record<string, string> = {
+  PIECE_RATE: "计件工资事实",
+  QUALITY_BONUS: "质量奖金",
+  PENALTY: "扣款事实",
+  ATTENDANCE: "考勤事实",
+};
+
+const STAGE_FLOW = ["SORT", "DIPPING", "DRYING", "SUPERVISOR", "PLANT_AUDIT"] as const;
+
 function readable(value: unknown): string {
   if (value === null || value === undefined || value === "") return "—";
   if (typeof value === "boolean") return value ? "是" : "否";
@@ -30,6 +39,7 @@ function readable(value: unknown): string {
   return String(value);
 }
 
+/* ---- 通用字段展示 ---- */
 function Fields({ values }: { values: Record<string, unknown> }) {
   const entries = Object.entries(values);
   if (!entries.length) return <p className="signature-muted">无填写内容</p>;
@@ -45,6 +55,7 @@ function Fields({ values }: { values: Record<string, unknown> }) {
   );
 }
 
+/* ---- 环节提交卡片 ---- */
 function SubmissionCard({ item }: { item: BambooStageSubmission }) {
   return (
     <article className={item.invalidated ? "is-invalidated" : ""}>
@@ -59,12 +70,42 @@ function SubmissionCard({ item }: { item: BambooStageSubmission }) {
   );
 }
 
+/* ---- 可打回环节选项 ---- */
 function stageOptions(detail: BambooProductionDetail): Array<[string, string]> {
   return detail.form_type === "SORTING"
     ? [["SORT", "分选"]]
     : [["DIPPING", "浸胶"], ["DRYING", "干燥"]];
 }
 
+/* ---- 根据当前选中环节，预览失效的提交 ---- */
+function returnImpactPreview(
+  detail: BambooProductionDetail,
+  selectedStages: string[],
+) {
+  if (!selectedStages.length) return null;
+  const affected = detail.submissions.filter(
+    (item) => selectedStages.includes(item.stage) && !item.invalidated,
+  );
+  if (!affected.length) return <p className="signature-muted">所选环节当前没有有效提交，打回不会使提交失效。</p>;
+  return (
+    <div className="signature-return-impact">
+      <h4>将失效的提交（{affected.length} 条）</h4>
+      <ul>
+        {affected.map((item) => (
+          <li key={item.submission_id}>
+            {STAGE_LABELS[item.stage] ?? item.stage} — {item.actor_name || item.actor_id}
+            {" · "}
+            {item.submitted_at ? new Date(item.submitted_at).toLocaleString() : "未记录时间"}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/* ===================================================================
+ * PlantSignaturePage
+ * =================================================================== */
 export function PlantSignaturePage() {
   const { recordId = "" } = useParams<{ recordId: string }>();
   const { session } = useWebSession();
@@ -76,10 +117,13 @@ export function PlantSignaturePage() {
   const [signatureKey, setSignatureKey] = useState("");
   const [appealNote, setAppealNote] = useState("");
   const [returnOpen, setReturnOpen] = useState(false);
+  const [returnConfirmOpen, setReturnConfirmOpen] = useState(false);
   const [returnStages, setReturnStages] = useState<string[]>([]);
   const [returnReason, setReturnReason] = useState("");
+  const [terminateReason, setTerminateReason] = useState("");
+  const [terminateConfirmOpen, setTerminateConfirmOpen] = useState(false);
 
-  async function reload() {
+  const reload = useCallback(async () => {
     if (!recordId) return;
     try {
       setDetail(await getPlantProductionDetail(recordId));
@@ -87,17 +131,18 @@ export function PlantSignaturePage() {
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "生产记录加载失败");
     }
-  }
+  }, [recordId]);
 
   useEffect(() => {
     void reload();
-  }, [recordId]);
+  }, [reload]);
 
   const activeStages = useMemo(
     () => detail ? stageOptions(detail) : [],
     [detail],
   );
 
+  /* ---- 通用操作包裹器 ---- */
   async function run(action: () => Promise<unknown>): Promise<boolean> {
     setBusy(true);
     setError("");
@@ -106,15 +151,24 @@ export function PlantSignaturePage() {
       await reload();
       return true;
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "操作失败");
+      const msg = cause instanceof Error ? cause.message : "操作失败";
+      // 检测 STALE_REVISION 并提示刷新
+      if (msg.includes("STALE_REVISION") || msg.includes("revision")) {
+        setError("记录已被他人修改，页面已刷新至最新版本。请重新操作。");
+        await reload();
+      } else {
+        setError(msg);
+      }
       return false;
     } finally {
       setBusy(false);
     }
   }
 
+  /* ---- 签字 ---- */
   function openSignatureConfirmation() {
-    setSignatureKey(crypto.randomUUID());
+    // 保持同一个 idempotency key，重复点击返回原结果
+    if (!signatureKey) setSignatureKey(crypto.randomUUID());
     setConfirming(true);
   }
 
@@ -126,15 +180,27 @@ export function PlantSignaturePage() {
       note,
       signatureKey,
     ));
-    if (succeeded) setConfirming(false);
+    if (succeeded) {
+      setConfirming(false);
+      setSignatureKey("");
+    }
   }
 
-  async function terminateInspection() {
-    if (!detail) return;
-    if (!window.confirm("停止后检测员将失去当前检测权限，确定提前结束检测吗？")) return;
-    await run(() => terminatePlantInspection(detail.record_id, crypto.randomUUID()));
+  /* ---- 检测终止 ---- */
+  function openTerminateConfirm() {
+    setTerminateReason("");
+    setTerminateConfirmOpen(true);
   }
 
+  async function confirmTerminate() {
+    if (!detail || !terminateReason.trim()) return;
+    const succeeded = await run(() =>
+      terminatePlantInspection(detail.record_id, crypto.randomUUID()),
+    );
+    if (succeeded) setTerminateConfirmOpen(false);
+  }
+
+  /* ---- 上诉决定 ---- */
   async function decideAppeal(approve: boolean) {
     if (!detail) return;
     await run(() => decidePlantInspectionAppeal(
@@ -145,20 +211,34 @@ export function PlantSignaturePage() {
     setAppealNote("");
   }
 
-  async function submitReturn() {
+  /* ---- 打回 ---- */
+  function openReturnConfirm() {
     if (!detail || !returnStages.length || !returnReason.trim()) return;
-    await run(() => returnPlantRecord(
+    setReturnConfirmOpen(true);
+  }
+
+  async function confirmReturn() {
+    if (!detail || !returnStages.length || !returnReason.trim()) return;
+    const succeeded = await run(() => returnPlantRecord(
       detail.record_id,
       returnStages,
       returnReason,
       detail.revision,
     ));
-    setReturnOpen(false);
-    setReturnStages([]);
-    setReturnReason("");
+    if (succeeded) {
+      setReturnOpen(false);
+      setReturnConfirmOpen(false);
+      setReturnStages([]);
+      setReturnReason("");
+    }
   }
 
-  if (!detail && !error) return <div role="status">正在加载签字资料…</div>;
+  /* ---- 渲染 ---- */
+  if (!detail && !error) return <div role="status" className="signature-loading">正在加载签字资料…</div>;
+
+  const showSignButton =
+    detail?.current_stage === "PLANT_AUDIT" &&
+    detail?.signature_gate.can_sign;
 
   return (
     <section className="plant-signature-page">
@@ -166,28 +246,32 @@ export function PlantSignaturePage() {
       {error && <div className="signature-alert" role="alert">{error}</div>}
       {detail && (
         <>
+          {/* ---- 英雄头部 ---- */}
           <header className="signature-hero">
             <div>
               <span className="signature-kicker">厂长独立签字页</span>
               <h1>{detail.display_no}</h1>
-              <p>笼号 {detail.cage_no || "—"} · 版本 {detail.revision}</p>
+              <p>笼号 {detail.cage_no || "—"} · 版本 {detail.revision} · 状态 {detail.status}</p>
             </div>
             <span className="signature-stage">
               {STAGE_LABELS[detail.current_stage ?? ""] ?? detail.current_stage ?? "已完成"}
             </span>
           </header>
 
+          {/* ---- 流程进度 ---- */}
           <section className="signature-card">
             <h2>流程进度</h2>
             <ol className="signature-flow">
-              {["SORT", "DIPPING", "DRYING", "SUPERVISOR", "PLANT_AUDIT"]
+              {STAGE_FLOW
                 .filter((stage) => detail.form_type !== "SORTING" || !["DIPPING", "DRYING"].includes(stage))
                 .map((stage) => (
                   <li
                     key={stage}
                     className={detail.submissions.some((item) => item.stage === stage && !item.invalidated)
                       ? "is-complete"
-                      : detail.current_stage === stage ? "is-current" : ""}
+                      : detail.current_stage === stage
+                        ? "is-current"
+                        : ""}
                   >
                     {STAGE_LABELS[stage]}
                   </li>
@@ -195,11 +279,13 @@ export function PlantSignaturePage() {
             </ol>
           </section>
 
+          {/* ---- 表单基础信息 ---- */}
           <section className="signature-card">
             <h2>表单基础信息</h2>
             <Fields values={detail.base_info} />
           </section>
 
+          {/* ---- 上游表单 ---- */}
           {detail.upstream_record && (
             <section className="signature-card">
               <h2>上游表单（只读）</h2>
@@ -213,6 +299,7 @@ export function PlantSignaturePage() {
             </section>
           )}
 
+          {/* ---- 本表提交记录 ---- */}
           <section className="signature-card">
             <h2>本表提交记录</h2>
             <div className="signature-submissions">
@@ -223,41 +310,162 @@ export function PlantSignaturePage() {
             </div>
           </section>
 
+          {/* ---- 工资事实 ---- */}
+          {detail.payroll_facts && detail.payroll_facts.length > 0 && (
+            <section className="signature-card">
+              <h2>工资影响</h2>
+              <div className="signature-payroll-list">
+                {detail.payroll_facts.map((fact) => (
+                  <article key={fact.fact_id} className="signature-payroll-item">
+                    <header>
+                      <strong>{FACT_TYPE_LABELS[fact.fact_type] ?? fact.fact_type}</strong>
+                      <span className="signature-payroll-amount">
+                        {fact.total_amount ?? fact.amount}
+                      </span>
+                    </header>
+                    <dl className="signature-fields">
+                      <div><dt>规则</dt><dd>{fact.rule_key}</dd></div>
+                      <div><dt>计量值</dt><dd>{fact.metric_value}</dd></div>
+                      <div><dt>单价</dt><dd>{fact.rate}</dd></div>
+                      <div><dt>基数</dt><dd>{fact.base_amount}</dd></div>
+                      <div><dt>期间</dt><dd>{fact.period_start} ~ {fact.period_end}</dd></div>
+                    </dl>
+                    {fact.allocations && fact.allocations.length > 0 && (
+                      <details className="signature-allocations">
+                        <summary>分配明细（{fact.allocations.length} 人）</summary>
+                        <ul>
+                          {fact.allocations.map((alloc, idx) => (
+                            <li key={idx}>
+                              {alloc.employee_code}: {alloc.amount}
+                              {alloc.rate ? `（费率 ${alloc.rate}）` : ""}
+                            </li>
+                          ))}
+                        </ul>
+                      </details>
+                    )}
+                  </article>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {/* ---- 检测状态 ---- */}
           <section className="signature-card">
             <h2>检测状态</h2>
             {detail.inspection_window ? (
               <>
-                <p>
-                  状态：{detail.inspection_window.status}
-                  {detail.inspection_window.remaining_seconds > 0
-                    ? ` · 剩余约 ${Math.ceil(detail.inspection_window.remaining_seconds / 60)} 分钟`
-                    : ""}
-                </p>
+                <div className="signature-inspection-summary">
+                  <p>
+                    <strong>状态：</strong>
+                    <span className={`signature-inspection-status ${detail.inspection_window.status.toLowerCase()}`}>
+                      {detail.inspection_window.status === "QUALIFIED" ? "检测合格" :
+                        detail.inspection_window.status === "OPEN" ? "等待检测" :
+                          detail.inspection_window.status === "CLAIMED" ? "检测中" :
+                            detail.inspection_window.status === "EXPIRED" ? "检测已过期" :
+                              detail.inspection_window.status === "APPEAL_SUBMITTED" ? "上诉待审批" :
+                                detail.inspection_window.status === "APPEAL_APPROVED" ? "上诉已批准" :
+                                  detail.inspection_window.status === "APPEAL_REJECTED" ? "上诉已驳回" :
+                                    detail.inspection_window.status === "TERMINATED" ? "已终止" :
+                                      detail.inspection_window.status}
+                    </span>
+                  </p>
+                  {detail.inspection_window.remaining_seconds > 0 && detail.inspection_window.status !== "TERMINATED" && (
+                    <p className="signature-muted">
+                      剩余约 {Math.ceil(detail.inspection_window.remaining_seconds / 60)} 分钟
+                      {" · "}截止 {new Date(detail.inspection_window.deadline_at).toLocaleString()}
+                    </p>
+                  )}
+                  {detail.inspection_window.appeal_deadline_at && (
+                    <p className="signature-muted">上诉截止：{new Date(detail.inspection_window.appeal_deadline_at).toLocaleString()}</p>
+                  )}
+                  {detail.inspection_window.terminated_by && (
+                    <p className="signature-muted">终止人：{detail.inspection_window.terminated_by}</p>
+                  )}
+                </div>
+
+                {/* 检测详情列表 */}
                 {detail.inspections.map((inspection) => (
                   <article className="signature-inspection" key={inspection.inspection_id}>
-                    <strong>{inspection.conclusion === "QUALIFIED" ? "检测合格" : inspection.conclusion}</strong>
-                    <span>{inspection.actor_name}</span>
-                    {inspection.note && <p>{inspection.note}</p>}
-                    {inspection.evidence.map((evidence) => (
-                      <p key={evidence.asset_id}>
-                        检测记录：{evidence.text_content || evidence.file_id || evidence.evidence_type}
-                      </p>
-                    ))}
+                    <header className="signature-inspection-header">
+                      <strong>
+                        {inspection.conclusion === "QUALIFIED" ? "检测合格" :
+                          inspection.conclusion === "REJECTED" ? "检测不合格" :
+                            inspection.conclusion}
+                      </strong>
+                      <span>{inspection.actor_name}</span>
+                      {inspection.signed_at && (
+                        <time>{new Date(inspection.signed_at).toLocaleString()}</time>
+                      )}
+                    </header>
+                    {inspection.average_value !== undefined && (
+                      <p>平均检测值：{inspection.average_value}</p>
+                    )}
+                    {inspection.moisture_points && inspection.moisture_points.length > 0 && (
+                      <p>检测点：{inspection.moisture_points.join(", ")}</p>
+                    )}
+                    {inspection.note && <p className="signature-muted">备注：{inspection.note}</p>}
+                    {inspection.evidence.length > 0 && (
+                      <details className="signature-evidence">
+                        <summary>检测证据（{inspection.evidence.length} 条）</summary>
+                        <ul>
+                          {inspection.evidence.map((ev) => (
+                            <li key={ev.asset_id}>
+                              [{ev.evidence_type}]{" "}
+                              {ev.text_content || ev.file_id || ev.uri || "无内容"}
+                            </li>
+                          ))}
+                        </ul>
+                      </details>
+                    )}
                   </article>
                 ))}
               </>
-            ) : <p className="signature-muted">无检测窗口</p>}
-
-            {["OPEN", "CLAIMED"].includes(detail.inspection_window?.status ?? "") && (
-              <button type="button" disabled={busy} onClick={() => void terminateInspection()}>
-                停止检测并提前签字
-              </button>
+            ) : (
+              <p className="signature-muted">无检测窗口</p>
             )}
 
+            {/* 终止检测 */}
+            {["OPEN", "CLAIMED"].includes(detail.inspection_window?.status ?? "") && (
+              <div className="signature-terminate">
+                <button type="button" className="secondary-button" disabled={busy} onClick={openTerminateConfirm}>
+                  停止检测并提前签字
+                </button>
+              </div>
+            )}
+
+            {/* 上诉处理 */}
             {detail.inspection_window?.status === "APPEAL_SUBMITTED" && (
               <div className="signature-appeal">
                 <h3>检测上诉待审批</h3>
-                <p>{detail.inspection_window.appeal_payload?.text_evidence}</p>
+                {detail.inspection_window.appeal_payload?.target_stage && (
+                  <p>目标环节：{STAGE_LABELS[detail.inspection_window.appeal_payload.target_stage] ?? detail.inspection_window.appeal_payload.target_stage}</p>
+                )}
+                {detail.inspection_window.appeal_payload?.text_evidence && (
+                  <>
+                    <p className="signature-appeal-label">上诉理由：</p>
+                    <blockquote className="signature-appeal-quote">
+                      {detail.inspection_window.appeal_payload.text_evidence}
+                    </blockquote>
+                  </>
+                )}
+                {/* 原检测值汇总 */}
+                {detail.inspections.length > 0 && (
+                  <details className="signature-appeal-evidence">
+                    <summary>原检测记录（{detail.inspections.length} 条）</summary>
+                    {detail.inspections.map((inspection) => (
+                      <div key={inspection.inspection_id} className="signature-appeal-inspection">
+                        <p>结论：{inspection.conclusion} · 检测人：{inspection.actor_name}</p>
+                        {inspection.average_value !== undefined && <p>均值：{inspection.average_value}</p>}
+                        {inspection.note && <p>备注：{inspection.note}</p>}
+                        {inspection.evidence.map((ev) => (
+                          <p key={ev.asset_id} className="signature-muted">
+                            证据：{ev.text_content || ev.file_id || ev.evidence_type}
+                          </p>
+                        ))}
+                      </div>
+                    ))}
+                  </details>
+                )}
                 <textarea
                   aria-label="上诉审批意见"
                   value={appealNote}
@@ -265,15 +473,33 @@ export function PlantSignaturePage() {
                   placeholder="填写审批意见（可选）"
                 />
                 <div>
-                  <button type="button" disabled={busy} onClick={() => void decideAppeal(true)}>同意上诉</button>
+                  <button type="button" disabled={busy} onClick={() => void decideAppeal(true)}>同意上诉（重新检测）</button>
                   <button type="button" disabled={busy} onClick={() => void decideAppeal(false)}>驳回上诉</button>
                 </div>
               </div>
             )}
+
+            {/* 已判决的上诉结果 */}
+            {detail.inspection_window?.appeal_decision && (
+              <div className="signature-appeal-result">
+                <p>
+                  <strong>上诉结果：</strong>
+                  {detail.inspection_window.appeal_decision === "APPROVED" ? "已批准" :
+                    detail.inspection_window.appeal_decision === "REJECTED" ? "已驳回" :
+                      detail.inspection_window.appeal_decision}
+                </p>
+                {detail.inspection_window.appeal_decision_note && (
+                  <p className="signature-muted">审批意见：{detail.inspection_window.appeal_decision_note}</p>
+                )}
+              </div>
+            )}
           </section>
 
+          {/* ---- 厂长处理 ---- */}
           <section className="signature-card signature-actions">
             <h2>厂长处理</h2>
+
+            {/* 签字区 */}
             <label>
               签字备注（可选）
               <textarea
@@ -282,7 +508,7 @@ export function PlantSignaturePage() {
                 onChange={(event) => setNote(event.target.value)}
               />
             </label>
-            {detail.signature_gate.can_sign ? (
+            {showSignButton ? (
               <button type="button" disabled={busy} onClick={openSignatureConfirmation}>
                 通过并签字
               </button>
@@ -291,54 +517,141 @@ export function PlantSignaturePage() {
                 当前不可签字：{detail.signature_gate.reason || "流程条件尚未满足"}
               </p>
             )}
+
+            {/* 打回区 */}
             <button type="button" className="secondary-button" onClick={() => setReturnOpen((value) => !value)}>
               选择环节打回
             </button>
             {returnOpen && (
               <div className="signature-return">
-                {activeStages.map(([value, label]) => (
-                  <label key={value}>
-                    <input
-                      type="checkbox"
-                      checked={returnStages.includes(value)}
-                      onChange={(event) => setReturnStages((current) => event.target.checked
-                        ? [...current, value]
-                        : current.filter((item) => item !== value))}
-                    />
-                    {label}
-                  </label>
-                ))}
+                <p className="signature-muted">打回将撤销选中环节的有效提交，记录将回退至最早被选中环节。</p>
+                <fieldset className="signature-return-stages">
+                  <legend>选择要打回的环节</legend>
+                  {activeStages.map(([value, label]) => (
+                    <label key={value}>
+                      <input
+                        type="checkbox"
+                        checked={returnStages.includes(value)}
+                        onChange={(event) => setReturnStages((current) => event.target.checked
+                          ? [...current, value]
+                          : current.filter((item) => item !== value))}
+                      />
+                      {label}
+                      {(() => {
+                        const hasValid = detail.submissions.some(
+                          (s) => s.stage === value && !s.invalidated,
+                        );
+                        return hasValid ? null : <span className="signature-muted">（无有效提交）</span>;
+                      })()}
+                    </label>
+                  ))}
+                </fieldset>
+                {returnImpactPreview(detail, returnStages)}
                 <textarea
                   aria-label="打回原因"
                   value={returnReason}
                   onChange={(event) => setReturnReason(event.target.value)}
-                  placeholder="请填写打回原因"
+                  placeholder="请填写打回原因（必填）"
                 />
                 <button
                   type="button"
                   disabled={busy || !returnStages.length || !returnReason.trim()}
-                  onClick={() => void submitReturn()}
+                  onClick={openReturnConfirm}
                 >
-                  确认打回
+                  预览并确认打回
                 </button>
               </div>
             )}
           </section>
 
+          {/* 纠错案件 */}
+          {detail.corrections && detail.corrections.length > 0 && (
+            <section className="signature-card">
+              <h2>纠错案件</h2>
+              <div className="signature-corrections">
+                {detail.corrections.map((c) => (
+                  <article key={c.case_id} className="signature-correction-item">
+                    <p><strong>案件号：</strong>{c.case_id}</p>
+                    <p><strong>状态：</strong>{c.status}</p>
+                    <p><strong>原因：</strong>{c.reason}</p>
+                    <p className="signature-muted">创建时间：{new Date(c.created_at).toLocaleString()}</p>
+                  </article>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {/* ---- 签字确认弹窗 ---- */}
           {confirming && (
             <div className="signature-dialog-backdrop" role="presentation">
               <div className="signature-dialog" role="dialog" aria-modal="true" aria-labelledby="signature-dialog-title">
                 <h2 id="signature-dialog-title">签字前核对</h2>
-                <p>表号：{detail.display_no}</p>
-                <p>笼号：{detail.cage_no || "—"}</p>
-                <p>签字人：{session?.employee_name || session?.employee_code || "当前厂长"}</p>
-                <p>工厂：{session?.factory_name || detail.factory_id}</p>
-                <p>记录版本：{detail.revision}</p>
+                <dl className="signature-dialog-fields">
+                  <div><dt>表号</dt><dd>{detail.display_no}</dd></div>
+                  <div><dt>笼号</dt><dd>{detail.cage_no || "—"}</dd></div>
+                  <div><dt>签字人</dt><dd>{session?.employee_name || session?.employee_code || "当前厂长"}</dd></div>
+                  <div><dt>工厂</dt><dd>{session?.factory_name || detail.factory_id}</dd></div>
+                  <div><dt>记录版本</dt><dd>{detail.revision}</dd></div>
+                </dl>
+                {note && <p>备注：{note}</p>}
                 <div>
                   <button type="button" disabled={busy} onClick={() => void confirmSignature()}>
                     确认签字
                   </button>
                   <button type="button" disabled={busy} onClick={() => setConfirming(false)}>取消</button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ---- 终止检测确认弹窗 ---- */}
+          {terminateConfirmOpen && (
+            <div className="signature-dialog-backdrop" role="presentation">
+              <div className="signature-dialog" role="dialog" aria-modal="true" aria-labelledby="terminate-dialog-title">
+                <h2 id="terminate-dialog-title">确认终止检测</h2>
+                <p>停止后检测员将失去当前检测权限。此操作不可撤销。</p>
+                <label>
+                  终止原因（必填）
+                  <textarea
+                    aria-label="终止原因"
+                    value={terminateReason}
+                    onChange={(event) => setTerminateReason(event.target.value)}
+                    placeholder="请说明终止检测的原因"
+                  />
+                </label>
+                <div>
+                  <button
+                    type="button"
+                    disabled={busy || !terminateReason.trim()}
+                    onClick={() => void confirmTerminate()}
+                  >
+                    确认终止
+                  </button>
+                  <button type="button" disabled={busy} onClick={() => setTerminateConfirmOpen(false)}>取消</button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ---- 打回二次确认弹窗 ---- */}
+          {returnConfirmOpen && (
+            <div className="signature-dialog-backdrop" role="presentation">
+              <div className="signature-dialog" role="dialog" aria-modal="true" aria-labelledby="return-dialog-title">
+                <h2 id="return-dialog-title">确认打回生产记录</h2>
+                <p>将打回 <strong>{detail.display_no}</strong> 的以下环节：</p>
+                <ul>
+                  {returnStages.map((stage) => (
+                    <li key={stage}>{STAGE_LABELS[stage] ?? stage}</li>
+                  ))}
+                </ul>
+                {returnImpactPreview(detail, returnStages)}
+                <p><strong>打回原因：</strong>{returnReason}</p>
+                <p className="signature-warning">⚠ 打回后工人需重新提交选中环节。此操作不可自动撤销。</p>
+                <div>
+                  <button type="button" disabled={busy} onClick={() => void confirmReturn()}>
+                    确认打回
+                  </button>
+                  <button type="button" disabled={busy} onClick={() => setReturnConfirmOpen(false)}>取消</button>
                 </div>
               </div>
             </div>

@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import { cleanup, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it, vi } from "vitest";
 
 import { FinanceGovernedExportsPage } from "./FinanceGovernedExportsPage";
@@ -46,8 +47,10 @@ it("offers download only for reopened and available exports", async () => {
       status: "AVAILABLE",
       data_watermark: "2026-07-23T00:00:00Z",
     }] })));
+  const user = userEvent.setup();
   render(<FinanceGovernedExportsPage />);
+  await user.click(screen.getByRole("button", { name: /导出历史/ }));
   expect(await screen.findByText("工资模板-20260723.xlsx")).toBeTruthy();
   expect(screen.getByRole("link", { name: "下载" })).toBeTruthy();
-  expect(screen.getByRole("link", { name: "查看血缘" })).toBeTruthy();
+  expect(screen.getByRole("link", { name: "血缘" })).toBeTruthy();
 });

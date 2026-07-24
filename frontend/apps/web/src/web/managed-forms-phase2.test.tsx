@@ -57,8 +57,10 @@ it("lets finance create a structured form draft and submit it for approval", asy
   await user.click(screen.getByRole("button", { name: "保存草稿" }));
 
   expect(await screen.findByText("草稿")).toBeTruthy();
-  await user.click(screen.getByRole("button", { name: "提交管理员审核" }));
-  expect(await screen.findByText("待管理员审核")).toBeTruthy();
+  await user.click(screen.getByRole("button", { name: "提交审批" }));
+  await user.type(await screen.findByPlaceholderText("请输入批准原因..."), "提交审批");
+  await user.click(screen.getByRole("button", { name: "确认批准" }));
+  expect(await screen.findByText("待审批")).toBeTruthy();
   expect(fetchMock).toHaveBeenLastCalledWith(
     "/api/v1/finance/form-versions/form-ver-1/submit-approval",
     expect.objectContaining({
@@ -83,8 +85,18 @@ it("lets admin approve and activate a version for selected factories", async () 
   const user = userEvent.setup();
 
   render(<MemoryRouter><AdminFormApprovalsPage /></MemoryRouter>);
+  // Click "批准版本" opens ReasonConfirmDialog
   await user.click(await screen.findByRole("button", { name: "批准版本" }));
-  await user.type(screen.getByLabelText("启用工厂"), "FACTORY-A");
+
+  // Fill in approval reason and confirm
+  await user.type(
+    await screen.findByPlaceholderText("请输入批准原因..."),
+    "已审核通过",
+  );
+  await user.click(screen.getByRole("button", { name: "确认批准" }));
+
+  // After approval completes, the dialog closes and the activation panel appears
+  await user.type(await screen.findByLabelText("启用工厂"), "FACTORY-A");
   await user.click(screen.getByRole("button", { name: "按工厂启用" }));
 
   await waitFor(() => {

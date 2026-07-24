@@ -17,9 +17,15 @@ import { BambooPersonnelPage } from "../mobile/personnel/BambooPersonnelPage";
 import { MobileSessionProvider } from "../mobile/session/MobileSessionProvider";
 import { RequireMobileSession } from "../mobile/session/RequireMobileSession";
 import { RequireWebSession } from "../web/RequireWebSession";
+import { AdminAISettingsPage } from "../web/AdminAISettingsPage";
+import { AdminAuditPage } from "../web/AdminAuditPage";
 import { AdminFormApprovalsPage } from "../web/AdminFormApprovalsPage";
+import { AdminNotificationsPage } from "../web/AdminNotificationsPage";
+import { AdminOrganizationPage } from "../web/AdminOrganizationPage";
 import { AdminPayrollApprovalsPage } from "../web/AdminPayrollApprovalsPage";
 import { AdminReportTemplatesPage } from "../web/AdminReportTemplatesPage";
+import { AdminRolesPage } from "../web/AdminRolesPage";
+import { AdminVersionExceptionsPage } from "../web/AdminVersionExceptionsPage";
 import { AdminWorkflowApprovalsPage } from "../web/AdminWorkflowApprovalsPage";
 import { BusinessModelingPage } from "../web/BusinessModelingPage";
 import { FinanceFormsPage } from "../web/FinanceFormsPage";
@@ -120,9 +126,15 @@ export function AppRoutes() {
         <Route path="admin" element={<WebWorkspaceLayout workspace="ADMIN" />}>
           <Route index element={<Navigate to="/admin/overview" replace />} />
           <Route path="overview" element={<WorkspaceOverviewPage workspace="ADMIN" />} />
+          <Route path="organization" element={<AdminOrganizationPage />} />
+          <Route path="roles" element={<AdminRolesPage />} />
+          <Route path="audit" element={<AdminAuditPage />} />
+          <Route path="notifications" element={<AdminNotificationsPage />} />
           <Route path="form-approvals" element={<AdminFormApprovalsPage />} />
           <Route path="workflow-approvals" element={<AdminWorkflowApprovalsPage />} />
           <Route path="payroll-approvals" element={<AdminPayrollApprovalsPage />} />
+          <Route path="version-exceptions" element={<AdminVersionExceptionsPage />} />
+          <Route path="ai-settings" element={<AdminAISettingsPage />} />
           <Route path="payroll" element={<PayrollResultsPage workspace="admin" />} />
           <Route path="report-templates" element={<AdminReportTemplatesPage />} />
           <Route path="*" element={<WorkspaceComingSoon />} />

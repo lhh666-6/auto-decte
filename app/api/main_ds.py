@@ -6,6 +6,7 @@ from fastapi.responses import JSONResponse
 from app.api.errors.problem_ds import ProblemDetails
 from app.api.middleware.request_id_ds import RequestIdMiddleware
 from app.api.routers import admin_console_ds as admin_console
+from app.api.routers import admin_console_ds_audit as admin_audit
 from app.api.routers import finance_workspace_ds as finance_workspace
 from app.api.routers import health_ds as health
 from app.api.routers import mobile_ds as mobile
@@ -22,6 +23,7 @@ def create_app(services: Services) -> FastAPI:
     app.include_router(mobile.router)
     app.include_router(web_auth.router)
     app.include_router(admin_console.router)
+    app.include_router(admin_audit.audit_router)
     app.include_router(finance_workspace.router)
     app.include_router(plant_workspace.router)
 

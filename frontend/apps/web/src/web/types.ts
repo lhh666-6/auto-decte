@@ -129,6 +129,29 @@ export interface BambooInspectionWindow {
   revision: number;
 }
 
+export interface BambooPayrollFact {
+  fact_id: string;
+  record_id: string;
+  fact_type: string;
+  amount: string;
+  period_start: string;
+  period_end: string;
+  rule_key: string;
+  metric_value: string;
+  rate: string;
+  base_amount: string;
+  allocations?: Array<{ employee_code: string; amount: string; rate?: string }>;
+  total_amount?: string;
+  version: number;
+}
+
+export interface BambooCorrectionCase {
+  case_id: string;
+  status: string;
+  reason: string;
+  created_at: string;
+}
+
 export interface BambooProductionDetail extends BambooProductionRecord {
   source_type?: string;
   source_snapshot?: Record<string, unknown>;
@@ -146,6 +169,8 @@ export interface BambooProductionDetail extends BambooProductionRecord {
     reason: string;
   };
   inspections: BambooInspection[];
+  payroll_facts: BambooPayrollFact[];
+  corrections: BambooCorrectionCase[];
 }
 
 export interface BambooInspectionQueueItem {

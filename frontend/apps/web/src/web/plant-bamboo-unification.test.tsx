@@ -184,7 +184,8 @@ it("signs the current revision after a second confirmation", async () => {
   });
   fireEvent.click(screen.getByRole("button", { name: "通过并签字" }));
   expect(screen.getByRole("dialog", { name: "签字前核对" })).toBeTruthy();
-  expect(screen.getByText("签字人：张厂长")).toBeTruthy();
+  expect(screen.getByText("签字人")).toBeTruthy();
+  expect(screen.getByText("张厂长")).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "确认签字" }));
 
   await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(3));
