@@ -16,6 +16,9 @@ from app.adapters.database.models import (
 )
 from app.tools.repair_bamboo_demo_ds import main, repair_bamboo_demo_data
 
+DEMO_FACTORY_ID = "BAMBOO-DEMO-FACTORY"
+DEMO_FACTORY_NAME = "竹丝示范一厂"
+
 DEMO_IDENTITIES = {
     "ZS001": ("王分选", "分选工", "SORT_OPERATOR"),
     "JZ001": ("李浸胶", "浸胶工", "DIPPING_OPERATOR"),
@@ -210,6 +213,8 @@ def test_repair_restores_known_chinese_identities_without_changing_links_or_cred
             assert (profile.team_id, profile.team_name) == (DEMO_TEAM_ID, DEMO_TEAM_NAME)
             assert profile.roles == ["WORKER"]
             assert profile.allowed_processes == ["BAMBOO_PROCESS"]
+            assert profile.factory_id == DEMO_FACTORY_ID
+            assert profile.factory_name == DEMO_FACTORY_NAME
         assert _assignment_snapshot(session) == assignments_before
         credential = session.get(MobileCredentialRow, ("employees", "ZS001"))
         assert credential is not None
@@ -241,6 +246,8 @@ def test_repair_is_idempotent_and_does_not_touch_qa_or_create_missing_demo_rows(
             qa_profile_before.position,
             list(qa_profile_before.roles),
             qa_profile_before.active,
+            qa_profile_before.factory_id,
+            qa_profile_before.factory_name,
         )
         credential_count = len(session.scalars(select(MobileCredentialRow)).all())
 
@@ -263,6 +270,8 @@ def test_repair_is_idempotent_and_does_not_touch_qa_or_create_missing_demo_rows(
             qa_profile.position,
             qa_profile.roles,
             qa_profile.active,
+            qa_profile.factory_id,
+            qa_profile.factory_name,
         ) == qa_values
         assert len(session.scalars(select(MobileCredentialRow)).all()) == credential_count
 
@@ -282,3 +291,252 @@ def test_cli_repairs_the_selected_database(tmp_path, capsys) -> None:  # type: i
         employee = session.get(MasterDataRecordRow, ("employees", "ZS001"))
         assert employee is not None
         assert employee.display_name == "王分选"
+
+
+# ── Non-demo safety tests ──
+
+def test_repair_bamboo_demo_refuses_non_demo_database() -> None:
+    """Repair must raise RuntimeError when the demo factory is absent."""
+    from app.tools.repair_bamboo_demo_ds import FACTORY_ID as DEMO_FID
+
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    try:
+        with Session(engine) as session, session.begin():
+            # Create a non-demo factory (different ID)
+            session.add(
+                BambooFactoryRow(
+                    factory_id="FACTORY-PROD",
+                    code="PROD",
+                    name="Real Factory",
+                    active=True,
+                    revision=1,
+                    created_at=datetime(2026, 7, 1, tzinfo=UTC),
+                    updated_at=datetime(2026, 7, 1, tzinfo=UTC),
+                )
+            )
+            # Add some employees but NOT the known demo ones
+            session.add(
+                MasterDataRecordRow(
+                    catalog="employees",
+                    code="PROD-001",
+                    display_name="Real Worker",
+                    attributes={},
+                    active=True,
+                    revision=1,
+                    created_at=datetime(2026, 7, 1, tzinfo=UTC),
+                    updated_at=datetime(2026, 7, 1, tzinfo=UTC),
+                    created_by="admin",
+                    updated_by="admin",
+                )
+            )
+
+        # Repair must refuse
+        try:
+            repair_bamboo_demo_data(engine)
+            raise AssertionError("RuntimeError expected but repair succeeded")
+        except RuntimeError as exc:
+            assert DEMO_FID in str(exc), f"Error should mention {DEMO_FID!r}: {exc}"
+            assert "demo" in str(exc).lower(), f"Error should mention 'demo': {exc}"
+    finally:
+        engine.dispose()
+
+
+def test_repair_bamboo_demo_requires_minimum_demo_employees() -> None:
+    """Repair must raise RuntimeError when fewer than 3 known demo employees exist."""
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    try:
+        now = datetime(2026, 7, 22, tzinfo=UTC)
+        with Session(engine) as session, session.begin():
+            session.add(
+                BambooFactoryRow(
+                    factory_id=DEMO_FACTORY_ID,
+                    code=DEMO_FACTORY_ID,
+                    name="???",
+                    active=True,
+                    revision=1,
+                    created_at=now,
+                    updated_at=now,
+                )
+            )
+            # Only 1 demo employee — below minimum of 3
+            session.add(
+                MasterDataRecordRow(
+                    catalog="employees",
+                    code="ZS001",
+                    display_name="???",
+                    attributes={},
+                    active=True,
+                    revision=1,
+                    created_at=now,
+                    updated_at=now,
+                    created_by="seed",
+                    updated_by="seed",
+                )
+            )
+
+        try:
+            repair_bamboo_demo_data(engine)
+            raise AssertionError("RuntimeError expected but repair succeeded")
+        except RuntimeError as exc:
+            assert "demo" in str(exc).lower(), f"Error should mention 'demo': {exc}"
+    finally:
+        engine.dispose()
+
+
+def test_repair_payroll_chain_only_touches_demo_factory() -> None:
+    """PENDING items in a non-demo factory must never be approved by repair."""
+    from uuid import uuid4
+
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    try:
+        now = datetime(2026, 7, 22, tzinfo=UTC)
+        with Session(engine) as session, session.begin():
+            # Demo factory + minimum 3 demo employees
+            session.add(
+                BambooFactoryRow(
+                    factory_id=DEMO_FACTORY_ID,
+                    code=DEMO_FACTORY_ID,
+                    name="???",
+                    active=True,
+                    revision=1,
+                    created_at=now,
+                    updated_at=now,
+                )
+            )
+            for code in ("ZS001", "CZ001", "CW001"):
+                session.add(
+                    MasterDataRecordRow(
+                        catalog="employees",
+                        code=code,
+                        display_name="???",
+                        attributes={},
+                        active=True,
+                        revision=1,
+                        created_at=now,
+                        updated_at=now,
+                        created_by="seed",
+                        updated_by="seed",
+                    )
+                )
+                session.add(
+                    MobileAccessProfileRow(
+                        employee_catalog="employees",
+                        employee_code=code,
+                        team_id="T1",
+                        team_name="T1",
+                        position="???",
+                        roles=["WORKER"],
+                        allowed_form_types=["BAMBOO_PROCESS"],
+                        allowed_processes=["BAMBOO_PROCESS"],
+                        active=True,
+                        factory_id=DEMO_FACTORY_ID,
+                        factory_name=DEMO_FACTORY_NAME,
+                    )
+                )
+
+            # Add a non-demo factory with a PENDING payroll item
+            other_factory_id = "FACTORY-OTHER"
+            session.add(
+                BambooFactoryRow(
+                    factory_id=other_factory_id,
+                    code=other_factory_id,
+                    name="Other Factory",
+                    active=True,
+                    revision=1,
+                    created_at=now,
+                    updated_at=now,
+                )
+            )
+            from app.adapters.database.models import (
+                BambooDailyExportBatchRow,
+                BambooDailyExportItemRow,
+                BambooPayrollFactRow,
+                BambooRecordRow,
+            )
+            other_batch_id = str(uuid4())
+            other_fact_id = str(uuid4())
+            other_record_id = str(uuid4())
+            session.add(
+                BambooRecordRow(
+                    record_id=other_record_id,
+                    display_no="OTHER-001",
+                    factory_id=other_factory_id,
+                    source_type="MOBILE",
+                    form_type="SORTING",
+                    current_stage="PLANT_AUDIT",
+                    status="ACTIVE",
+                    revision=3,
+                    created_by="test",
+                    created_at=now,
+                    updated_at=now,
+                )
+            )
+            session.add(
+                BambooPayrollFactRow(
+                    fact_id=other_fact_id,
+                    record_id=other_record_id,
+                    fact_type="SORT",
+                    version=1,
+                    status="PENDING_EFFECTIVE",
+                    rule_version_id="dummy-rule",
+                    input_snapshot={},
+                    allocations=[
+                        {"employee_code": "OTHER-EMP", "role": "SORT_OPERATOR",
+                         "amount": "100.00"}
+                    ],
+                    total_amount="100.00",
+                    source_submission_ids=["sub-1"],
+                    created_at=now,
+                )
+            )
+            session.add(
+                BambooDailyExportBatchRow(
+                    batch_id=other_batch_id,
+                    factory_id=other_factory_id,
+                    business_date="2026-07-22",
+                    version=1,
+                    status="OPEN",
+                    created_by="OTHER",
+                    created_at=now,
+                )
+            )
+            session.add(
+                BambooDailyExportItemRow(
+                    item_id=str(uuid4()),
+                    batch_id=other_batch_id,
+                    payroll_fact_id=other_fact_id,
+                    record_id=other_record_id,
+                    employee_code="OTHER-EMP",
+                    amount="100.00",
+                    status="PENDING",
+                    source_snapshot={},
+                    revision=1,
+                )
+            )
+
+        # Run repair — should process demo items only
+        changed = repair_bamboo_demo_data(engine)
+        assert changed >= 0  # May change demo rows (display names, etc.)
+
+        # Verify non-demo PENDING item was NOT touched
+        with Session(engine) as session:
+            other_item = session.scalar(
+                select(BambooDailyExportItemRow).where(
+                    BambooDailyExportItemRow.batch_id == other_batch_id,
+                )
+            )
+            assert other_item is not None
+            assert other_item.status == "PENDING", (
+                f"Non-demo PENDING item must stay PENDING, got {other_item.status}"
+            )
+            # Also verify the payroll fact was not activated
+            other_fact = session.get(BambooPayrollFactRow, other_fact_id)
+            assert other_fact is not None
+            assert other_fact.status == "PENDING_EFFECTIVE", (
+                f"Non-demo fact must stay PENDING_EFFECTIVE, got {other_fact.status}"
+            )
+    finally:
+        engine.dispose()
