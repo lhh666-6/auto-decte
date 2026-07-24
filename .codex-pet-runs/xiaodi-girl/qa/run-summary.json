@@ -1,0 +1,16 @@
+{
+  "ok": true,
+  "spriteVersionNumber": 2,
+  "run_dir": "D:\\半自动表单检测系统\\.codex-pet-runs\\xiaodi-girl",
+  "spritesheet": "D:\\半自动表单检测系统\\.codex-pet-runs\\xiaodi-girl\\final\\spritesheet-extended.webp",
+  "validation": "D:\\半自动表单检测系统\\.codex-pet-runs\\xiaodi-girl\\final\\validation-extended.json",
+  "installed_validation": "D:\\半自动表单检测系统\\.codex-pet-runs\\xiaodi-girl\\final\\validation-installed.json",
+  "chroma_despill": "D:\\半自动表单检测系统\\.codex-pet-runs\\xiaodi-girl\\qa\\chroma-despill-extended.json",
+  "contact_sheet": "D:\\半自动表单检测系统\\.codex-pet-runs\\xiaodi-girl\\qa\\contact-sheet-extended.png",
+  "direction_sheet": "D:\\半自动表单检测系统\\.codex-pet-runs\\xiaodi-girl\\qa\\look-directions.png",
+  "direction_semantics": "D:\\半自动表单检测系统\\.codex-pet-runs\\xiaodi-girl\\qa\\direction-semantics.json",
+  "blind_direction_validation": "D:\\半自动表单检测系统\\.codex-pet-runs\\xiaodi-girl\\qa\\direction-blind-validation.json",
+  "continuity": "D:\\半自动表单检测系统\\.codex-pet-runs\\xiaodi-girl\\qa\\look-continuity.json",
+  "review": "D:\\半自动表单检测系统\\.codex-pet-runs\\xiaodi-girl\\qa\\review.json",
+  "package": "C:\\Users\\lenovo\\.codex\\pets\\xiaodi"
+}

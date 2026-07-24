@@ -120,7 +120,13 @@ export function BambooRecordDetailPage({ recordId }: { recordId: string }) {
       </>}
     </section>
 
-    {!canSign && <div className="banner info bamboo-readonly-banner">当前记录以只读方式显示；你没有修改此工序的权限。</div>}
+    {!canSign && (
+      <div className="banner info bamboo-readonly-banner">
+        {session?.bamboo_role === "INSPECTOR"
+          ? "生产信息仅供核对，请在下方记录检测结果。"
+          : "当前记录以只读方式显示；你没有修改此工序的权限。"}
+      </div>
+    )}
     <BambooOperationsPanel record={record} role={session?.bamboo_role ?? ""} onRefresh={load} onInspectionGateChange={setInspectionBlocked} />
     {canSign && record.current_stage && !(record.current_stage === "PLANT_AUDIT" && inspectionBlocked) && <BambooStageForm record={record} stage={record.current_stage} onSigned={setRecord} />}
   </div>;

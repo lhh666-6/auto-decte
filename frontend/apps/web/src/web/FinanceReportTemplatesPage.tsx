@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import {
   confirmReportMapping,
@@ -11,13 +11,46 @@ import { StatusBadge, PageHeader, EmptyState, ErrorAlert, SummaryCardGrid } from
 import type { SummaryCard } from "./shared";
 import "./finance-pages.css";
 
-function formatTime(iso: string): string {
-  if (!iso) return "—";
-  try {
-    return new Date(iso).toLocaleString("zh-CN");
-  } catch {
-    return iso;
+interface FieldDef {
+  value: string;
+  label: string;
+}
+
+const AVAILABLE_SOURCE_FIELDS: { category: string; fields: FieldDef[] }[] = [
+  {
+    category: "人员",
+    fields: [
+      { value: "subject_employee_code", label: "员工工号 (subject_employee_code)" },
+    ],
+  },
+  {
+    category: "生产",
+    fields: [
+      { value: "business_date", label: "业务日期 (business_date)" },
+      { value: "factory_id", label: "工厂 (factory_id)" },
+      { value: "definition_version_id", label: "表单/工序 (definition_version_id)" },
+    ],
+  },
+  {
+    category: "工资",
+    fields: [
+      { value: "amount", label: "正式金额 (amount)" },
+    ],
+  },
+  {
+    category: "系统",
+    fields: [
+      { value: "root_submission_id", label: "来源记录号 (root_submission_id)" },
+    ],
+  },
+];
+
+function getFieldLabel(fieldValue: string): string {
+  for (const group of AVAILABLE_SOURCE_FIELDS) {
+    const found = group.fields.find((f) => f.value === fieldValue);
+    if (found) return found.label;
   }
+  return fieldValue;
 }
 
 export function FinanceReportTemplatesPage() {
@@ -28,6 +61,78 @@ export function FinanceReportTemplatesPage() {
   const [selectedTemplate, setSelectedTemplate] = useState<ReportTemplateVersion | null>(null);
   const [selectedMapping, setSelectedMapping] = useState<ReportMappingVersion | null>(null);
   const [showSample, setShowSample] = useState(false);
+
+  // Mapping Editor state
+  const [mappingEditorOpen, setMappingEditorOpen] = useState(false);
+  const [editorTemplate, setEditorTemplate] = useState<ReportTemplateVersion | null>(null);
+  const [editorSheet, setEditorSheet] = useState("");
+  const [editorStartRow, setEditorStartRow] = useState(2);
+  const [editorColumns, setEditorColumns] = useState<Array<{ column: number; source_field: string }>>([]);
+  const [editorSaving, setEditorSaving] = useState(false);
+
+  function openMappingEditor(template: ReportTemplateVersion) {
+    const firstSheet = template.structure.sheets[0]?.name ?? "";
+    setEditorTemplate(template);
+    setEditorSheet(firstSheet);
+    setEditorStartRow(2);
+    setEditorColumns([]);
+    setMappingEditorOpen(true);
+  }
+
+  function addEditorColumn() {
+    setEditorColumns((prev) => [
+      ...prev,
+      { column: prev.length + 1, source_field: "" },
+    ]);
+  }
+
+  function updateEditorColumn(idx: number, field: string) {
+    setEditorColumns((prev) =>
+      prev.map((col, i) => (i === idx ? { ...col, source_field: field } : col)),
+    );
+  }
+
+  function removeEditorColumn(idx: number) {
+    setEditorColumns((prev) => {
+      const updated = prev.filter((_, i) => i !== idx);
+      // Re-number columns
+      return updated.map((col, i) => ({ ...col, column: i + 1 }));
+    });
+  }
+
+  async function saveMappingAsDraft() {
+    if (!editorTemplate || !editorSheet) return;
+    const validColumns = editorColumns.filter((c) => c.source_field);
+    if (validColumns.length === 0) {
+      setError("请至少配置一个有效的字段映射");
+      return;
+    }
+    setEditorSaving(true);
+    try {
+      const mapping = await createReportMapping(editorTemplate.template_version_id, {
+        sheet: editorSheet,
+        start_row: editorStartRow,
+        columns: validColumns,
+      });
+      setMappings((current) => [mapping, ...current]);
+      setMappingEditorOpen(false);
+      setEditorTemplate(null);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "创建映射失败");
+    } finally {
+      setEditorSaving(false);
+    }
+  }
+
+  // Preview data derived from editor state
+  const mappingPreview = useMemo(() => {
+    if (!editorColumns.length) return [];
+    return editorColumns.slice(0, 5).map((col, idx) => ({
+      row: editorStartRow + idx,
+      col: col.column,
+      field: col.source_field || "(未选择)",
+    }));
+  }, [editorColumns, editorStartRow]);
 
   function reload() {
     setError("");
@@ -42,24 +147,6 @@ export function FinanceReportTemplatesPage() {
       });
   }
   useEffect(reload, []);
-
-  async function create(template: ReportTemplateVersion) {
-    const sheet = template.structure.sheets[0]?.name;
-    if (!sheet) return;
-    try {
-      const mapping = await createReportMapping(template.template_version_id, {
-        sheet,
-        start_row: 2,
-        columns: [
-          { column: 1, source_field: "subject_employee_code" },
-          { column: 2, source_field: "business_date" },
-        ],
-      });
-      setMappings((current) => [mapping, ...current]);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "创建映射失败");
-    }
-  }
 
   async function confirm(item: ReportMappingVersion) {
     try {
@@ -113,7 +200,7 @@ export function FinanceReportTemplatesPage() {
                 <th>工作表数</th>
                 <th>数据来源</th>
                 <th>映射版本</th>
-                <th>最近样例</th>
+                <th>确认状态</th>
                 <th>审批状态</th>
                 <th>启用范围</th>
                 <th>操作</th>
@@ -137,7 +224,7 @@ export function FinanceReportTemplatesPage() {
                         : "—"}
                     </td>
                     <td style={{ fontSize: 12, color: "#596579" }}>
-                      {item.status === "ACTIVE" || item.status === "CONFIRMED" ? formatTime(new Date().toISOString()) : "—"}
+                      {item.status === "ACTIVE" || item.status === "CONFIRMED" ? "已确认" : "—"}
                     </td>
                     <td>
                       {item.status === "PENDING_APPROVAL" ? (
@@ -155,7 +242,7 @@ export function FinanceReportTemplatesPage() {
                       <button type="button" onClick={() => { setSelectedTemplate(item); setShowSample(true); }}>
                         样例预览
                       </button>
-                      <button type="button" onClick={() => void create(item)}>
+                      <button type="button" onClick={() => openMappingEditor(item)}>
                         创建映射
                       </button>
                       {tmMappings.length > 0 && (
@@ -172,6 +259,168 @@ export function FinanceReportTemplatesPage() {
               })}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* Mapping Editor Drawer */}
+      {mappingEditorOpen && editorTemplate && (
+        <div className="finance-drawer-overlay" onClick={() => { if (!editorSaving) { setMappingEditorOpen(false); setEditorTemplate(null); } }}>
+          <div className="finance-drawer-content" onClick={(e) => e.stopPropagation()} style={{ width: "min(700px, 90vw)" }}>
+            <div className="finance-drawer-header">
+              <h2>创建映射 — {editorTemplate.filename}</h2>
+              <button className="finance-drawer-close" onClick={() => { setMappingEditorOpen(false); setEditorTemplate(null); }}>
+                x
+              </button>
+            </div>
+            <div className="finance-drawer-body" style={{ display: "grid", gap: 16 }}>
+              {/* Sheet selection */}
+              <div className="finance-detail-section">
+                <h3>选择工作表</h3>
+                <select
+                  value={editorSheet}
+                  onChange={(e) => setEditorSheet(e.target.value)}
+                  style={{ padding: "8px 10px", border: "1px solid #b9c6d5", borderRadius: 6, font: "inherit", fontSize: 13 }}
+                >
+                  {editorTemplate.structure.sheets.map((s) => (
+                    <option key={s.name} value={s.name}>
+                      {s.name} ({s.max_row} 行 x {s.max_column} 列)
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Start row */}
+              <div className="finance-detail-section">
+                <h3>数据起始行</h3>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <input
+                    type="number"
+                    min={1}
+                    value={editorStartRow}
+                    onChange={(e) => setEditorStartRow(Number(e.target.value) || 1)}
+                    style={{ width: 80, padding: "6px 10px", border: "1px solid #b9c6d5", borderRadius: 6, font: "inherit", fontSize: 13 }}
+                  />
+                  <span style={{ fontSize: 12, color: "#596579" }}>表格数据从第 {editorStartRow} 行开始（跳过标题行）</span>
+                </div>
+              </div>
+
+              {/* Column mappings */}
+              <div className="finance-detail-section">
+                <h3>字段映射 ({editorColumns.length} 列)</h3>
+                {editorColumns.length === 0 ? (
+                  <p style={{ color: "#596579", fontSize: 13, margin: 0 }}>暂未配置列映射，请添加至少一列。</p>
+                ) : (
+                  <table className="mapping-table">
+                    <thead>
+                      <tr>
+                        <th>输出列</th>
+                        <th>来源字段</th>
+                        <th>分类</th>
+                        <th>操作</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {editorColumns.map((col, idx) => (
+                        <tr key={idx}>
+                          <td style={{ textAlign: "center" }}>{col.column}</td>
+                          <td>
+                            <select
+                              value={col.source_field}
+                              onChange={(e) => updateEditorColumn(idx, e.target.value)}
+                              style={{ padding: "4px 8px", border: "1px solid #b9c6d5", borderRadius: 4, font: "inherit", fontSize: 12, width: "100%" }}
+                            >
+                              <option value="">-- 选择字段 --</option>
+                              {AVAILABLE_SOURCE_FIELDS.map((group) => (
+                                <optgroup key={group.category} label={group.category}>
+                                  {group.fields.map((f) => (
+                                    <option key={f.value} value={f.value}>{f.label}</option>
+                                  ))}
+                                </optgroup>
+                              ))}
+                            </select>
+                          </td>
+                          <td style={{ fontSize: 12, color: "#596579" }}>
+                            {col.source_field ? getFieldLabel(col.source_field).split(" (")[0] : "—"}
+                          </td>
+                          <td>
+                            <button
+                              type="button"
+                              onClick={() => removeEditorColumn(idx)}
+                              style={{ padding: "2px 8px", border: "1px solid #e7b4b4", borderRadius: 4, background: "#fff", color: "#9d2424", cursor: "pointer", fontSize: 12 }}
+                            >
+                              移除
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+                <button
+                  type="button"
+                  onClick={addEditorColumn}
+                  style={{ padding: "6px 14px", border: "1px dashed #b9c6d5", borderRadius: 6, background: "#f8fafc", font: "inherit", fontSize: 13, cursor: "pointer", marginTop: 8, color: "#42566f" }}
+                >
+                  + 添加列映射
+                </button>
+              </div>
+
+              {/* Mapping preview */}
+              <div className="finance-detail-section">
+                <h3>映射预览（前 {Math.min(mappingPreview.length, 5)} 行）</h3>
+                {mappingPreview.length === 0 ? (
+                  <p style={{ color: "#596579", fontSize: 13, margin: 0 }}>请先配置字段映射以查看预览。</p>
+                ) : (
+                  <table className="mapping-table">
+                    <thead>
+                      <tr>
+                        <th>Excel 行</th>
+                        <th>Excel 列</th>
+                        <th>映射字段</th>
+                        <th>预期来源</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {mappingPreview.map((row, i) => (
+                        <tr key={i}>
+                          <td style={{ textAlign: "center" }}>{row.row}</td>
+                          <td style={{ textAlign: "center" }}>{row.col}</td>
+                          <td style={{ fontFamily: "monospace", fontSize: 12 }}>
+                            {row.field}
+                          </td>
+                          <td style={{ fontSize: 12, color: "#596579" }}>
+                            {row.field !== "(未选择)" ? getFieldLabel(row.field) : "—"}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+
+              {/* Actions */}
+              <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", paddingTop: 8, borderTop: "1px solid #dce3ec" }}>
+                <button
+                  type="button"
+                  onClick={() => { setMappingEditorOpen(false); setEditorTemplate(null); }}
+                  style={{ padding: "8px 18px", border: "1px solid #b9c6d5", borderRadius: 6, background: "#fff", font: "inherit", fontSize: 13, cursor: "pointer", color: "#42566f" }}
+                >
+                  取消
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void saveMappingAsDraft()}
+                  disabled={editorSaving || editorColumns.filter((c) => c.source_field).length === 0}
+                  style={{ padding: "8px 18px", border: 0, borderRadius: 6, background: "#155eef", color: "#fff", font: "inherit", fontSize: 13, fontWeight: 650, cursor: "pointer", opacity: editorSaving ? 0.6 : 1 }}
+                >
+                  {editorSaving ? "保存中…" : "保存为草稿"}
+                </button>
+              </div>
+              <p style={{ margin: 0, fontSize: 12, color: "#596579" }}>
+                映射保存为草稿（DRAFT）后，可在映射列表中执行"财务确认映射"以锁定版本。确认后映射不可再编辑。
+              </p>
+            </div>
+          </div>
         </div>
       )}
 
@@ -280,7 +529,11 @@ export function FinanceReportTemplatesPage() {
                         <tr key={i}>
                           <td>{i + 1}</td>
                           <td style={{ fontSize: 12 }}>
-                            {col.source_field.startsWith("subject_") ? "提交事实" : col.source_field.startsWith("business_") ? "业务数据" : "系统字段"}
+                            {(() => {
+                              const label = getFieldLabel(col.source_field);
+                              const parenIdx = label.indexOf(" (");
+                              return parenIdx > 0 ? label.slice(0, parenIdx) : label;
+                            })()}
                           </td>
                           <td style={{ fontFamily: "monospace", fontSize: 12 }}>{col.source_field}</td>
                           <td>{selectedMapping.mapping_json.sheet}</td>

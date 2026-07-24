@@ -1,0 +1,112 @@
+{
+  "ok": true,
+  "frames_root": "D:\\\u534a\u81ea\u52a8\u8868\u5355\u68c0\u6d4b\u7cfb\u7edf\\.codex-pet-runs\\lance\\qa\\rows\\waiting\\frames",
+  "states": [
+    "waiting"
+  ],
+  "errors": [],
+  "warnings": [],
+  "rows": [
+    {
+      "state": "waiting",
+      "expected_frames": 6,
+      "actual_frames": 6,
+      "extraction_method": "components",
+      "ok": true,
+      "errors": [],
+      "warnings": [],
+      "frames": [
+        {
+          "index": 0,
+          "file": "D:\\\u534a\u81ea\u52a8\u8868\u5355\u68c0\u6d4b\u7cfb\u7edf\\.codex-pet-runs\\lance\\qa\\rows\\waiting\\frames\\waiting\\00.png",
+          "width": 192,
+          "height": 208,
+          "nontransparent_pixels": 18295,
+          "bbox": [
+            22,
+            5,
+            170,
+            203
+          ],
+          "edge_pixels": 0,
+          "chroma_adjacent_pixels": 220
+        },
+        {
+          "index": 1,
+          "file": "D:\\\u534a\u81ea\u52a8\u8868\u5355\u68c0\u6d4b\u7cfb\u7edf\\.codex-pet-runs\\lance\\qa\\rows\\waiting\\frames\\waiting\\01.png",
+          "width": 192,
+          "height": 208,
+          "nontransparent_pixels": 18015,
+          "bbox": [
+            21,
+            5,
+            170,
+            203
+          ],
+          "edge_pixels": 0,
+          "chroma_adjacent_pixels": 253
+        },
+        {
+          "index": 2,
+          "file": "D:\\\u534a\u81ea\u52a8\u8868\u5355\u68c0\u6d4b\u7cfb\u7edf\\.codex-pet-runs\\lance\\qa\\rows\\waiting\\frames\\waiting\\02.png",
+          "width": 192,
+          "height": 208,
+          "nontransparent_pixels": 17518,
+          "bbox": [
+            19,
+            5,
+            173,
+            203
+          ],
+          "edge_pixels": 0,
+          "chroma_adjacent_pixels": 247
+        },
+        {
+          "index": 3,
+          "file": "D:\\\u534a\u81ea\u52a8\u8868\u5355\u68c0\u6d4b\u7cfb\u7edf\\.codex-pet-runs\\lance\\qa\\rows\\waiting\\frames\\waiting\\03.png",
+          "width": 192,
+          "height": 208,
+          "nontransparent_pixels": 17858,
+          "bbox": [
+            23,
+            5,
+            168,
+            203
+          ],
+          "edge_pixels": 0,
+          "chroma_adjacent_pixels": 256
+        },
+        {
+          "index": 4,
+          "file": "D:\\\u534a\u81ea\u52a8\u8868\u5355\u68c0\u6d4b\u7cfb\u7edf\\.codex-pet-runs\\lance\\qa\\rows\\waiting\\frames\\waiting\\04.png",
+          "width": 192,
+          "height": 208,
+          "nontransparent_pixels": 18330,
+          "bbox": [
+            25,
+            5,
+            166,
+            203
+          ],
+          "edge_pixels": 0,
+          "chroma_adjacent_pixels": 264
+        },
+        {
+          "index": 5,
+          "file": "D:\\\u534a\u81ea\u52a8\u8868\u5355\u68c0\u6d4b\u7cfb\u7edf\\.codex-pet-runs\\lance\\qa\\rows\\waiting\\frames\\waiting\\05.png",
+          "width": 192,
+          "height": 208,
+          "nontransparent_pixels": 17205,
+          "bbox": [
+            26,
+            5,
+            165,
+            203
+          ],
+          "edge_pixels": 0,
+          "chroma_adjacent_pixels": 236
+        }
+      ]
+    }
+  ]
+}

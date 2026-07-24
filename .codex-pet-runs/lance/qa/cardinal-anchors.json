@@ -1,0 +1,65 @@
+{
+  "ok": false,
+  "strip": "D:\\\u534a\u81ea\u52a8\u8868\u5355\u68c0\u6d4b\u7cfb\u7edf\\.codex-pet-runs\\lance\\decoded\\look-cardinals.png",
+  "directions": [
+    "000",
+    "090",
+    "180",
+    "270"
+  ],
+  "errors": [
+    "000 has 33 non-transparent pixels near its source slot edge",
+    "180 has 35 non-transparent pixels near its source slot edge",
+    "270 has 41 non-transparent pixels near its source slot edge"
+  ],
+  "anchors": [
+    {
+      "direction": "000",
+      "source_box": [
+        0,
+        0,
+        543,
+        724
+      ],
+      "used_pixels": 159266,
+      "edge_pixels": 33,
+      "output": "D:\\\u534a\u81ea\u52a8\u8868\u5355\u68c0\u6d4b\u7cfb\u7edf\\.codex-pet-runs\\lance\\decoded\\look-anchors\\000.png"
+    },
+    {
+      "direction": "090",
+      "source_box": [
+        543,
+        0,
+        1086,
+        724
+      ],
+      "used_pixels": 160228,
+      "edge_pixels": 18,
+      "output": "D:\\\u534a\u81ea\u52a8\u8868\u5355\u68c0\u6d4b\u7cfb\u7edf\\.codex-pet-runs\\lance\\decoded\\look-anchors\\090.png"
+    },
+    {
+      "direction": "180",
+      "source_box": [
+        1086,
+        0,
+        1629,
+        724
+      ],
+      "used_pixels": 137072,
+      "edge_pixels": 35,
+      "output": "D:\\\u534a\u81ea\u52a8\u8868\u5355\u68c0\u6d4b\u7cfb\u7edf\\.codex-pet-runs\\lance\\decoded\\look-anchors\\180.png"
+    },
+    {
+      "direction": "270",
+      "source_box": [
+        1629,
+        0,
+        2172,
+        724
+      ],
+      "used_pixels": 159639,
+      "edge_pixels": 41,
+      "output": "D:\\\u534a\u81ea\u52a8\u8868\u5355\u68c0\u6d4b\u7cfb\u7edf\\.codex-pet-runs\\lance\\decoded\\look-anchors\\270.png"
+    }
+  ]
+}

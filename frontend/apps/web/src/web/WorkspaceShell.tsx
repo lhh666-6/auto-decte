@@ -49,7 +49,7 @@ const NAVIGATION: Record<WorkspaceRole, {
       { to: "/admin/payroll-approvals", label: "工资审批" },
       { to: "/admin/version-exceptions", label: "版本异常" },
       { to: "/admin/report-templates", label: "报表模板" },
-      { to: "/admin/integrations/deepseek", label: "智能服务" },
+      { to: "/admin/ai-settings", label: "智能服务" },
       { to: "/admin/notifications", label: "通知管理" },
       { to: "/admin/audit", label: "审计日志" },
     ],

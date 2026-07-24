@@ -1,0 +1,125 @@
+{
+  "ok": true,
+  "chroma_key": {
+    "hex": "#00FF00",
+    "rgb": [
+      0,
+      255,
+      0
+    ],
+    "threshold": 96.0
+  },
+  "rows": [
+    {
+      "state": "idle",
+      "frames": [
+        "D:\\\u534a\u81ea\u52a8\u8868\u5355\u68c0\u6d4b\u7cfb\u7edf\\.codex-pet-runs\\xiaodi-girl\\frames\\idle\\00.png",
+        "D:\\\u534a\u81ea\u52a8\u8868\u5355\u68c0\u6d4b\u7cfb\u7edf\\.codex-pet-runs\\xiaodi-girl\\frames\\idle\\01.png",
+        "D:\\\u534a\u81ea\u52a8\u8868\u5355\u68c0\u6d4b\u7cfb\u7edf\\.codex-pet-runs\\xiaodi-girl\\frames\\idle\\02.png",
+        "D:\\\u534a\u81ea\u52a8\u8868\u5355\u68c0\u6d4b\u7cfb\u7edf\\.codex-pet-runs\\xiaodi-girl\\frames\\idle\\03.png",
+        "D:\\\u534a\u81ea\u52a8\u8868\u5355\u68c0\u6d4b\u7cfb\u7edf\\.codex-pet-runs\\xiaodi-girl\\frames\\idle\\04.png",
+        "D:\\\u534a\u81ea\u52a8\u8868\u5355\u68c0\u6d4b\u7cfb\u7edf\\.codex-pet-runs\\xiaodi-girl\\frames\\idle\\05.png"
+      ],
+      "method": "components"
+    },
+    {
+      "state": "running-right",
+      "frames": [
+        "D:\\\u534a\u81ea\u52a8\u8868\u5355\u68c0\u6d4b\u7cfb\u7edf\\.codex-pet-runs\\xiaodi-girl\\frames\\running-right\\00.png",
+        "D:\\\u534a\u81ea\u52a8\u8868\u5355\u68c0\u6d4b\u7cfb\u7edf\\.codex-pet-runs\\xiaodi-girl\\frames\\running-right\\01.png",
+        "D:\\\u534a\u81ea\u52a8\u8868\u5355\u68c0\u6d4b\u7cfb\u7edf\\.codex-pet-runs\\xiaodi-girl\\frames\\running-right\\02.png",
+        "D:\\\u534a\u81ea\u52a8\u8868\u5355\u68c0\u6d4b\u7cfb\u7edf\\.codex-pet-runs\\xiaodi-girl\\frames\\running-right\\03.png",
+        "D:\\\u534a\u81ea\u52a8\u8868\u5355\u68c0\u6d4b\u7cfb\u7edf\\.codex-pet-runs\\xiaodi-girl\\frames\\running-right\\04.png",
+        "D:\\\u534a\u81ea\u52a8\u8868\u5355\u68c0\u6d4b\u7cfb\u7edf\\.codex-pet-runs\\xiaodi-girl\\frames\\running-right\\05.png",
+        "D:\\\u534a\u81ea\u52a8\u8868\u5355\u68c0\u6d4b\u7cfb\u7edf\\.codex-pet-runs\\xiaodi-girl\\frames\\running-right\\06.png",
+        "D:\\\u534a\u81ea\u52a8\u8868\u5355\u68c0\u6d4b\u7cfb\u7edf\\.codex-pet-runs\\xiaodi-girl\\frames\\running-right\\07.png"
+      ],
+      "method": "components"
+    },
+    {
+      "state": "running-left",
+      "frames": [
+        "D:\\\u534a\u81ea\u52a8\u8868\u5355\u68c0\u6d4b\u7cfb\u7edf\\.codex-pet-runs\\xiaodi-girl\\frames\\running-left\\00.png",
+        "D:\\\u534a\u81ea\u52a8\u8868\u5355\u68c0\u6d4b\u7cfb\u7edf\\.codex-pet-runs\\xiaodi-girl\\frames\\running-left\\01.png",
+        "D:\\\u534a\u81ea\u52a8\u8868\u5355\u68c0\u6d4b\u7cfb\u7edf\\.codex-pet-runs\\xiaodi-girl\\frames\\running-left\\02.png",
+        "D:\\\u534a\u81ea\u52a8\u8868\u5355\u68c0\u6d4b\u7cfb\u7edf\\.codex-pet-runs\\xiaodi-girl\\frames\\running-left\\03.png",
+        "D:\\\u534a\u81ea\u52a8\u8868\u5355\u68c0\u6d4b\u7cfb\u7edf\\.codex-pet-runs\\xiaodi-girl\\frames\\running-left\\04.png",
+        "D:\\\u534a\u81ea\u52a8\u8868\u5355\u68c0\u6d4b\u7cfb\u7edf\\.codex-pet-runs\\xiaodi-girl\\frames\\running-left\\05.png",
+        "D:\\\u534a\u81ea\u52a8\u8868\u5355\u68c0\u6d4b\u7cfb\u7edf\\.codex-pet-runs\\xiaodi-girl\\frames\\running-left\\06.png",
+        "D:\\\u534a\u81ea\u52a8\u8868\u5355\u68c0\u6d4b\u7cfb\u7edf\\.codex-pet-runs\\xiaodi-girl\\frames\\running-left\\07.png"
+      ],
+      "method": "components"
+    },
+    {
+      "state": "waving",
+      "frames": [
+        "D:\\\u534a\u81ea\u52a8\u8868\u5355\u68c0\u6d4b\u7cfb\u7edf\\.codex-pet-runs\\xiaodi-girl\\frames\\waving\\00.png",
+        "D:\\\u534a\u81ea\u52a8\u8868\u5355\u68c0\u6d4b\u7cfb\u7edf\\.codex-pet-runs\\xiaodi-girl\\frames\\waving\\01.png",
+        "D:\\\u534a\u81ea\u52a8\u8868\u5355\u68c0\u6d4b\u7cfb\u7edf\\.codex-pet-runs\\xiaodi-girl\\frames\\waving\\02.png",
+        "D:\\\u534a\u81ea\u52a8\u8868\u5355\u68c0\u6d4b\u7cfb\u7edf\\.codex-pet-runs\\xiaodi-girl\\frames\\waving\\03.png"
+      ],
+      "method": "components"
+    },
+    {
+      "state": "jumping",
+      "frames": [
+        "D:\\\u534a\u81ea\u52a8\u8868\u5355\u68c0\u6d4b\u7cfb\u7edf\\.codex-pet-runs\\xiaodi-girl\\frames\\jumping\\00.png",
+        "D:\\\u534a\u81ea\u52a8\u8868\u5355\u68c0\u6d4b\u7cfb\u7edf\\.codex-pet-runs\\xiaodi-girl\\frames\\jumping\\01.png",
+        "D:\\\u534a\u81ea\u52a8\u8868\u5355\u68c0\u6d4b\u7cfb\u7edf\\.codex-pet-runs\\xiaodi-girl\\frames\\jumping\\02.png",
+        "D:\\\u534a\u81ea\u52a8\u8868\u5355\u68c0\u6d4b\u7cfb\u7edf\\.codex-pet-runs\\xiaodi-girl\\frames\\jumping\\03.png",
+        "D:\\\u534a\u81ea\u52a8\u8868\u5355\u68c0\u6d4b\u7cfb\u7edf\\.codex-pet-runs\\xiaodi-girl\\frames\\jumping\\04.png"
+      ],
+      "method": "components"
+    },
+    {
+      "state": "failed",
+      "frames": [
+        "D:\\\u534a\u81ea\u52a8\u8868\u5355\u68c0\u6d4b\u7cfb\u7edf\\.codex-pet-runs\\xiaodi-girl\\frames\\failed\\00.png",
+        "D:\\\u534a\u81ea\u52a8\u8868\u5355\u68c0\u6d4b\u7cfb\u7edf\\.codex-pet-runs\\xiaodi-girl\\frames\\failed\\01.png",
+        "D:\\\u534a\u81ea\u52a8\u8868\u5355\u68c0\u6d4b\u7cfb\u7edf\\.codex-pet-runs\\xiaodi-girl\\frames\\failed\\02.png",
+        "D:\\\u534a\u81ea\u52a8\u8868\u5355\u68c0\u6d4b\u7cfb\u7edf\\.codex-pet-runs\\xiaodi-girl\\frames\\failed\\03.png",
+        "D:\\\u534a\u81ea\u52a8\u8868\u5355\u68c0\u6d4b\u7cfb\u7edf\\.codex-pet-runs\\xiaodi-girl\\frames\\failed\\04.png",
+        "D:\\\u534a\u81ea\u52a8\u8868\u5355\u68c0\u6d4b\u7cfb\u7edf\\.codex-pet-runs\\xiaodi-girl\\frames\\failed\\05.png",
+        "D:\\\u534a\u81ea\u52a8\u8868\u5355\u68c0\u6d4b\u7cfb\u7edf\\.codex-pet-runs\\xiaodi-girl\\frames\\failed\\06.png",
+        "D:\\\u534a\u81ea\u52a8\u8868\u5355\u68c0\u6d4b\u7cfb\u7edf\\.codex-pet-runs\\xiaodi-girl\\frames\\failed\\07.png"
+      ],
+      "method": "components"
+    },
+    {
+      "state": "waiting",
+      "frames": [
+        "D:\\\u534a\u81ea\u52a8\u8868\u5355\u68c0\u6d4b\u7cfb\u7edf\\.codex-pet-runs\\xiaodi-girl\\frames\\waiting\\00.png",
+        "D:\\\u534a\u81ea\u52a8\u8868\u5355\u68c0\u6d4b\u7cfb\u7edf\\.codex-pet-runs\\xiaodi-girl\\frames\\waiting\\01.png",
+        "D:\\\u534a\u81ea\u52a8\u8868\u5355\u68c0\u6d4b\u7cfb\u7edf\\.codex-pet-runs\\xiaodi-girl\\frames\\waiting\\02.png",
+        "D:\\\u534a\u81ea\u52a8\u8868\u5355\u68c0\u6d4b\u7cfb\u7edf\\.codex-pet-runs\\xiaodi-girl\\frames\\waiting\\03.png",
+        "D:\\\u534a\u81ea\u52a8\u8868\u5355\u68c0\u6d4b\u7cfb\u7edf\\.codex-pet-runs\\xiaodi-girl\\frames\\waiting\\04.png",
+        "D:\\\u534a\u81ea\u52a8\u8868\u5355\u68c0\u6d4b\u7cfb\u7edf\\.codex-pet-runs\\xiaodi-girl\\frames\\waiting\\05.png"
+      ],
+      "method": "components"
+    },
+    {
+      "state": "running",
+      "frames": [
+        "D:\\\u534a\u81ea\u52a8\u8868\u5355\u68c0\u6d4b\u7cfb\u7edf\\.codex-pet-runs\\xiaodi-girl\\frames\\running\\00.png",
+        "D:\\\u534a\u81ea\u52a8\u8868\u5355\u68c0\u6d4b\u7cfb\u7edf\\.codex-pet-runs\\xiaodi-girl\\frames\\running\\01.png",
+        "D:\\\u534a\u81ea\u52a8\u8868\u5355\u68c0\u6d4b\u7cfb\u7edf\\.codex-pet-runs\\xiaodi-girl\\frames\\running\\02.png",
+        "D:\\\u534a\u81ea\u52a8\u8868\u5355\u68c0\u6d4b\u7cfb\u7edf\\.codex-pet-runs\\xiaodi-girl\\frames\\running\\03.png",
+        "D:\\\u534a\u81ea\u52a8\u8868\u5355\u68c0\u6d4b\u7cfb\u7edf\\.codex-pet-runs\\xiaodi-girl\\frames\\running\\04.png",
+        "D:\\\u534a\u81ea\u52a8\u8868\u5355\u68c0\u6d4b\u7cfb\u7edf\\.codex-pet-runs\\xiaodi-girl\\frames\\running\\05.png"
+      ],
+      "method": "components"
+    },
+    {
+      "state": "review",
+      "frames": [
+        "D:\\\u534a\u81ea\u52a8\u8868\u5355\u68c0\u6d4b\u7cfb\u7edf\\.codex-pet-runs\\xiaodi-girl\\frames\\review\\00.png",
+        "D:\\\u534a\u81ea\u52a8\u8868\u5355\u68c0\u6d4b\u7cfb\u7edf\\.codex-pet-runs\\xiaodi-girl\\frames\\review\\01.png",
+        "D:\\\u534a\u81ea\u52a8\u8868\u5355\u68c0\u6d4b\u7cfb\u7edf\\.codex-pet-runs\\xiaodi-girl\\frames\\review\\02.png",
+        "D:\\\u534a\u81ea\u52a8\u8868\u5355\u68c0\u6d4b\u7cfb\u7edf\\.codex-pet-runs\\xiaodi-girl\\frames\\review\\03.png",
+        "D:\\\u534a\u81ea\u52a8\u8868\u5355\u68c0\u6d4b\u7cfb\u7edf\\.codex-pet-runs\\xiaodi-girl\\frames\\review\\04.png",
+        "D:\\\u534a\u81ea\u52a8\u8868\u5355\u68c0\u6d4b\u7cfb\u7edf\\.codex-pet-runs\\xiaodi-girl\\frames\\review\\05.png"
+      ],
+      "method": "components"
+    }
+  ]
+}

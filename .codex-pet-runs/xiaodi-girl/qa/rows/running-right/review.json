@@ -1,0 +1,142 @@
+{
+  "ok": true,
+  "frames_root": "D:\\\u534a\u81ea\u52a8\u8868\u5355\u68c0\u6d4b\u7cfb\u7edf\\.codex-pet-runs\\xiaodi-girl\\qa\\rows\\running-right\\frames",
+  "states": [
+    "running-right"
+  ],
+  "errors": [],
+  "warnings": [],
+  "rows": [
+    {
+      "state": "running-right",
+      "expected_frames": 8,
+      "actual_frames": 8,
+      "extraction_method": "components",
+      "ok": true,
+      "errors": [],
+      "warnings": [],
+      "frames": [
+        {
+          "index": 0,
+          "file": "D:\\\u534a\u81ea\u52a8\u8868\u5355\u68c0\u6d4b\u7cfb\u7edf\\.codex-pet-runs\\xiaodi-girl\\qa\\rows\\running-right\\frames\\running-right\\00.png",
+          "width": 192,
+          "height": 208,
+          "nontransparent_pixels": 15463,
+          "bbox": [
+            23,
+            5,
+            168,
+            203
+          ],
+          "edge_pixels": 0,
+          "chroma_adjacent_pixels": 536
+        },
+        {
+          "index": 1,
+          "file": "D:\\\u534a\u81ea\u52a8\u8868\u5355\u68c0\u6d4b\u7cfb\u7edf\\.codex-pet-runs\\xiaodi-girl\\qa\\rows\\running-right\\frames\\running-right\\01.png",
+          "width": 192,
+          "height": 208,
+          "nontransparent_pixels": 15370,
+          "bbox": [
+            23,
+            5,
+            169,
+            203
+          ],
+          "edge_pixels": 0,
+          "chroma_adjacent_pixels": 484
+        },
+        {
+          "index": 2,
+          "file": "D:\\\u534a\u81ea\u52a8\u8868\u5355\u68c0\u6d4b\u7cfb\u7edf\\.codex-pet-runs\\xiaodi-girl\\qa\\rows\\running-right\\frames\\running-right\\02.png",
+          "width": 192,
+          "height": 208,
+          "nontransparent_pixels": 15559,
+          "bbox": [
+            27,
+            5,
+            164,
+            203
+          ],
+          "edge_pixels": 0,
+          "chroma_adjacent_pixels": 517
+        },
+        {
+          "index": 3,
+          "file": "D:\\\u534a\u81ea\u52a8\u8868\u5355\u68c0\u6d4b\u7cfb\u7edf\\.codex-pet-runs\\xiaodi-girl\\qa\\rows\\running-right\\frames\\running-right\\03.png",
+          "width": 192,
+          "height": 208,
+          "nontransparent_pixels": 15214,
+          "bbox": [
+            28,
+            5,
+            163,
+            203
+          ],
+          "edge_pixels": 0,
+          "chroma_adjacent_pixels": 564
+        },
+        {
+          "index": 4,
+          "file": "D:\\\u534a\u81ea\u52a8\u8868\u5355\u68c0\u6d4b\u7cfb\u7edf\\.codex-pet-runs\\xiaodi-girl\\qa\\rows\\running-right\\frames\\running-right\\04.png",
+          "width": 192,
+          "height": 208,
+          "nontransparent_pixels": 15449,
+          "bbox": [
+            22,
+            5,
+            169,
+            203
+          ],
+          "edge_pixels": 0,
+          "chroma_adjacent_pixels": 566
+        },
+        {
+          "index": 5,
+          "file": "D:\\\u534a\u81ea\u52a8\u8868\u5355\u68c0\u6d4b\u7cfb\u7edf\\.codex-pet-runs\\xiaodi-girl\\qa\\rows\\running-right\\frames\\running-right\\05.png",
+          "width": 192,
+          "height": 208,
+          "nontransparent_pixels": 14784,
+          "bbox": [
+            27,
+            5,
+            165,
+            203
+          ],
+          "edge_pixels": 0,
+          "chroma_adjacent_pixels": 471
+        },
+        {
+          "index": 6,
+          "file": "D:\\\u534a\u81ea\u52a8\u8868\u5355\u68c0\u6d4b\u7cfb\u7edf\\.codex-pet-runs\\xiaodi-girl\\qa\\rows\\running-right\\frames\\running-right\\06.png",
+          "width": 192,
+          "height": 208,
+          "nontransparent_pixels": 14553,
+          "bbox": [
+            29,
+            5,
+            162,
+            203
+          ],
+          "edge_pixels": 0,
+          "chroma_adjacent_pixels": 476
+        },
+        {
+          "index": 7,
+          "file": "D:\\\u534a\u81ea\u52a8\u8868\u5355\u68c0\u6d4b\u7cfb\u7edf\\.codex-pet-runs\\xiaodi-girl\\qa\\rows\\running-right\\frames\\running-right\\07.png",
+          "width": 192,
+          "height": 208,
+          "nontransparent_pixels": 14706,
+          "bbox": [
+            31,
+            5,
+            160,
+            203
+          ],
+          "edge_pixels": 0,
+          "chroma_adjacent_pixels": 496
+        }
+      ]
+    }
+  ]
+}

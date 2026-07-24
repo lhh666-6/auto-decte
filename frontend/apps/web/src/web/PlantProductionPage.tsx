@@ -36,6 +36,7 @@ export function PlantProductionPage() {
   const [cageQuery, setCageQuery] = useState("");
   const [stageFilter, setStageFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
+  const [quickFilter, setQuickFilter] = useState("");
 
   function reload() {
     setLoading(true);
@@ -63,8 +64,17 @@ export function PlantProductionPage() {
     if (statusFilter) {
       result = result.filter((r) => r.status === statusFilter);
     }
+    if (quickFilter === "sign") {
+      result = result.filter((r) => r.current_stage === "PLANT_AUDIT");
+    } else if (quickFilter === "inspection") {
+      result = result.filter((r) => r.status === "ACTIVE" && r.current_stage && r.current_stage !== "PLANT_AUDIT");
+    } else if (quickFilter === "active") {
+      result = result.filter((r) => r.status === "ACTIVE");
+    } else if (quickFilter === "completed") {
+      result = result.filter((r) => r.status === "COMPLETED");
+    }
     return result;
-  }, [records, cageQuery, stageFilter, statusFilter]);
+  }, [records, cageQuery, stageFilter, statusFilter, quickFilter]);
 
   async function submitReturn() {
     if (!selected || !reason.trim() || !targetStages.length) return;
@@ -107,6 +117,22 @@ export function PlantProductionPage() {
         <article><span>全部</span><strong>{overview.total}</strong></article>
         <article><span>进行中</span><strong>{overview.active}</strong></article>
         <article><span>已完成</span><strong>{overview.completed}</strong></article>
+      </div>
+
+      {/* 快捷筛选 */}
+      <div className="ledger-filters">
+        <button type="button" className={quickFilter === "sign" ? "secondary-button" : ""} onClick={() => setQuickFilter(quickFilter === "sign" ? "" : "sign")}>
+          待我签字
+        </button>
+        <button type="button" className={quickFilter === "inspection" ? "secondary-button" : ""} onClick={() => setQuickFilter(quickFilter === "inspection" ? "" : "inspection")}>
+          检测处理中
+        </button>
+        <button type="button" className={quickFilter === "active" ? "secondary-button" : ""} onClick={() => setQuickFilter(quickFilter === "active" ? "" : "active")}>
+          进行中
+        </button>
+        <button type="button" className={quickFilter === "completed" ? "secondary-button" : ""} onClick={() => setQuickFilter(quickFilter === "completed" ? "" : "completed")}>
+          已完成
+        </button>
       </div>
 
       {/* 筛选栏 */}
@@ -158,8 +184,13 @@ export function PlantProductionPage() {
             )}
           </div>
         )}
-        {filteredRecords.map((record) => (
-          <article key={record.record_id}>
+        {filteredRecords.map((record) => {
+          const priorityClass =
+            record.current_stage === "PLANT_AUDIT" ? "ledger-record-priority"
+            : record.current_stage && record.current_stage !== "PLANT_AUDIT" && record.status === "ACTIVE" ? "ledger-record-inspection"
+            : "";
+          return (
+          <article key={record.record_id} className={priorityClass}>
             <div className="ledger-record-info">
               <strong>{record.display_no} · 笼号 {record.cage_no || "—"}</strong>
               <span className="ledger-tags">
@@ -181,7 +212,8 @@ export function PlantProductionPage() {
               }}>选择环节打回</button>
             </div>
           </article>
-        ))}
+          );
+        })}
       </div>
 
       {/* 打回面板 */}

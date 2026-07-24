@@ -281,6 +281,34 @@ def return_bamboo_record(
         raise _operation_error(error) from error
 
 
+@router.post("/records/{record_id}/return-preview")
+def return_preview(
+    record_id: str,
+    body: SelectiveReturnRequest,
+    request: Request,
+) -> dict[str, object]:
+    """Preview which submissions would be invalidated if the given stages are returned."""
+    actor, plant_id = _plant_actor(request)
+    try:
+        stages = [BambooStage(value) for value in body.target_stages]
+    except ValueError as error:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "INVALID_RETURN_STAGES", "detail": "打回环节无效。"},
+        ) from error
+    try:
+        return cast(
+            dict[str, object],
+            _bamboo(request).preview_return(
+                record_id,
+                actor=_bamboo_actor(actor, plant_id),
+                target_stages=stages,
+            ),
+        )
+    except BambooOperationError as error:
+        raise _operation_error(error) from error
+
+
 @router.get("/exceptions")
 def exceptions(
     request: Request,
@@ -307,12 +335,14 @@ def terminate_inspection(
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ) -> dict[str, object]:
     actor, plant_id = _plant_actor(request)
-    _write_key(request, x_csrf_token, idempotency_key)
+    key = _write_key(request, x_csrf_token, idempotency_key)
     try:
         return _bamboo(request).terminate_inspection(
             record_id,
             actor=_bamboo_actor(actor, plant_id),
             confirm=body.confirm,
+            idempotency_key=key,
+            reason=body.reason,
         )
     except BambooOperationError as error:
         raise _operation_error(error) from error
@@ -420,17 +450,10 @@ def create_payroll_rule(
     x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token"),
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ) -> dict[str, object]:
-    actor, plant_id = _plant_actor(request)
-    _write_key(request, x_csrf_token, idempotency_key)
-    try:
-        return _bamboo(request).create_payroll_rule(
-            actor=_bamboo_actor(actor, plant_id),
-            rule_key=body.rule_key,
-            configuration=body.configuration,
-            system_default=False,
-        )
-    except BambooOperationError as error:
-        raise _operation_error(error) from error
+    raise HTTPException(
+        status_code=403,
+        detail={"code": "PAYROLL_RULE_CREATE_FORBIDDEN", "detail": "工资规则仅限财务人员创建。"},
+    )
 
 
 @router.get("/personnel-transfers")

@@ -15,10 +15,11 @@ const STATUS_LABELS: Record<string, string> = {
   APPEAL_SUBMITTED: "上诉待审批",
   APPEAL_APPROVED: "上诉已批准",
   APPEAL_REJECTED: "上诉已驳回",
-  TERMINATED: "已终止",
+  COMPLETED: "检测完成",
+  EARLY_TERMINATED: "厂长提前结束",
 };
 
-type Bucket = "active" | "all";
+type Bucket = "active" | "history";
 
 export function PlantExceptionsPage() {
   const [items, setItems] = useState<BambooInspectionQueueItem[]>([]);
@@ -34,6 +35,7 @@ export function PlantExceptionsPage() {
 
   function reload() {
     setLoading(true);
+    setError("");
     void getPlantExceptions(bucket, query).then((result) => {
       setItems(result.items);
       setLoading(false);
@@ -63,7 +65,7 @@ export function PlantExceptionsPage() {
   async function handleTerminate(recordId: string) {
     if (!terminateReason.trim()) return;
     try {
-      await terminatePlantInspection(recordId, crypto.randomUUID());
+      await terminatePlantInspection(recordId, crypto.randomUUID(), terminateReason);
       setTerminateRecordId("");
       setTerminateReason("");
       reload();
@@ -95,8 +97,8 @@ export function PlantExceptionsPage() {
         <label>
           范围
           <select value={bucket} onChange={(event) => setBucket(event.target.value as Bucket)}>
-            <option value="active">当前活跃</option>
-            <option value="all">全部记录</option>
+            <option value="active">当前处理</option>
+            <option value="history">历史记录</option>
           </select>
         </label>
         <button type="button" onClick={reload}>搜索</button>
@@ -177,9 +179,10 @@ export function PlantExceptionsPage() {
                   onChange={(event) => setAppealNote(event.target.value)}
                   placeholder="审批意见（可选）"
                 />
+                <p className="signature-muted">批准后系统将把记录打回对应生产环节重新检测。</p>
                 <div className="ledger-inline-actions">
                   <button type="button" onClick={() => void decide(item.record_id, true)}>
-                    批准上诉
+                    批准并打回重检
                   </button>
                   <button type="button" onClick={() => void decide(item.record_id, false)}>
                     驳回上诉

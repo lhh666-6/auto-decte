@@ -1,0 +1,29 @@
+{
+  "ok": true,
+  "reviewed_by": "independent-final-visual-qa",
+  "directions": [
+    {"degree":"000","verdict":"pass","expected":"up","observed":"arms raised, face, pupils and chin up","reason":"clear full-body upward-float feedback"},
+    {"degree":"022.5","verdict":"pass","expected":"up-right","observed":"nose/pupils right; chin/gaze/posture up","reason":"both horizontal and vertical axes visible"},
+    {"degree":"045","verdict":"pass","expected":"up-right","observed":"face/nose right; pupils/head up","reason":"clear diagonal"},
+    {"degree":"067.5","verdict":"pass","expected":"up-right","observed":"strong right three-quarter face; eyes/chin above level","reason":"continuous approach to right cardinal"},
+    {"degree":"090","verdict":"pass","expected":"right","observed":"nose, pupils and face point screen-right","reason":"unmistakable cardinal"},
+    {"degree":"112.5","verdict":"pass","expected":"down-right","observed":"right face/nose; eyelids/chin/head begin lowering","reason":"clear diagonal"},
+    {"degree":"135","verdict":"pass","expected":"down-right","observed":"face remains right; gaze, hood and torso lower","reason":"clear diagonal"},
+    {"degree":"157.5","verdict":"pass","expected":"down-right","observed":"lowered pose retains right profile","reason":"one coherent step before down"},
+    {"degree":"180","verdict":"pass","expected":"down","observed":"centered lowered head, downcast eyes and compressed torso","reason":"clear full-body downward-dive feedback"},
+    {"degree":"202.5","verdict":"pass","expected":"down-left","observed":"lowered face/nose begin screen-left; chin/torso remain down","reason":"clear diagonal"},
+    {"degree":"225","verdict":"pass","expected":"down-left","observed":"left three-quarter face; head/neck down","reason":"clear diagonal"},
+    {"degree":"247.5","verdict":"pass","expected":"down-left","observed":"near-left profile; chin/gaze below level","reason":"continuous approach to left cardinal"},
+    {"degree":"270","verdict":"pass","expected":"left","observed":"nose, pupils and face point screen-left","reason":"unmistakable cardinal"},
+    {"degree":"292.5","verdict":"pass","expected":"up-left","observed":"face/nose left; eyes/chin begin rising","reason":"clear diagonal"},
+    {"degree":"315","verdict":"pass","expected":"up-left","observed":"left face/gaze; raised head, arm and posture","reason":"clear diagonal and smooth lift"},
+    {"degree":"337.5","verdict":"warning","expected":"up-left","observed":"strong up via raised head, eyes and both arms; subtle left nose/pupil cue","reason":"labeled loop confirms up-left without reversal, while blind horizontal axis is ambiguous"}
+  ],
+  "review_warnings": [
+    "337.5 screen-left cue is subtle but the labeled clockwise loop is coherent and vertical up cue passes",
+    "continuity metric outliers reflect natural pose and perspective changes with no visible scale or registration pop",
+    "alpha-hole candidates are natural negative spaces between legs, skirt, arms and hair rather than interior seams"
+  ],
+  "visual_qa": "pass",
+  "repair_rows": []
+}

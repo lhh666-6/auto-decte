@@ -272,6 +272,8 @@ export interface SubmissionCorrection {
   status: string;
   idempotency_key: string;
   request_hash: string;
+  correction_type: string;
+  supplementary_note: string;
   created_at: string;
 }
 
@@ -357,9 +359,13 @@ export interface GovernedExportBatch {
   export_batch_id: string;
   template_version_id: string;
   mapping_version_id: string;
+  filters?: Record<string, unknown>;
   data_watermark: string;
   status: string;
   file_hash: string;
   download_name: string;
+  created_by?: string;
+  created_at?: string;
+  record_count?: number | null;
   supersedes_batch_id?: string;
 }

@@ -3,7 +3,7 @@ import { useState } from "react";
 export interface ImpactScope {
   factories: string[];
   affectedCount?: number;
-  affectedRecords?: number;
+  affectedRecords?: number | null;
 }
 
 export interface PreCheckResult {
@@ -87,8 +87,8 @@ export function ReasonConfirmDialog({
             {impactScope.affectedCount !== undefined && (
               <p>受影响对象数：{impactScope.affectedCount}</p>
             )}
-            {impactScope.affectedRecords !== undefined && (
-              <p>受影响记录数：{impactScope.affectedRecords}</p>
+            {"affectedRecords" in impactScope && impactScope.affectedRecords !== undefined && (
+              <p>受影响记录数：{impactScope.affectedRecords === null ? "暂无法计算" : impactScope.affectedRecords}</p>
             )}
           </div>
         )}

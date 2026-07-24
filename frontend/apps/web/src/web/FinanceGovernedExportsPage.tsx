@@ -47,6 +47,10 @@ export function FinanceGovernedExportsPage() {
   const [previewState, setPreviewState] = useState<PreviewState>("idle");
   const [previewData, setPreviewData] = useState<ExportPreview | null>(null);
 
+  // Idempotency keys (stable, generated once per step entry)
+  const [createIdempotencyKey, setCreateIdempotencyKey] = useState("");
+  const [reExportIdempotencyKey, setReExportIdempotencyKey] = useState("");
+
   function reload() {
     setError("");
     void Promise.all([listReportMappings(), listGovernedExports()])
@@ -63,11 +67,18 @@ export function FinanceGovernedExportsPage() {
 
   async function createExport() {
     if (!selectedMapping) return;
+    // Date range validation
+    if (dateRange.start && dateRange.end && dateRange.start > dateRange.end) {
+      setError("开始日期不能晚于结束日期");
+      return;
+    }
     try {
       const batch = await createGovernedExport(
         selectedMapping.template_version_id,
         selectedMapping.mapping_version_id,
         selectedFactory,
+        dateRange.start || undefined,
+        dateRange.end || undefined,
       );
       setBatches((current) => [batch, ...current]);
       setCreateStep(1);
@@ -98,6 +109,11 @@ export function FinanceGovernedExportsPage() {
 
   async function handlePreview() {
     if (!selectedMapping) return;
+    // Date range validation
+    if (dateRange.start && dateRange.end && dateRange.start > dateRange.end) {
+      setError("开始日期不能晚于结束日期");
+      return;
+    }
     setPreviewState("loading");
     setPreviewData(null);
     setError("");
@@ -106,6 +122,8 @@ export function FinanceGovernedExportsPage() {
         selectedMapping.template_version_id,
         selectedMapping.mapping_version_id,
         selectedFactory,
+        dateRange.start || undefined,
+        dateRange.end || undefined,
       );
       setPreviewData(preview);
       setPreviewState("result");
@@ -123,7 +141,7 @@ export function FinanceGovernedExportsPage() {
   }
 
   function needsReExport(batch: GovernedExportBatch): boolean {
-    return batch.status === "FAILED" || batch.status === "EXPIRED" || batch.status === "SUPERSEDED";
+    return batch.status === "FAILED" || batch.status === "EXPIRED";
   }
 
   const confirmedMappings = mappings;
@@ -293,7 +311,9 @@ export function FinanceGovernedExportsPage() {
                 <dt>异常数</dt>
                 <dd style={{ color: "#e07b16" }}>
                   {previewState === "result" || previewState === "stale"
-                    ? `${previewData?.anomaly_count ?? "—"} 条`
+                    ? previewData?.anomaly_count != null
+                      ? `${previewData.anomaly_count} 条`
+                      : "暂未提供异常统计"
                     : "—"}
                 </dd>
                 <dt>需重导来源数</dt>
@@ -335,7 +355,7 @@ export function FinanceGovernedExportsPage() {
                   <button
                     type="button"
                     className="primary"
-                    onClick={() => setCreateStep(3)}
+                    onClick={() => { setCreateIdempotencyKey(crypto.randomUUID()); setCreateStep(3); }}
                     disabled={previewState === "stale"}
                   >
                     下一步：确认创建
@@ -366,7 +386,7 @@ export function FinanceGovernedExportsPage() {
                 </ul>
               </div>
               <div style={{ fontSize: 13, color: "#596579" }}>
-                幂等键: <code style={{ background: "#f0f3f7", padding: "2px 6px", borderRadius: 4, fontSize: 11 }}>{crypto.randomUUID()}</code>
+                幂等键: <code style={{ background: "#f0f3f7", padding: "2px 6px", borderRadius: 4, fontSize: 11 }}>{createIdempotencyKey.slice(0, 8)}...（防重复提交）</code>
               </div>
               <div className="export-step-actions">
                 <button type="button" className="secondary" onClick={() => setCreateStep(2)}>
@@ -409,8 +429,8 @@ export function FinanceGovernedExportsPage() {
                       <td style={{ fontFamily: "monospace", fontSize: 12, maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={item.export_batch_id}>
                         {item.download_name || item.export_batch_id.slice(0, 12)}
                       </td>
-                      <td style={{ fontSize: 12 }}>{formatTime(new Date().toISOString())}</td>
-                      <td style={{ fontSize: 12 }}>财务</td>
+                      <td style={{ fontSize: 12 }}>{formatTime(item.created_at || "")}</td>
+                      <td style={{ fontSize: 12 }}>{item.created_by || "—"}</td>
                       <td style={{ fontFamily: "monospace", fontSize: 11 }}>
                         {item.template_version_id?.slice(0, 10)}...
                       </td>
@@ -418,9 +438,13 @@ export function FinanceGovernedExportsPage() {
                         {item.mapping_version_id?.slice(0, 10)}...
                       </td>
                       <td style={{ fontSize: 12, color: "#596579" }}>
-                        {item.data_watermark ? "水位: " + item.data_watermark : "—"}
+                        {(item.filters && (item.filters as Record<string, unknown>).date_start)
+                          ? `${String((item.filters as Record<string, unknown>).date_start)} 至 ${String((item.filters as Record<string, unknown>).date_end || (item.filters as Record<string, unknown>).date_start)}`
+                          : item.data_watermark
+                            ? "水位: " + item.data_watermark
+                            : "—"}
                       </td>
-                      <td style={{ fontSize: 12 }}>—</td>
+                      <td style={{ fontSize: 12 }}>{item.record_count != null ? String(item.record_count) : "—"}</td>
                       <td style={{ fontFamily: "monospace", fontSize: 11 }}>
                         {item.file_hash ? item.file_hash.slice(0, 14) + "..." : "—"}
                       </td>
@@ -428,9 +452,13 @@ export function FinanceGovernedExportsPage() {
                         <StatusBadge status={item.status} />
                       </td>
                       <td className="export-history-actions">
-                        {item.status === "AVAILABLE" && (
-                          <a href={`/api/v1/finance/exports/${item.export_batch_id}/download`} style={{ color: "#155eef" }}>
-                            下载
+                        {(item.status === "AVAILABLE" || item.status === "SUPERSEDED") && (
+                          <a
+                            href={`/api/v1/finance/exports/${item.export_batch_id}/download`}
+                            style={{ color: "#155eef" }}
+                            title={item.status === "SUPERSEDED" ? "该文件已被后续重导替代，仅用于历史追溯" : undefined}
+                          >
+                            {item.status === "SUPERSEDED" ? "下载历史文件" : "下载"}
                           </a>
                         )}
                         <button
@@ -466,6 +494,9 @@ export function FinanceGovernedExportsPage() {
       {/* Tab: Needs Re-export */}
       {activeTab === "reexport" && (
         <div>
+          <p style={{ fontSize: 13, color: "#596579", margin: "0 0 12px" }}>
+            以下批次的导出后数据发生了正式更正，建议重新导出以获取最新数据。
+          </p>
           {reExportBatches.length === 0 ? (
             <EmptyState message="没有需要重新导出的批次。" />
           ) : reExportBatch ? (
@@ -518,7 +549,7 @@ export function FinanceGovernedExportsPage() {
                     <button type="button" className="secondary" onClick={() => { setReExportBatch(null); setReExportStep("review"); }}>
                       取消
                     </button>
-                    <button type="button" className="primary" onClick={() => setReExportStep("confirm")}>
+                    <button type="button" className="primary" onClick={() => { setReExportIdempotencyKey(crypto.randomUUID()); setReExportStep("confirm"); }}>
                       预览新导出
                     </button>
                   </div>
@@ -533,7 +564,7 @@ export function FinanceGovernedExportsPage() {
                       重导将使用原始导出相同的模板版本和映射版本，但使用最新的数据水位。原导出批次会保留在历史记录中。
                     </p>
                     <p style={{ margin: 0 }}>
-                      新导出幂等键: <code style={{ background: "#f0f3f7", padding: "2px 6px", borderRadius: 4, fontSize: 11 }}>{crypto.randomUUID()}</code>
+                      新导出幂等键: <code style={{ background: "#f0f3f7", padding: "2px 6px", borderRadius: 4, fontSize: 11 }}>{reExportIdempotencyKey.slice(0, 8)}...（防重复提交）</code>
                     </p>
                   </div>
                   <div className="export-step-actions">

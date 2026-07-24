@@ -425,10 +425,11 @@ export function AdminOrganizationPage() {
                     <button
                       type="button"
                       className="org-action-btn org-action-suspend"
-                      onClick={() => { /* suspend API call */ }}
+                      disabled
+                      title="员工状态调整暂未开放"
                       data-testid={tid("detail-suspend")}
                     >
-                      {(extStr(selectedEmployee, "status") === "INACTIVE" || extStr(selectedEmployee, "status") === "SUSPENDED") ? "恢复员工" : "停用员工"}
+                      {(extStr(selectedEmployee, "status") === "INACTIVE" || extStr(selectedEmployee, "status") === "SUSPENDED") ? "恢复员工（暂未开放）" : "停用员工（暂未开放）"}
                     </button>
                   </div>
                 </>

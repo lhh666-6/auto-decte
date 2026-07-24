@@ -97,6 +97,7 @@ class CloseInspectionExceptionRequest(BaseModel):
 
 class TerminateInspectionRequest(BaseModel):
     confirm: bool
+    reason: str = Field(default="", max_length=2000)
 
 
 class SubmitInspectionAppealRequest(BaseModel):

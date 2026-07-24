@@ -29,6 +29,8 @@ export interface VersionDiffPanelProps {
   nodes?: DiffNode[];
   ruleLines?: DiffRuleLine[];
   emptyMessage?: string;
+  /** When true, signals this is the first version with nothing to diff against. */
+  isFirstVersion?: boolean;
 }
 
 function ChangeBadge({ change }: { change: DiffField["change"] | DiffNode["change"] }) {
@@ -51,10 +53,13 @@ export function VersionDiffPanel({
   nodes,
   ruleLines,
   emptyMessage = "无变更记录",
+  isFirstVersion = false,
 }: VersionDiffPanelProps) {
   let body: ReactNode;
 
-  if (fields && fields.length > 0) {
+  if (isFirstVersion) {
+    body = <p className="diff-first-version">首次版本，没有上一版本可对比</p>;
+  } else if (fields && fields.length > 0) {
     body = (
       <table className="diff-table">
         <thead>

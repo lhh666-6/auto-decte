@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { decidePayrollRule, listPayrollApprovals } from "./api";
+import { adminTrialPayroll, decidePayrollRule, listPayrollApprovals } from "./api";
+import type { TrialPayrollResult } from "./api";
 import { VersionDiffPanel } from "./shared/VersionDiffPanel";
 import type { DiffRuleLine } from "./shared/VersionDiffPanel";
 import { ReasonConfirmDialog } from "./shared/ReasonConfirmDialog";
@@ -25,7 +26,7 @@ function buildRuleDiff(
   return lines;
 }
 
-function buildPreCheck(item: PayrollRuleVersion): PreCheckResult {
+function buildPreCheck(item: PayrollRuleVersion, trialData?: TrialPayrollResult | null): PreCheckResult {
   const errors: string[] = [];
   const warnings: string[] = [];
 
@@ -36,36 +37,11 @@ function buildPreCheck(item: PayrollRuleVersion): PreCheckResult {
   if (item.dsl.rate && (isNaN(rate) || rate <= 0)) {
     errors.push("单价 (rate) 无效或非正数");
   }
+  if (trialData && trialData.result_count === 0) {
+    warnings.push("当前没有可计算正式记录");
+  }
 
   return { passed: errors.length === 0, errors, warnings };
-}
-
-/** Mock trial-calculation samples for demonstration. */
-interface TrialSample {
-  employee_code: string;
-  metric_value: number;
-  old_amount: string;
-  new_amount: string;
-  delta: string;
-}
-
-function buildTrialSamples(current: PayrollRuleVersion): TrialSample[] {
-  const rate = parseFloat(current.dsl.rate) || 0;
-  const base = parseFloat(current.dsl.base) || 0;
-  const employees = ["EMP001", "EMP002", "EMP003"];
-  return employees.map((code, i) => {
-    const metric = (i + 1) * 100;
-    const oldAmount = metric * (rate * 0.9) + base;
-    const newAmount = metric * rate + base;
-    const delta = newAmount - oldAmount;
-    return {
-      employee_code: code,
-      metric_value: metric,
-      old_amount: oldAmount.toFixed(2),
-      new_amount: newAmount.toFixed(2),
-      delta: (delta >= 0 ? "+" : "") + delta.toFixed(2),
-    };
-  });
 }
 
 /* ------------------------------------------------------------------ */
@@ -80,6 +56,11 @@ export function AdminPayrollApprovalsPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [dialogAction, setDialogAction] = useState<"APPROVE" | "REJECT">("APPROVE");
   const [dialogItem, setDialogItem] = useState<PayrollRuleVersion | null>(null);
+
+  /* trial calculation state per item */
+  const [trialLoading, setTrialLoading] = useState<Record<string, boolean>>({});
+  const [trialData, setTrialData] = useState<Record<string, TrialPayrollResult | null>>({});
+  const [trialError, setTrialError] = useState<Record<string, string>>({});
 
   const fetchItems = useCallback(async () => {
     setLoading(true);
@@ -109,6 +90,20 @@ export function AdminPayrollApprovalsPage() {
     setDialogItem(null);
   }
 
+  async function handleTrial(item: PayrollRuleVersion) {
+    const id = item.rule_version_id;
+    setTrialLoading((prev) => ({ ...prev, [id]: true }));
+    setTrialError((prev) => ({ ...prev, [id]: "" }));
+    try {
+      const result = await adminTrialPayroll(id, "2026-01-01", "2026-12-31");
+      setTrialData((prev) => ({ ...prev, [id]: result }));
+    } catch (cause) {
+      setTrialError((prev) => ({ ...prev, [id]: cause instanceof Error ? cause.message : "试算失败" }));
+    } finally {
+      setTrialLoading((prev) => ({ ...prev, [id]: false }));
+    }
+  }
+
   async function handleConfirm(_reason: string) {
     if (!dialogItem) return;
     try {
@@ -122,17 +117,18 @@ export function AdminPayrollApprovalsPage() {
   }
 
   const dialogPreCheck = useMemo(
-    () => (dialogItem ? buildPreCheck(dialogItem) : undefined),
-    [dialogItem],
+    () => (dialogItem ? buildPreCheck(dialogItem, trialData[dialogItem.rule_version_id]) : undefined),
+    [dialogItem, trialData],
   );
 
   const dialogImpact = useMemo((): ImpactScope | undefined => {
     if (!dialogItem) return undefined;
+    const td = trialData[dialogItem.rule_version_id];
     return {
       factories: [dialogItem.factory_id],
-      affectedRecords: 120,
+      affectedRecords: td ? td.result_count : 0,
     };
-  }, [dialogItem]);
+  }, [dialogItem, trialData]);
 
   if (loading) return <div role="status" className="page-loading">正在加载工资规则审批列表...</div>;
   if (error && items.length === 0) return <div role="alert" className="error-banner">{error}</div>;
@@ -148,10 +144,13 @@ export function AdminPayrollApprovalsPage() {
       ) : (
         <div className="payroll-list">
           {items.map((item) => {
-            const preCheck = buildPreCheck(item);
-            const samples = buildTrialSamples(item);
+            const itemId = item.rule_version_id;
+            const td = trialData[itemId];
+            const tl = trialLoading[itemId];
+            const te = trialError[itemId];
+            const preCheck = buildPreCheck(item, td);
             return (
-              <article key={item.rule_version_id} className="payroll-card-enhanced">
+              <article key={itemId} className="payroll-card-enhanced">
                 <div className="payroll-card-header">
                   <strong>{item.name} V{item.version}</strong>
                   <span>{item.factory_id} · {item.dsl.metric} x {item.dsl.rate} + {item.dsl.base}</span>
@@ -175,33 +174,55 @@ export function AdminPayrollApprovalsPage() {
                   )}
                 </div>
 
-                {/* trial samples */}
+                {/* trial calculation */}
                 <div className="trial-samples">
-                  <h4>试算样本对比</h4>
-                  <table className="trial-table">
-                    <thead>
-                      <tr>
-                        <th>员工</th>
-                        <th>指标值</th>
-                        <th>原金额</th>
-                        <th>新金额</th>
-                        <th>差额</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {samples.map((s) => (
-                        <tr key={s.employee_code}>
-                          <td>{s.employee_code}</td>
-                          <td>{s.metric_value}</td>
-                          <td>{s.old_amount}</td>
-                          <td>{s.new_amount}</td>
-                          <td className={s.delta.startsWith("+") ? "delta-positive" : "delta-negative"}>
-                            {s.delta}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                  <h4>试算结果</h4>
+                  {!td && !tl && !te && (
+                    <button type="button" className="trial-run-btn" onClick={() => { void handleTrial(item); }}>
+                      执行试算
+                    </button>
+                  )}
+                  {tl && <p className="trial-loading">正在试算...</p>}
+                  {te && <p className="trial-error">{te}</p>}
+                  {td && (
+                    <>
+                      <p className="trial-summary">
+                        共 {td.result_count} 条记录，涉及 {td.items.length} 名员工
+                      </p>
+                      {td.items.length > 0 && (
+                        <table className="trial-table">
+                          <thead>
+                            <tr>
+                              <th>员工</th>
+                              <th>日期</th>
+                              <th>金额</th>
+                              <th>原金额</th>
+                              <th>差额</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {td.items.slice(0, 5).map((s, i) => (
+                              <tr key={`${s.employee_code}-${i}`}>
+                                <td>{s.employee_code}</td>
+                                <td>{s.business_date}</td>
+                                <td>{s.amount}</td>
+                                <td>{s.original_amount ?? "-"}</td>
+                                <td className={(s.delta_amount && s.delta_amount.startsWith("-")) ? "delta-negative" : "delta-positive"}>
+                                  {s.delta_amount ?? "-"}
+                                </td>
+                              </tr>
+                            ))}
+                            {td.items.length > 5 && (
+                              <tr><td colSpan={5}>... 还有 {td.items.length - 5} 条记录未完全展示</td></tr>
+                            )}
+                          </tbody>
+                        </table>
+                      )}
+                      <button type="button" className="trial-run-btn" onClick={() => { void handleTrial(item); }}>
+                        重新试算
+                      </button>
+                    </>
+                  )}
                 </div>
 
                 <div className="managed-form-actions">

@@ -149,7 +149,7 @@ it("keeps signature blocked while inspection is active", async () => {
 
   expect(await screen.findByText("李工")).toBeTruthy();
   expect(screen.getByText("一级")).toBeTruthy();
-  expect(screen.getByRole("button", { name: "停止检测并提前签字" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "提前结束检测" })).toBeTruthy();
   expect(screen.queryByRole("button", { name: "通过并签字" })).toBeNull();
 });
 

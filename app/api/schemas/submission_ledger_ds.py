@@ -16,7 +16,8 @@ class AttachReplacementRequest(BaseModel):
 
 class CreateCorrectionRequest(BaseModel):
     reason: str = Field(min_length=1, max_length=500)
-    correction_type: str = Field(min_length=1, max_length=50)
+    correction_type: str = Field(default="other", max_length=50)
+    supplementary_note: str | None = Field(default=None, max_length=500)
     request_id: str | None = Field(default=None, max_length=100)
 
 

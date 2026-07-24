@@ -176,6 +176,8 @@ class SubmissionLedgerService:
         assigned_to: str,
         idempotency_key: str | None = None,
         request_hash: str | None = None,
+        correction_type: str | None = None,
+        supplementary_note: str | None = None,
     ) -> dict[str, str]:
         now = self._clock()
         if idempotency_key:
@@ -247,6 +249,8 @@ class SubmissionLedgerService:
                         status="RETURNED",
                         idempotency_key=idempotency_key,
                         request_hash=request_hash,
+                        correction_type=correction_type,
+                        supplementary_note=supplementary_note,
                         created_at=now,
                     )
                 )
@@ -544,6 +548,8 @@ class SubmissionLedgerService:
                         "status": row.status,
                         "idempotency_key": row.idempotency_key or "",
                         "request_hash": row.request_hash or "",
+                        "correction_type": row.correction_type or "",
+                        "supplementary_note": row.supplementary_note or "",
                         "created_at": row.created_at.isoformat(),
                     }
                     for row in rows

@@ -20,7 +20,7 @@ interface VersionException {
   object_id: string;
   factory_id: string;
   factory_name: string;
-  discovered_at: string;
+  discovered_at?: string;
   status: "OPEN" | "ACKNOWLEDGED" | "RESOLVED";
   reference_chain?: string[];
   impact_scope?: {
@@ -96,7 +96,6 @@ export function AdminVersionExceptionsPage() {
             object_id: item.version_id,
             factory_id: item.factory_id ?? "",
             factory_name: item.factory_id ?? "",
-            discovered_at: new Date().toISOString(),
             status: "OPEN",
             recommended_action: "查看驳回原因，修复后重新提交审批",
             detail_summary: "该版本已被管理员驳回，需要修复问题后重新提交",
@@ -114,7 +113,6 @@ export function AdminVersionExceptionsPage() {
             object_id: item["rule_version_id"],
             factory_id: item["factory_id"] ?? "",
             factory_name: item["factory_id"] ?? "",
-            discovered_at: new Date().toISOString(),
             status: item["status"] === "REJECTED" ? "OPEN" : "RESOLVED",
             recommended_action: item["status"] === "REJECTED" ? "修复规则后重新提交管理员审批" : "规则已退役，历史数据保留",
             detail_summary: item["status"] === "REJECTED" ? "工资规则版本被管理员驳回" : "工资规则版本已退役",
@@ -156,8 +154,8 @@ export function AdminVersionExceptionsPage() {
     <section className="version-exceptions-page">
       <header className="vex-header">
         <div>
-          <h1>版本异常</h1>
-          <p>跨版本引用冲突、预检失败、启用异常、导出映射与工资规则异常的集中查看与处理。</p>
+          <h1>版本诊断</h1>
+          <p>根据当前审批与版本状态即时派生，不作为独立正式业务记录。</p>
         </div>
       </header>
 
@@ -228,7 +226,7 @@ export function AdminVersionExceptionsPage() {
               <p className="vex-card-meta">
                 <span>{ex.object_type}</span>
                 <span>{ex.factory_name} ({ex.factory_id})</span>
-                <span>{new Date(ex.discovered_at).toLocaleString("zh-CN")}</span>
+                <span>当前诊断</span>
               </p>
               <p className="vex-card-summary">{ex.detail_summary}</p>
 

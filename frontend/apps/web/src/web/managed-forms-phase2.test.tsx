@@ -73,20 +73,34 @@ it("lets finance create a structured form draft and submit it for approval", asy
 it("lets admin approve and activate a version for selected factories", async () => {
   document.cookie = "web_csrf=csrf; path=/";
   const pending = { ...VERSION, status: "PENDING_APPROVAL" };
-  const fetchMock = vi.fn()
-    .mockResolvedValueOnce(jsonResponse({ items: [pending] }))
-    .mockResolvedValueOnce(jsonResponse({ ...pending, status: "APPROVED" }))
-    .mockResolvedValueOnce(jsonResponse({
-      version_id: "form-ver-1",
-      status: "ACTIVE",
-      plant_ids: ["FACTORY-A"],
-    }));
+  const fetchMock = vi.fn(async (url: RequestInfo | URL) => {
+    const urlStr = String(url);
+    if (urlStr.includes("/admin/form-approvals") && !urlStr.includes("decision") && !urlStr.includes("activate")) {
+      return jsonResponse({ items: [pending] });
+    }
+    if (urlStr.includes("/plant/factories")) {
+      return jsonResponse({ items: [{ factory_id: "FACTORY-A", code: "FACTORY-A", name: "甲厂" }] });
+    }
+    if (urlStr.includes("/admin/form-approvals") && urlStr.includes("decision")) {
+      return jsonResponse({ ...pending, status: "APPROVED" });
+    }
+    if (urlStr.includes("/admin/form-versions") && urlStr.includes("activate")) {
+      return jsonResponse({
+        version_id: "form-ver-1",
+        status: "ACTIVE",
+        plant_ids: ["FACTORY-A"],
+      });
+    }
+    return jsonResponse({});
+  });
   vi.stubGlobal("fetch", fetchMock);
   const user = userEvent.setup();
 
   render(<MemoryRouter><AdminFormApprovalsPage /></MemoryRouter>);
+  // Wait for form approvals to load
+  await screen.findByText("日产量表");
   // Click "批准版本" opens ReasonConfirmDialog
-  await user.click(await screen.findByRole("button", { name: "批准版本" }));
+  await user.click(screen.getByRole("button", { name: "批准版本" }));
 
   // Fill in approval reason and confirm
   await user.type(
@@ -95,8 +109,9 @@ it("lets admin approve and activate a version for selected factories", async () 
   );
   await user.click(screen.getByRole("button", { name: "确认批准" }));
 
-  // After approval completes, the dialog closes and the activation panel appears
-  await user.type(await screen.findByLabelText("启用工厂"), "FACTORY-A");
+  // After approval, dialog closes and activation panel appears with checkbox list
+  const factoryCheckbox = await screen.findByLabelText("甲厂 (FACTORY-A)");
+  await user.click(factoryCheckbox);
   await user.click(screen.getByRole("button", { name: "按工厂启用" }));
 
   await waitFor(() => {

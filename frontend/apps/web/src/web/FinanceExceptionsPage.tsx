@@ -19,13 +19,13 @@ interface ExceptionItem {
 
 const EXCEPTION_TYPE_LABELS: Record<string, string> = {
   MISSING_SOURCE: "缺失来源",
-  DUPLICATE_FACT: "重复事实",
+  // DUPLICATE_FACT: "重复事实",          // 预留，暂未实现检测
   AMOUNT_ANOMALY: "金额异常",
-  MISSING_MASTER_DATA: "主数据缺失",
-  RULE_VERSION_INAPPLICABLE: "规则版本不适用",
+  // MISSING_MASTER_DATA: "主数据缺失",   // 预留，暂未实现检测
+  // RULE_VERSION_INAPPLICABLE: "规则版本不适用", // 预留，暂未实现检测
   CONFIRMED_THEN_CHANGED: "已确认后变化",
   EXPORTED_THEN_CORRECTED: "已导出后更正",
-  EXPORT_FAILED: "导出失败",
+  // EXPORT_FAILED: "导出失败",           // 预留，暂未实现检测
 };
 
 function buildExceptions(
@@ -104,8 +104,8 @@ export function FinanceExceptionsPage() {
   return (
     <section className="finance-exceptions-page" data-testid="finance-exceptions-page">
       <header>
-        <h1 data-testid="finance-page-title">异常记录</h1>
-        <p>监控数据一致性、完整性与合规性异常</p>
+        <h1 data-testid="finance-page-title">财务诊断</h1>
+        <p>基于当前账本和更正记录自动识别的诊断项，不作为独立正式业务记录</p>
       </header>
       {error && <div role="alert" className="error-banner">{error}</div>}
 
@@ -129,7 +129,7 @@ export function FinanceExceptionsPage() {
               <div className="finance-exception-info">
                 <strong>{EXCEPTION_TYPE_LABELS[item.type] ?? item.type}</strong>
                 <span>记录号: {item.recordNo} · 工厂: {item.factoryId} · 员工: {item.employeeCode}</span>
-                <span>发现时间: {item.discoveredAt}</span>
+                <span>记录时间: {item.discoveredAt}</span>
               </div>
               <div className="finance-exception-status">
                 <StatusBadge status={item.status} />
@@ -151,7 +151,7 @@ export function FinanceExceptionsPage() {
             <DetailField label="记录号" value={detail.recordNo} />
             <DetailField label="工厂" value={detail.factoryId} />
             <DetailField label="员工" value={detail.employeeCode} />
-            <DetailField label="发现时间" value={detail.discoveredAt} />
+            <DetailField label="记录时间" value={detail.discoveredAt} />
             <DetailField label="状态" value={detail.status} />
             <h3>异常解释</h3>
             <p>{detail.description}</p>

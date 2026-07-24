@@ -14,6 +14,8 @@ export function BambooV3SubmissionsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
+  const isInspector = sessionMetadata?.bamboo_role === "INSPECTOR";
+
   const load = useCallback(async () => {
     if (!sessionMetadata) return;
     setLoading(true);
@@ -39,12 +41,12 @@ export function BambooV3SubmissionsPage() {
     <div className="page bamboo-v3-submissions">
       <h2 className="visually-hidden">历史记录</h2>
       <section className="section">
-        <div className="section-head"><div><div className="section-title">我的历史记录</div><div className="section-note">本人完成的签字和检测均在这里保留</div></div><div className="section-note">{items.length} 条</div></div>
+        <div className="section-head"><div><div className="section-title">{isInspector ? "我的检测记录" : "我的历史记录"}</div><div className="section-note">{isInspector ? "本人完成的质量检测记录" : "本人完成的签字和检测均在这里保留"}</div></div><div className="section-note">{items.length} 条</div></div>
         <div className="stats submissions-stats"><div className="stat"><b>{draftCount}</b><span>自动保存草稿</span></div><div className="stat"><b>{items.length}</b><span>历史记录</span></div></div>
       </section>
       {error && <div className="banner danger" role="alert">{error}<button type="button" className="btn small secondary" onClick={() => void load()}>重试</button></div>}
       {loading ? <div className="mobile-loading">加载中…</div> : items.length === 0 ? (
-        <div className="card empty"><h3>暂无历史记录</h3><p>完成工序签字或检测后，会在这里显示。</p><Link className="btn primary full" to="/mobile/work">记录我的工作</Link></div>
+        <div className="card empty"><h3>{isInspector ? "暂无检测记录" : "暂无历史记录"}</h3><p>{isInspector ? "完成质量检测后，会在这里显示。" : "完成工序签字或检测后，会在这里显示。"}</p><Link className="btn primary full" to="/mobile/work">{isInspector ? "去检测" : "记录我的工作"}</Link></div>
       ) : (
         <div className="list">{items.map((item) => (
           <Link className="record-card" to={`/mobile/records/${encodeURIComponent(item.record_id)}`} key={item.activity_id}>

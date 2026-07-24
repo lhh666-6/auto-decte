@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 
-import { MobileApiError, mobileApiClient, type BambooDashboard, type MobileSubmissionListItem } from "@form-detection/api-client";
+import { MobileApiError, mobileApiClient, type BambooDashboard, type BambooInspectionWindow, type MobileSubmissionListItem } from "@form-detection/api-client";
 
 import { useMobileSession } from "../session/MobileSessionProvider";
 
@@ -37,8 +37,8 @@ const ROLE_ACTIONS: Record<string, { primaryTitle: string; primaryDesc: string; 
     secondaryDesc: "查看本人提交与后续流转状态",
   },
   INSPECTOR: {
-    primaryTitle: "记录随机检测",
-    primaryDesc: "可对任一在产竹丝笼补充抽检，不阻断主流程",
+    primaryTitle: "记录质量检测",
+    primaryDesc: "查看当前可检测的生产记录并填写现场检测结果。",
     secondaryTitle: "查看我的检测记录",
     secondaryDesc: "查看检测序号、检测流程和现场留痕",
   },
@@ -60,11 +60,13 @@ export function BambooV3HomePage() {
   const { sessionMetadata: session } = useMobileSession();
   const [dashboard, setDashboard] = useState<BambooDashboard>(EMPTY_DASHBOARD);
   const [submissions, setSubmissions] = useState<MobileSubmissionListItem[]>([]);
+  const [inspectionHistory, setInspectionHistory] = useState<BambooInspectionWindow[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
   const role = session?.bamboo_role ?? "";
   const isFinance = role === "FINANCE_APPROVER";
+  const isInspector = role === "INSPECTOR";
   const isPlantManager = role === "PLANT_MANAGER";
   const action = ROLE_ACTIONS[role];
   const hasMobileWork = Boolean(action) && !isPlantManager;
@@ -74,14 +76,23 @@ export function BambooV3HomePage() {
     setLoading(true);
     setError("");
     try {
-      const [summary, remoteSubmissions] = await Promise.all([
-        mobileApiClient.getBambooDashboard(),
-        typeof mobileApiClient.listSubmissions === "function"
-          ? mobileApiClient.listSubmissions().catch(() => ({ submissions: [] }))
-          : Promise.resolve({ submissions: [] }),
-      ]);
-      setDashboard(summary);
-      setSubmissions(remoteSubmissions.submissions.slice(0, 3));
+      if (isInspector) {
+        const [summary, history] = await Promise.all([
+          mobileApiClient.getBambooDashboard(),
+          mobileApiClient.listBambooInspectionQueue("history"),
+        ]);
+        setDashboard(summary);
+        setInspectionHistory(history.items.slice(0, 3));
+      } else {
+        const [summary, remoteSubmissions] = await Promise.all([
+          mobileApiClient.getBambooDashboard(),
+          typeof mobileApiClient.listSubmissions === "function"
+            ? mobileApiClient.listSubmissions().catch(() => ({ submissions: [] }))
+            : Promise.resolve({ submissions: [] }),
+        ]);
+        setDashboard(summary);
+        setSubmissions(remoteSubmissions.submissions.slice(0, 3));
+      }
     } catch (cause) {
       setError(cause instanceof MobileApiError
         ? cause.problem.detail
@@ -89,7 +100,7 @@ export function BambooV3HomePage() {
     } finally {
       setLoading(false);
     }
-  }, [hasMobileWork]);
+  }, [hasMobileWork, isInspector]);
 
   useEffect(() => {
     void loadDashboard();
@@ -185,28 +196,51 @@ export function BambooV3HomePage() {
       {hasMobileWork && (
         <section className="section" aria-label="最近提交">
           <div className="section-head">
-            <div className="section-title">最近提交</div>
-            <div className="section-note">{submissions.length} 条</div>
+            <div className="section-title">{isInspector ? "最近检测" : "最近提交"}</div>
+            <div className="section-note">{isInspector ? inspectionHistory.length : submissions.length} 条</div>
           </div>
-          {submissions.length === 0 ? (
-            <div className="card empty">
-              <h3>暂无提交记录</h3>
-              <p>完成一次工序签字后，会在这里看到最近流转状态。</p>
-            </div>
-          ) : (
-            <div className="list">
-              {submissions.map((item) => (
-                <article className="record-card" key={item.submission_id}>
-                  <div className="record-top">
-                    <div>
-                      <div className="record-no">{item.form_id || item.submission_id}</div>
-                      <div className="record-meta">提交单号 {item.submission_id} · {formatTime(item.submitted_at)}</div>
+          {isInspector ? (
+            inspectionHistory.length === 0 ? (
+              <div className="card empty">
+                <h3>暂无检测记录</h3>
+                <p>完成一次质量检测后，会在这里看到最近的检测结果。</p>
+              </div>
+            ) : (
+              <div className="list">
+                {inspectionHistory.map((window) => (
+                  <article className="record-card" key={window.record_id}>
+                    <div className="record-top">
+                      <div>
+                        <div className="record-no">{window.display_no}</div>
+                        <div className="record-meta">笼号 {window.cage_no || "—"} · {window.status === "COMPLETED" ? "检测完成" : inspectionStatusLabel(window.status)} · {window.completed_at ? formatTime(window.completed_at) : window.opened_at ? formatTime(window.opened_at) : ""}</div>
+                      </div>
+                      <span className={`chip ${window.status === "COMPLETED" ? "ok" : "wait"}`}>{window.status === "COMPLETED" ? "已完成" : "进行中"}</span>
                     </div>
-                    <span className="chip ok">{submissionStatus(item.status)}</span>
-                  </div>
-                </article>
-              ))}
-            </div>
+                  </article>
+                ))}
+              </div>
+            )
+          ) : (
+            submissions.length === 0 ? (
+              <div className="card empty">
+                <h3>暂无提交记录</h3>
+                <p>完成一次工序签字后，会在这里看到最近流转状态。</p>
+              </div>
+            ) : (
+              <div className="list">
+                {submissions.map((item) => (
+                  <article className="record-card" key={item.submission_id}>
+                    <div className="record-top">
+                      <div>
+                        <div className="record-no">{item.form_id || item.submission_id}</div>
+                        <div className="record-meta">提交单号 {item.submission_id} · {formatTime(item.submitted_at)}</div>
+                      </div>
+                      <span className="chip ok">{submissionStatus(item.status)}</span>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )
           )}
         </section>
       )}
@@ -220,4 +254,8 @@ function submissionStatus(status: string): string {
 
 function formatTime(value: string): string {
   return new Intl.DateTimeFormat("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }).format(new Date(value));
+}
+
+function inspectionStatusLabel(status: string): string {
+  return ({ OPEN: "待领取", CLAIMED: "检测中", COMPLETED: "检测完成", EARLY_TERMINATED: "提前终止", EXPIRED: "已超时", APPEAL_CLAIMED: "申诉中", APPEAL_SUBMITTED: "申诉待审批", APPEAL_APPROVED: "申诉已通过", APPEAL_REJECTED: "申诉已驳回" } as Record<string, string>)[status] ?? status;
 }

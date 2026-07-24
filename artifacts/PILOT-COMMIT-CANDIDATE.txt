@@ -1,0 +1,116 @@
+# PILOT COMMIT CANDIDATE MANIFEST
+# Generated: 2026-07-24
+# Branch: modular-architecture @ b0314d4
+# Purpose: Manual staging reference — do NOT git add until reviewed
+#
+# Total: ~34 MUST_COMMIT files (20 modified + 14 new)
+
+# =============================================================================
+# MUST COMMIT — Business code, migrations, tests, infrastructure
+# =============================================================================
+
+# --- Backend (modified) ---
+app/adapters/database/models.py
+app/api/routers/admin_console_ds_audit.py
+app/api/routers/finance_workspace_ds.py
+app/api/schemas/payroll_rules_ds.py
+app/api/schemas/report_templates_ds.py
+app/api/schemas/submission_ledger_ds.py
+app/modules/payroll_rules/service_ds.py
+app/modules/report_templates/service_ds.py
+app/modules/submission_ledger/service_ds.py
+
+# --- Migration (new) ---
+alembic/versions/033_correction_idempotency_export_lineage_ds.py
+
+# --- Backend tests (new) ---
+tests/modules/test_pilot_readiness_backend_ds.py
+
+# --- Real-stack infrastructure (new) ---
+scripts/run_playwright_real_backend.py
+frontend/e2e-real/playwright.config.ts
+frontend/e2e-real/fixtures.ts
+frontend/e2e-real/.gitignore
+
+# --- Real-stack specs (new, 7 files) ---
+frontend/e2e-real/specs/real-e2e-01-finance-login-ledger.spec.ts
+frontend/e2e-real/specs/real-e2e-02-period-scoping.spec.ts
+frontend/e2e-real/specs/real-e2e-03-correction.spec.ts
+frontend/e2e-real/specs/real-e2e-04-plant-isolation.spec.ts
+frontend/e2e-real/specs/real-e2e-05-export-preview.spec.ts
+frontend/e2e-real/specs/real-e2e-06-admin-audit.spec.ts
+frontend/e2e-real/specs/real-e2e-07-reexport-chain.spec.ts
+
+# --- Frontend (modified) ---
+frontend/apps/web/src/app/router.tsx
+frontend/apps/web/src/app/web-router-phase1.test.tsx
+frontend/apps/web/src/web/FinanceGovernedExportsPage.tsx
+frontend/apps/web/src/web/FinanceLedgerPage.tsx
+frontend/apps/web/src/web/FinanceOverviewEnhancement.tsx
+frontend/apps/web/src/web/PayrollRulesPage.tsx
+frontend/apps/web/src/web/api.ts
+frontend/apps/web/src/web/ledger-pages-phase4.test.tsx
+frontend/apps/web/src/web/types.ts
+
+# --- Vitest boundary (new) ---
+frontend/apps/web/vitest.config.ts
+
+# --- Existing mocked E2E (modified) ---
+frontend/e2e/fixtures.ts
+frontend/e2e/mobile-boundary.spec.ts
+
+# =============================================================================
+# OPTIONAL DOCS — Formal reports and design documents
+# =============================================================================
+
+artifacts/PILOT-READY-FINAL-CLOSEOUT.md
+artifacts/POST-PUSH-PILOT-HARDENING-REPORT.md
+artifacts/FINAL-RELEASE-AUDIT.md
+artifacts/P0-1-plant-production-projection-fix-report.md
+artifacts/P0-2-plant-payroll-projection-fix-report.md
+artifacts/P0-2-precommit-audit-report.md
+artifacts/P1-P2-outbox-owner-isolation-completion-report.md
+artifacts/mobile-pwa-p0-2-to-p0-6-completion-report.md
+artifacts/web-three-role-completion-report.md
+artifacts/web-three-role-final-report.md
+artifacts/p1p2-fix-report.md
+artifacts/mobile-layout-validation/acceptance-summary.md
+artifacts/mobile-layout-validation/git-diff-check.txt
+artifacts/mobile-layout-validation/git-diff-name-status.txt
+artifacts/mobile-layout-validation/git-diff-numstat.txt
+artifacts/mobile-layout-validation/git-diff-stat.txt
+artifacts/mobile-layout-validation/git-status.txt
+artifacts/mobile-layout-validation/summary.md
+artifacts/mobile-layout-validation/tasklist-word-diff.txt
+artifacts/mobile-layout-validation/vitest-baseline.txt
+artifacts/mobile-layout-validation/vitest-current.txt
+artifacts/mobile-v3-ui-optimization/修改报告.md
+docs/superpowers/plans/模块化工程程序增量架构设计_完善版.md
+
+# =============================================================================
+# DO NOT COMMIT — Temporary, handoff, data files
+# =============================================================================
+
+handoff.md
+叉车工日工资计算表.xls
+工业级产量数据采集_Demo开发文档_V2.0.docx
+开片组日工资计算表.xls
+炭化、油炉人员日工资计算表.xls
+热压岗位日工资计算表.xls
+竹丝装架日工资计算表.xls
+装架组工资计算表.xls
+计时工日工资计算表.xls
+
+# =============================================================================
+# IGNORED RUNTIME — Already covered by .gitignore rules
+# =============================================================================
+
+# .analysis/             — LibreOffice profile caches
+# .codex-pet-runs/       — Codex pet runs
+# frontend/artifacts/    — Frontend build artifacts
+# frontend/e2e-real/artifacts/ — Playwright runtime (html-report, test-output)
+# .runtime/              — Isolated test databases
+# data/                  — Demo database (gitignored)
+# .venv/                 — Python venv
+# node_modules/          — Node dependencies
+# __pycache__/           — Python cache

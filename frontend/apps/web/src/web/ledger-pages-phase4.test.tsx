@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import { cleanup, render, screen } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 import { afterEach, expect, it, vi } from "vitest";
 
 import { FinanceLedgerPage } from "./FinanceLedgerPage";
@@ -30,10 +31,10 @@ it("shows real-time period projections and effective finance records", async () 
       status: "ACTIVE",
     }] }))
     .mockResolvedValueOnce(response({ items: [] })));
-  render(<FinanceLedgerPage scope="today" />);
+  render(<MemoryRouter><FinanceLedgerPage scope="today" /></MemoryRouter>);
   expect(await screen.findByText("SUB-2")).toBeTruthy();
   expect(screen.getByText("正式记录数")).toBeTruthy();
-  expect(screen.getByText("FACTORY-A")).toBeTruthy();
+  expect(screen.getAllByText("FACTORY-A").length).toBeGreaterThan(0);
 });
 
 it("shows the shared Bamboo inspection queue", async () => {
@@ -51,5 +52,5 @@ it("shows the shared Bamboo inspection queue", async () => {
   render(<PlantExceptionsPage />);
   expect(await screen.findByText("检测湿度不合格")).toBeTruthy();
   expect(screen.getByText(/ZS-20260723-001/)).toBeTruthy();
-  expect(screen.getByRole("button", { name: "批准上诉" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "批准并打回重检" })).toBeTruthy();
 });

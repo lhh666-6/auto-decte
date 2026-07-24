@@ -21,8 +21,16 @@ import "./payroll-pages.css";
 
 interface PreCheckItem {
   label: string;
-  pass: boolean;
+  pass: boolean | null;
 }
+
+const AVAILABLE_METRICS: { value: string; label: string }[] = [
+  { value: "qualified_quantity", label: "合格数量 (qualified_quantity)" },
+  { value: "total_quantity", label: "总数量 (total_quantity)" },
+  { value: "defect_quantity", label: "次品数量 (defect_quantity)" },
+  { value: "work_hours", label: "工时 (work_hours)" },
+  { value: "overtime_hours", label: "加班工时 (overtime_hours)" },
+];
 
 export function PayrollRulesPage() {
   const [rules, setRules] = useState<PayrollRuleVersion[]>([]);
@@ -168,10 +176,10 @@ export function PayrollRulesPage() {
         : false,
     });
 
-    // 3. Source facts valid
+    // 3. Source facts validated server-side on submission
     items.push({
-      label: "来源事实有效",
-      pass: true,
+      label: "来源事实有效 — 提交时由服务器验证",
+      pass: null,
     });
 
     // 4. Trial/official calculation completed
@@ -182,22 +190,22 @@ export function PayrollRulesPage() {
       pass: hasCalc || approvalRule?.status === "DRAFT",
     });
 
-    // 5. Current revision not expired
+    // 5. Current revision expiry checked server-side on submission
     items.push({
-      label: "当前 revision 未过期",
-      pass: true,
+      label: "当前 revision 未过期 — 提交时由服务器验证",
+      pass: null,
     });
 
-    // 6. Current user has finance confirmation permission
+    // 6. Permission checked server-side on submission
     items.push({
-      label: "当前用户有财务确认权限",
-      pass: true,
+      label: "当前用户有财务确认权限 — 提交时由服务器验证",
+      pass: null,
     });
 
-    const allPassed = items.every((c) => c.pass);
+    const allPassed = items.filter((c) => c.pass !== null).every((c) => c.pass);
     return {
       passed: allPassed,
-      errors: items.filter((c) => !c.pass).map((c) => c.label),
+      errors: items.filter((c) => c.pass === false).map((c) => c.label),
       warnings: allPassed
         ? ["提交后将进入管理员审批流程", "审批通过后才可正式执行计算"]
         : ["请先解决以上未通过项再提交审批"],
@@ -217,12 +225,12 @@ export function PayrollRulesPage() {
         ? approvalRule.status === "APPROVED" || approvalRule.status === "DRAFT"
         : false,
     });
-    items.push({ label: "来源事实有效", pass: true });
+    items.push({ label: "来源事实有效 — 提交时由服务器验证", pass: null });
     const hasCalc = results.length > 0 ||
       batches.some((b) => b.rule_version_id === approvalRule?.rule_version_id && b.status !== "PENDING");
     items.push({ label: "试算/正式计算已完成", pass: hasCalc || approvalRule?.status === "DRAFT" });
-    items.push({ label: "当前 revision 未过期", pass: true });
-    items.push({ label: "当前用户有财务确认权限", pass: true });
+    items.push({ label: "当前 revision 未过期 — 提交时由服务器验证", pass: null });
+    items.push({ label: "当前用户有财务确认权限 — 提交时由服务器验证", pass: null });
     return items;
   }, [approvalRule, corrections, results, batches]);
 
@@ -240,16 +248,16 @@ export function PayrollRulesPage() {
         (r) => r.rule_version_id === batchToConfirm.rule_version_id && r.status === "APPROVED",
       ),
     });
-    items.push({ label: "来源事实有效", pass: true });
+    items.push({ label: "来源事实有效 — 提交时由服务器验证", pass: null });
     items.push({ label: "试算/正式计算已完成", pass: batchToConfirm.status !== "PENDING" });
-    items.push({ label: "当前 revision 未过期", pass: true });
-    items.push({ label: "当前用户有财务确认权限", pass: true });
+    items.push({ label: "当前 revision 未过期 — 提交时由服务器验证", pass: null });
+    items.push({ label: "当前用户有财务确认权限 — 提交时由服务器验证", pass: null });
 
-    const allPassed = items.every((c) => c.pass);
+    const allPassed = items.filter((c) => c.pass !== null).every((c) => c.pass);
     const ruleForBatch = rules.find((r) => r.rule_version_id === batchToConfirm.rule_version_id);
     return {
       passed: allPassed,
-      errors: items.filter((c) => !c.pass).map((c) => c.label),
+      errors: items.filter((c) => c.pass === false).map((c) => c.label),
       warnings: allPassed
         ? [
             `确认后将锁定批次，工厂 ${batchToConfirm.factory_id}`,
@@ -275,10 +283,10 @@ export function PayrollRulesPage() {
         (r) => r.rule_version_id === batchToConfirm.rule_version_id && r.status === "APPROVED",
       ),
     });
-    items.push({ label: "来源事实有效", pass: true });
+    items.push({ label: "来源事实有效 — 提交时由服务器验证", pass: null });
     items.push({ label: "试算/正式计算已完成", pass: batchToConfirm.status !== "PENDING" });
-    items.push({ label: "当前 revision 未过期", pass: true });
-    items.push({ label: "当前用户有财务确认权限", pass: true });
+    items.push({ label: "当前 revision 未过期 — 提交时由服务器验证", pass: null });
+    items.push({ label: "当前用户有财务确认权限 — 提交时由服务器验证", pass: null });
     return items;
   }, [batchToConfirm, corrections, rules]);
 
@@ -295,7 +303,14 @@ export function PayrollRulesPage() {
         <label>规则名称<input name="name" required /></label>
         <label>规则标识<input name="rule_key" required /></label>
         <label>工厂<input name="factory_id" required /></label>
-        <label>计量字段<input name="metric" placeholder="qualified_quantity" required /></label>
+        <label>计量字段
+          <select name="metric" required>
+            <option value="">-- 选择计量字段 --</option>
+            {AVAILABLE_METRICS.map((m) => (
+              <option key={m.value} value={m.value}>{m.label}</option>
+            ))}
+          </select>
+        </label>
         <label>单价<input name="rate" inputMode="decimal" required /></label>
         <label>基础金额<input name="base" inputMode="decimal" defaultValue="0" /></label>
         <button type="submit">保存工资规则草稿</button>
@@ -437,10 +452,10 @@ export function PayrollRulesPage() {
               {approvalPreCheckItems.map((item) => (
                 <div
                   key={item.label}
-                  className={`finance-precheck-item ${item.pass ? "finance-precheck-item--pass" : "finance-precheck-item--fail"}`}
+                  className={`finance-precheck-item ${item.pass === true ? "finance-precheck-item--pass" : item.pass === false ? "finance-precheck-item--fail" : "finance-precheck-item--neutral"}`}
                 >
                   <span className={`finance-precheck-icon`}>
-                    {item.pass ? "✅" : "❌"}
+                    {item.pass === true ? "✅" : item.pass === false ? "❌" : "—"}
                   </span>
                   <span className="finance-precheck-label">{item.label}</span>
                 </div>
@@ -499,10 +514,10 @@ export function PayrollRulesPage() {
               {batchPreCheckItems.map((item) => (
                 <div
                   key={item.label}
-                  className={`finance-precheck-item ${item.pass ? "finance-precheck-item--pass" : "finance-precheck-item--fail"}`}
+                  className={`finance-precheck-item ${item.pass === true ? "finance-precheck-item--pass" : item.pass === false ? "finance-precheck-item--fail" : "finance-precheck-item--neutral"}`}
                 >
                   <span className="finance-precheck-icon">
-                    {item.pass ? "✅" : "❌"}
+                    {item.pass === true ? "✅" : item.pass === false ? "❌" : "—"}
                   </span>
                   <span className="finance-precheck-label">{item.label}</span>
                 </div>

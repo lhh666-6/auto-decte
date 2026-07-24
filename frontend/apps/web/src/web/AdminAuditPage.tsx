@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { ErrorAlert, PageHeader } from "./shared/SummaryCardGrid";
 import { DetailDrawer, DetailField } from "./shared/DetailDrawer";
@@ -18,11 +18,26 @@ interface AuditEntry {
   detail?: Record<string, unknown>;
 }
 
+function formatTimestamp(ts: string): string {
+  try {
+    const d = new Date(ts);
+    if (isNaN(d.getTime())) return ts;
+    return d.toLocaleString("zh-CN");
+  } catch {
+    return ts;
+  }
+}
+
+function copyToClipboard(text: string) {
+  navigator.clipboard.writeText(text).catch(() => { /* ignore */ });
+}
+
 export function AdminAuditPage() {
   const [entries, setEntries] = useState<AuditEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [selectedEntry, setSelectedEntry] = useState<AuditEntry | null>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
 
   // Filters
   const [filterActor, setFilterActor] = useState("");
@@ -54,6 +69,31 @@ export function AdminAuditPage() {
       .finally(() => setLoading(false));
   }, []);
 
+  /* derive unique options from loaded data */
+  const factoryOptions = useMemo(() => {
+    const seen = new Set<string>();
+    for (const e of entries) {
+      if (e.factory_id) seen.add(e.factory_id);
+    }
+    return [...seen].sort();
+  }, [entries]);
+
+  const actionOptions = useMemo(() => {
+    const seen = new Set<string>();
+    for (const e of entries) {
+      if (e.action) seen.add(e.action);
+    }
+    return [...seen].sort();
+  }, [entries]);
+
+  const objectTypeOptions = useMemo(() => {
+    const seen = new Set<string>();
+    for (const e of entries) {
+      if (e.object_type) seen.add(e.object_type);
+    }
+    return [...seen].sort();
+  }, [entries]);
+
   function filteredEntries(): AuditEntry[] {
     return entries.filter((entry) => {
       if (filterActor && !entry.actor_name.toLowerCase().includes(filterActor.toLowerCase()) && !entry.actor_code.toLowerCase().includes(filterActor.toLowerCase())) {
@@ -82,7 +122,7 @@ export function AdminAuditPage() {
     {
       key: "timestamp",
       header: "时间",
-      render: (row) => row.timestamp,
+      render: (row) => formatTimestamp(row.timestamp),
     },
     {
       key: "actor",
@@ -107,7 +147,16 @@ export function AdminAuditPage() {
     {
       key: "request_id",
       header: "请求编号",
-      render: (row) => row.request_id,
+      render: (row) => (
+        <span
+          className="audit-request-id"
+          style={{ cursor: "pointer" }}
+          title="点击复制"
+          onClick={(e) => { e.stopPropagation(); copyToClipboard(row.request_id); setCopiedId(row.request_id); setTimeout(() => setCopiedId(null), 2000); }}
+        >
+          {copiedId === row.request_id ? "已复制!" : row.request_id}
+        </span>
+      ),
     },
   ];
 
@@ -133,30 +182,51 @@ export function AdminAuditPage() {
         </label>
         <label>
           工厂
-          <input
-            type="text"
-            placeholder="工厂 ID"
-            value={filterFactory}
-            onChange={(e) => setFilterFactory(e.target.value)}
-          />
+          {factoryOptions.length > 0 ? (
+            <select value={filterFactory} onChange={(e) => setFilterFactory(e.target.value)}>
+              <option value="">全部</option>
+              {factoryOptions.map((f) => <option key={f} value={f}>{f}</option>)}
+            </select>
+          ) : (
+            <input
+              type="text"
+              placeholder="工厂 ID"
+              value={filterFactory}
+              onChange={(e) => setFilterFactory(e.target.value)}
+            />
+          )}
         </label>
         <label>
-          对象
-          <input
-            type="text"
-            placeholder="对象类型或 ID"
-            value={filterObject}
-            onChange={(e) => setFilterObject(e.target.value)}
-          />
+          对象类型
+          {objectTypeOptions.length > 0 ? (
+            <select value={filterObject} onChange={(e) => setFilterObject(e.target.value)}>
+              <option value="">全部</option>
+              {objectTypeOptions.map((ot) => <option key={ot} value={ot}>{ot}</option>)}
+            </select>
+          ) : (
+            <input
+              type="text"
+              placeholder="对象类型或 ID"
+              value={filterObject}
+              onChange={(e) => setFilterObject(e.target.value)}
+            />
+          )}
         </label>
         <label>
           动作
-          <input
-            type="text"
-            placeholder="操作类型"
-            value={filterAction}
-            onChange={(e) => setFilterAction(e.target.value)}
-          />
+          {actionOptions.length > 0 ? (
+            <select value={filterAction} onChange={(e) => setFilterAction(e.target.value)}>
+              <option value="">全部</option>
+              {actionOptions.map((a) => <option key={a} value={a}>{a}</option>)}
+            </select>
+          ) : (
+            <input
+              type="text"
+              placeholder="操作类型"
+              value={filterAction}
+              onChange={(e) => setFilterAction(e.target.value)}
+            />
+          )}
         </label>
         <label>
           时间起
@@ -211,7 +281,7 @@ export function AdminAuditPage() {
       >
         {selectedEntry && (
           <div className="detail-drawer-fields">
-            <DetailField label="时间" value={selectedEntry.timestamp} />
+            <DetailField label="时间" value={formatTimestamp(selectedEntry.timestamp)} />
             <DetailField label="操作者" value={selectedEntry.actor_name} />
             <DetailField label="操作者工号" value={selectedEntry.actor_code} />
             <DetailField label="动作" value={selectedEntry.action} />

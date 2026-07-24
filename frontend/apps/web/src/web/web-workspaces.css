@@ -3,7 +3,7 @@
   display: grid;
   place-items: center;
   padding: 24px;
-  background: #eef3f8;
+  background: #eef3f8 url("/images/login-bg.png") center / cover no-repeat;
 }
 
 .web-login-form {

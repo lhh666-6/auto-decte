@@ -259,6 +259,7 @@ class ReportTemplateService:
                 file_content=file_content,
                 file_hash=self._sha(file_content),
                 download_name=f"{Path(template.filename).stem}-{now:%Y%m%d%H%M%S}.xlsx",
+                record_count=len(records),
                 created_by=actor_id,
                 created_at=now,
             )
@@ -370,6 +371,7 @@ class ReportTemplateService:
                 download_name=f"{Path(source.download_name).stem}-RE{now:%Y%m%d%H%M%S}.xlsx",
                 created_by=actor_id,
                 created_at=now,
+                record_count=len(records),
                 supersedes_batch_id=source_batch_id,
             )
             session.add(new_row)
@@ -414,28 +416,39 @@ class ReportTemplateService:
                     "MAPPING_NOT_CONFIRMED", "未确认映射不能预览。"
                 )
         factory_filter = str(filters.get("factory_id", "")).strip() or None
+        date_start = str(filters.get("date_start", "")).strip() or None
+        date_end = str(filters.get("date_end", "")).strip() or None
         filtered = records
         if factory_filter:
             filtered = [
-                r for r in records
+                r for r in filtered
                 if str(r.get("factory_id", "")).strip() == factory_filter
+            ]
+        if date_start:
+            filtered = [
+                r for r in filtered
+                if str(r.get("business_date", "")) >= date_start
+            ]
+        if date_end:
+            filtered = [
+                r for r in filtered
+                if str(r.get("business_date", "")) <= date_end
             ]
         employees: set[str] = set()
         total_amount = 0.0
         for record in filtered:
             employees.add(str(record.get("subject_employee_code", "")))
-            for column in mapping.mapping_json.get("columns", []):
-                field_key = str(column.get("source_field", ""))
-                value = str(record.get(field_key, "0"))
+            amt = record.get("amount")
+            if amt is not None:
                 try:
-                    total_amount += float(value)
+                    total_amount += float(str(amt))
                 except (ValueError, TypeError):
                     pass
         return {
             "record_count": len(filtered),
             "employee_count": len(employees),
             "total_amount": f"{total_amount:,.2f}",
-            "anomaly_count": 0,  # requires anomaly-detection engine; currently not available
+            "anomaly_count": None,  # anomaly-detection engine not yet available
         }
 
     def list_exports(self) -> dict[str, object]:
@@ -684,5 +697,7 @@ class ReportTemplateService:
             "file_hash": row.file_hash,
             "download_name": row.download_name,
             "created_by": row.created_by,
+            "created_at": row.created_at.isoformat() if row.created_at else "",
+            "record_count": row.record_count,
             "supersedes_batch_id": row.supersedes_batch_id or "",
         }

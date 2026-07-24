@@ -49,14 +49,14 @@ export default defineConfig({
       command:
         "cd ../.. && .venv\\Scripts\\python.exe scripts/run_playwright_real_backend.py",
       url: "http://127.0.0.1:8000/health/live",
-      reuseExistingServer: false,
+      reuseExistingServer: true,
       timeout: 30_000,
     },
     {
       // Frontend: Vite dev server on port 5173, proxies /api to :8000
       command: "npm run dev:web",
       url: "http://localhost:5173",
-      reuseExistingServer: false,
+      reuseExistingServer: true,
       timeout: 30_000,
       cwd: "..",
     },

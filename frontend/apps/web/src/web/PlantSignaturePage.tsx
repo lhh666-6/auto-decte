@@ -30,6 +30,17 @@ const FACT_TYPE_LABELS: Record<string, string> = {
   ATTENDANCE: "考勤事实",
 };
 
+const SIGNATURE_GATE_REASONS: Record<string, string> = {
+  NOT_AT_PLANT_AUDIT: "尚未进入厂长签字环节",
+  INSPECTION_IN_PROGRESS: "检测仍在进行，暂不能签字",
+  APPEAL_PENDING: "检测申诉待处理，暂不能签字",
+  SIGNATURE_NOT_AVAILABLE: "当前条件尚未满足",
+};
+
+function translateSignatureGateReason(raw: string): string {
+  return SIGNATURE_GATE_REASONS[raw] ?? raw;
+}
+
 const STAGE_FLOW = ["SORT", "DIPPING", "DRYING", "SUPERVISOR", "PLANT_AUDIT"] as const;
 
 function readable(value: unknown): string {
@@ -77,7 +88,12 @@ function stageOptions(detail: BambooProductionDetail): Array<[string, string]> {
     : [["DIPPING", "浸胶"], ["DRYING", "干燥"]];
 }
 
-/* ---- 根据当前选中环节，预览失效的提交 ---- */
+/* ---- 根据当前选中环节，预览失效的提交 ----
+ * NOTE: This is a client-side approximation. It only counts directly
+ * selected stages and does NOT account for downstream invalidation of
+ * stages that depend on the returned stages. The server may invalidate
+ * additional submissions beyond what is shown here.
+ * ---- */
 function returnImpactPreview(
   detail: BambooProductionDetail,
   selectedStages: string[],
@@ -116,11 +132,13 @@ export function PlantSignaturePage() {
   const [confirming, setConfirming] = useState(false);
   const [signatureKey, setSignatureKey] = useState("");
   const [appealNote, setAppealNote] = useState("");
+  const [appealIdempotencyKey, setAppealIdempotencyKey] = useState("");
   const [returnOpen, setReturnOpen] = useState(false);
   const [returnConfirmOpen, setReturnConfirmOpen] = useState(false);
   const [returnStages, setReturnStages] = useState<string[]>([]);
   const [returnReason, setReturnReason] = useState("");
   const [terminateReason, setTerminateReason] = useState("");
+  const [terminateIdempotencyKey, setTerminateIdempotencyKey] = useState("");
   const [terminateConfirmOpen, setTerminateConfirmOpen] = useState(false);
 
   const reload = useCallback(async () => {
@@ -189,13 +207,14 @@ export function PlantSignaturePage() {
   /* ---- 检测终止 ---- */
   function openTerminateConfirm() {
     setTerminateReason("");
+    setTerminateIdempotencyKey(crypto.randomUUID());
     setTerminateConfirmOpen(true);
   }
 
   async function confirmTerminate() {
     if (!detail || !terminateReason.trim()) return;
     const succeeded = await run(() =>
-      terminatePlantInspection(detail.record_id, crypto.randomUUID()),
+      terminatePlantInspection(detail.record_id, terminateIdempotencyKey, terminateReason),
     );
     if (succeeded) setTerminateConfirmOpen(false);
   }
@@ -203,10 +222,12 @@ export function PlantSignaturePage() {
   /* ---- 上诉决定 ---- */
   async function decideAppeal(approve: boolean) {
     if (!detail) return;
+    if (!appealIdempotencyKey) setAppealIdempotencyKey(crypto.randomUUID());
     await run(() => decidePlantInspectionAppeal(
       detail.record_id,
       approve,
       appealNote,
+      appealIdempotencyKey || crypto.randomUUID(),
     ));
     setAppealNote("");
   }
@@ -260,7 +281,7 @@ export function PlantSignaturePage() {
 
           {/* ---- 流程进度 ---- */}
           <section className="signature-card">
-            <h2>流程进度</h2>
+            <h2>流程进度 <small className="signature-muted">（{detail.form_type === "SORTING" ? "分选流程" : "浸胶干燥流程"}）</small></h2>
             <ol className="signature-flow">
               {STAGE_FLOW
                 .filter((stage) => detail.form_type !== "SORTING" || !["DIPPING", "DRYING"].includes(stage))
@@ -358,18 +379,18 @@ export function PlantSignaturePage() {
                   <p>
                     <strong>状态：</strong>
                     <span className={`signature-inspection-status ${detail.inspection_window.status.toLowerCase()}`}>
-                      {detail.inspection_window.status === "QUALIFIED" ? "检测合格" :
-                        detail.inspection_window.status === "OPEN" ? "等待检测" :
-                          detail.inspection_window.status === "CLAIMED" ? "检测中" :
-                            detail.inspection_window.status === "EXPIRED" ? "检测已过期" :
-                              detail.inspection_window.status === "APPEAL_SUBMITTED" ? "上诉待审批" :
-                                detail.inspection_window.status === "APPEAL_APPROVED" ? "上诉已批准" :
-                                  detail.inspection_window.status === "APPEAL_REJECTED" ? "上诉已驳回" :
-                                    detail.inspection_window.status === "TERMINATED" ? "已终止" :
-                                      detail.inspection_window.status}
+                      {detail.inspection_window.status === "COMPLETED" ? "检测完成" :
+                            detail.inspection_window.status === "EARLY_TERMINATED" ? "厂长提前结束" :
+                              detail.inspection_window.status === "OPEN" ? "等待检测" :
+                                detail.inspection_window.status === "CLAIMED" ? "检测中" :
+                                  detail.inspection_window.status === "EXPIRED" ? "检测已过期" :
+                                    detail.inspection_window.status === "APPEAL_SUBMITTED" ? "上诉待审批" :
+                                      detail.inspection_window.status === "APPEAL_APPROVED" ? "上诉已批准" :
+                                        detail.inspection_window.status === "APPEAL_REJECTED" ? "上诉已驳回" :
+                                          detail.inspection_window.status}
                     </span>
                   </p>
-                  {detail.inspection_window.remaining_seconds > 0 && detail.inspection_window.status !== "TERMINATED" && (
+                  {detail.inspection_window.remaining_seconds > 0 && detail.inspection_window.status !== "EARLY_TERMINATED" && (
                     <p className="signature-muted">
                       剩余约 {Math.ceil(detail.inspection_window.remaining_seconds / 60)} 分钟
                       {" · "}截止 {new Date(detail.inspection_window.deadline_at).toLocaleString()}
@@ -388,8 +409,8 @@ export function PlantSignaturePage() {
                   <article className="signature-inspection" key={inspection.inspection_id}>
                     <header className="signature-inspection-header">
                       <strong>
-                        {inspection.conclusion === "QUALIFIED" ? "检测合格" :
-                          inspection.conclusion === "REJECTED" ? "检测不合格" :
+                        {inspection.conclusion === "CONFORMING" ? "检测合格" :
+                          inspection.conclusion === "NONCONFORMING" ? "检测不合格" :
                             inspection.conclusion}
                       </strong>
                       <span>{inspection.actor_name}</span>
@@ -425,10 +446,10 @@ export function PlantSignaturePage() {
             )}
 
             {/* 终止检测 */}
-            {["OPEN", "CLAIMED"].includes(detail.inspection_window?.status ?? "") && (
+            {["OPEN", "CLAIMED"].includes(detail.inspection_window?.status ?? "") && detail.inspection_window?.status !== "EARLY_TERMINATED" && (
               <div className="signature-terminate">
                 <button type="button" className="secondary-button" disabled={busy} onClick={openTerminateConfirm}>
-                  停止检测并提前签字
+                  提前结束检测
                 </button>
               </div>
             )}
@@ -514,7 +535,7 @@ export function PlantSignaturePage() {
               </button>
             ) : (
               <p className="signature-warning">
-                当前不可签字：{detail.signature_gate.reason || "流程条件尚未满足"}
+                当前不可签字：{translateSignatureGateReason(detail.signature_gate.reason) || "流程条件尚未满足"}
               </p>
             )}
 
@@ -524,7 +545,7 @@ export function PlantSignaturePage() {
             </button>
             {returnOpen && (
               <div className="signature-return">
-                <p className="signature-muted">打回将撤销选中环节的有效提交，记录将回退至最早被选中环节。</p>
+                <p className="signature-muted">打回会撤销所选环节及依赖于这些环节的后续有效提交。历史版本仍保留用于追溯。</p>
                 <fieldset className="signature-return-stages">
                   <legend>选择要打回的环节</legend>
                   {activeStages.map(([value, label]) => (
@@ -608,10 +629,16 @@ export function PlantSignaturePage() {
           {terminateConfirmOpen && (
             <div className="signature-dialog-backdrop" role="presentation">
               <div className="signature-dialog" role="dialog" aria-modal="true" aria-labelledby="terminate-dialog-title">
-                <h2 id="terminate-dialog-title">确认终止检测</h2>
-                <p>停止后检测员将失去当前检测权限。此操作不可撤销。</p>
+                <h2 id="terminate-dialog-title">确认提前结束检测</h2>
+                <p>提前结束检测后：</p>
+                <ul>
+                  <li>当前检测权限结束</li>
+                  <li>检测人员进入申诉窗口</li>
+                  <li>厂长仍需要单独执行生产签字</li>
+                  <li>操作不可直接恢复</li>
+                </ul>
                 <label>
-                  终止原因（必填）
+                  提前结束原因（必填）
                   <textarea
                     aria-label="终止原因"
                     value={terminateReason}

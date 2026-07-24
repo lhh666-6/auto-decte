@@ -29,7 +29,7 @@ export function AdminAISettingsPage() {
       <header className="ai-settings-header">
         <div>
           <h1>AI 辅助设置</h1>
-          <p>管理 DeepSeek 等 AI 模型的接入配置与状态。</p>
+          <p>AI 配置功能尚未接入后端，当前为只读占位页面。</p>
         </div>
       </header>
 

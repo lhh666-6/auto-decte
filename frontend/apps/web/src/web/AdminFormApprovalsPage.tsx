@@ -13,6 +13,12 @@ import type { ManagedFormVersion } from "./types";
 import "./managed-forms.css";
 import "./workspace.css";
 
+interface FactoryInfo {
+  factory_id: string;
+  code: string;
+  name: string;
+}
+
 /* ------------------------------------------------------------------ */
 /*  helpers                                                            */
 /* ------------------------------------------------------------------ */
@@ -26,18 +32,13 @@ import "./workspace.css";
 function buildFieldDiff(
   _current: ManagedFormVersion,
   _previous?: ManagedFormVersion,
-): DiffField[] {
+): { fields: DiffField[]; isFirstVersion: boolean } {
   const fields = _current.schema_json.fields ?? [];
   if (!_previous) {
-    return fields.map((f) => ({
-      key: f.key,
-      label: f.label,
-      type: f.type,
-      change: "added" as const,
-    }));
+    return { fields: [], isFirstVersion: true };
   }
   const prevKeys = new Set((_previous.schema_json.fields ?? []).map((f) => f.key));
-  return fields.map((f) => {
+  const diffFields = fields.map((f) => {
     const existed = prevKeys.has(f.key);
     const prevField = (_previous.schema_json.fields ?? []).find((pf) => pf.key === f.key);
     if (!existed) return { key: f.key, label: f.label, type: f.type, change: "added" as const };
@@ -45,6 +46,7 @@ function buildFieldDiff(
       return { key: f.key, label: f.label, type: f.type, oldValue: prevField.type, newValue: f.type, change: "modified" as const };
     return { key: f.key, label: f.label, type: f.type, change: "unchanged" as const };
   });
+  return { fields: diffFields, isFirstVersion: false };
 }
 
 function buildPreCheck(item: ManagedFormVersion): PreCheckResult {
@@ -79,7 +81,7 @@ function buildImpactScope(
   return {
     factories: _activatedPlants.length > 0 ? _activatedPlants : [item.plant_id ?? "未指定"],
     affectedCount: 1,
-    affectedRecords: 0,
+    affectedRecords: null,
   };
 }
 
@@ -91,12 +93,25 @@ export function AdminFormApprovalsPage() {
   const [items, setItems] = useState<ManagedFormVersion[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [factoryInput, setFactoryInput] = useState("");
+  const [factories, setFactories] = useState<FactoryInfo[]>([]);
+  const [selectedFactoryIds, setSelectedFactoryIds] = useState<Set<string>>(new Set());
 
   /* dialog state */
   const [dialogOpen, setDialogOpen] = useState(false);
   const [dialogAction, setDialogAction] = useState<"APPROVE" | "REJECT">("APPROVE");
   const [dialogItem, setDialogItem] = useState<ManagedFormVersion | null>(null);
+
+  /* fetch factories for selector */
+  useEffect(() => {
+    fetch("/api/v1/plant/factories", { credentials: "include" })
+      .then(async (resp) => {
+        if (resp.ok) {
+          const data = (await resp.json()) as { items: FactoryInfo[] };
+          setFactories(data.items ?? []);
+        }
+      })
+      .catch(() => { /* silent */ });
+  }, []);
 
   const fetchItems = useCallback(async () => {
     setLoading(true);
@@ -114,6 +129,18 @@ export function AdminFormApprovalsPage() {
   useEffect(() => {
     void fetchItems();
   }, [fetchItems]);
+
+  function toggleFactory(fid: string) {
+    setSelectedFactoryIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(fid)) {
+        next.delete(fid);
+      } else {
+        next.add(fid);
+      }
+      return next;
+    });
+  }
 
   function openDialog(item: ManagedFormVersion, action: "APPROVE" | "REJECT") {
     setDialogItem(item);
@@ -148,7 +175,7 @@ export function AdminFormApprovalsPage() {
   }
 
   async function activate(item: ManagedFormVersion) {
-    const plantIds = factoryInput.split(",").map((value) => value.trim()).filter(Boolean);
+    const plantIds = [...selectedFactoryIds];
     try {
       await activateManagedForm(item.version_id, plantIds);
       setItems((current) => current.filter((value) => value.version_id !== item.version_id));
@@ -163,8 +190,8 @@ export function AdminFormApprovalsPage() {
   );
 
   const dialogImpact = useMemo(
-    () => (dialogItem ? buildImpactScope(dialogItem, factoryInput.split(",").map((v) => v.trim()).filter(Boolean)) : undefined),
-    [dialogItem, factoryInput],
+    () => (dialogItem ? buildImpactScope(dialogItem, [...selectedFactoryIds]) : undefined),
+    [dialogItem, selectedFactoryIds],
   );
 
   /* ---------- loading / empty / error ---------- */
@@ -196,11 +223,17 @@ export function AdminFormApprovalsPage() {
                 </p>
 
                 {/* version diff */}
-                <VersionDiffPanel
-                  title="字段版本差异"
-                  fields={buildFieldDiff(item)}
-                  emptyMessage="无上一版本可对比，当前为新增版本。"
-                />
+                {(() => {
+                  const { fields, isFirstVersion } = buildFieldDiff(item);
+                  return (
+                    <VersionDiffPanel
+                      title="字段版本差异"
+                      fields={fields}
+                      isFirstVersion={isFirstVersion}
+                      emptyMessage="无变更记录"
+                    />
+                  );
+                })()}
 
                 {/* pre-check result */}
                 <div className={`precheck-summary ${preCheck.passed ? "precheck-passed" : "precheck-failed"}`}>
@@ -224,16 +257,28 @@ export function AdminFormApprovalsPage() {
                   </div>
                 ) : (
                   <div className="managed-activation-panel">
-                    <label>
-                      启用工厂
-                      <input
-                        aria-label="启用工厂"
-                        placeholder="多个工厂用逗号分隔"
-                        value={factoryInput}
-                        onChange={(event) => setFactoryInput(event.target.value)}
-                      />
-                    </label>
-                    <button type="button" onClick={() => void activate(item)}>
+                    <label className="factory-select-label">启用工厂</label>
+                    {factories.length === 0 ? (
+                      <p className="factory-select-empty">正在加载工厂列表...</p>
+                    ) : (
+                      <div className="factory-checkbox-list">
+                        {factories.map((f) => (
+                          <label key={f.factory_id} className="factory-checkbox-item">
+                            <input
+                              type="checkbox"
+                              checked={selectedFactoryIds.has(f.factory_id)}
+                              onChange={() => toggleFactory(f.factory_id)}
+                            />
+                            <span>{f.name} ({f.code})</span>
+                          </label>
+                        ))}
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => void activate(item)}
+                      disabled={selectedFactoryIds.size === 0}
+                    >
                       按工厂启用
                     </button>
                   </div>

@@ -47,6 +47,7 @@ from app.modules.bamboo_process.errors_ds import (
     BambooRecordNotFound,
     StaleBambooRevision,
 )
+from app.modules.bamboo_process.facade_ds import InspectionContext
 from app.modules.bamboo_process.models_ds import (
     BambooActor,
     BambooFormType,
@@ -122,6 +123,16 @@ def _require_write_headers(
 @router.get("/dashboard", response_model=BambooDashboardResponse)
 def dashboard(request: Request) -> BambooDashboardResponse:
     actor = _bamboo_actor(request)
+    if actor.role is BambooRole.INSPECTOR:
+        try:
+            counts = _services(request).bamboo_operations.get_dashboard(actor)
+        except BambooOperationError as error:
+            raise _operation_error(error) from error
+        return BambooDashboardResponse(
+            available=counts["available"],
+            waiting=counts["waiting"],
+            completed=counts["completed"],
+        )
     service = _services(request).bamboo_process
     return BambooDashboardResponse(
         available=len(service.list_tasks(actor=actor, bucket=TaskBucket.AVAILABLE)),
@@ -138,10 +149,14 @@ def list_tasks(
 ) -> BambooTaskListResponse:
     actor = _bamboo_actor(request)
     service = _services(request).bamboo_process
+    inspection_context: InspectionContext | None = None
+    if actor.role is BambooRole.INSPECTOR:
+        inspection_context = _services(request).bamboo_operations.build_inspection_context(actor)
     records = service.list_tasks(
         actor=actor,
         bucket=bucket,
         cage_no=cage_no,
+        inspection_context=inspection_context,
     )
     return BambooTaskListResponse(
         bucket=bucket.value,
@@ -444,9 +459,11 @@ def claim_inspection(
     x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token"),
 ) -> dict[str, object]:
     actor = _bamboo_actor(request)
-    _require_write_headers(request, idempotency_key, x_csrf_token)
+    key = _require_write_headers(request, idempotency_key, x_csrf_token)
     try:
-        return _services(request).bamboo_operations.claim_inspection(record_id, actor=actor)
+        return _services(request).bamboo_operations.claim_inspection(
+            record_id, actor=actor, idempotency_key=key
+        )
     except BambooOperationError as error:
         raise _operation_error(error) from error
 
@@ -463,7 +480,9 @@ def terminate_inspection(
     _require_write_headers(request, idempotency_key, x_csrf_token)
     try:
         return _services(request).bamboo_operations.terminate_inspection(
-            record_id, actor=actor, confirm=body.confirm
+            record_id, actor=actor, confirm=body.confirm,
+            idempotency_key=(idempotency_key or "").strip(),
+            reason=body.reason,
         )
     except BambooOperationError as error:
         raise _operation_error(error) from error
@@ -604,6 +623,7 @@ async def submit_inspection_with_evidence(
     device_id: Annotated[str, Form()],
     target_stage: Annotated[str | None, Form()] = None,
     text_evidence: Annotated[str | None, Form()] = None,
+    moisture_points_json: Annotated[str | None, Form()] = None,
     photos: Annotated[list[UploadFile] | None, File()] = None,
     audio: Annotated[UploadFile | None, File()] = None,
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
@@ -621,6 +641,29 @@ async def submit_inspection_with_evidence(
                 detail={"code": "INVALID_EVIDENCE_SIZE", "detail": "留痕文件必须小于 20MB"},
             )
         contents.append((upload, content))
+    moisture_points: list[Decimal] = []
+    if moisture_points_json:
+        try:
+            raw_points = _json.loads(moisture_points_json)
+            if not isinstance(raw_points, list):
+                raise ValueError("must be a JSON array")
+            moisture_points = [Decimal(str(value)) for value in raw_points]
+        except (ValueError, _json.JSONDecodeError) as error:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "INVALID_MOISTURE_POINTS",
+                    "detail": "含水率检测点必须是 JSON 数字数组。",
+                },
+            ) from error
+        if len(moisture_points) > 20:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "INVALID_MOISTURE_POINTS",
+                    "detail": "含水率检测点数量不能超过 20 个。",
+                },
+            )
     try:
         stage = BambooStage(target_stage) if target_stage else None
         created = _services(request).bamboo_operations.create_inspection(
@@ -628,7 +671,7 @@ async def submit_inspection_with_evidence(
             actor=actor,
             serial_no=None,
             target_stage=stage,
-            moisture_points=[],
+            moisture_points=moisture_points,
             conclusion=conclusion,
             note=text_evidence,
             text_evidence=text_evidence,

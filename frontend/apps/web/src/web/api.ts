@@ -458,7 +458,7 @@ export function reviewCorrection(
 
 export function submitFinanceCorrection(
   submissionId: string,
-  body: { reason: string; correction_type: string },
+  body: { reason: string; correction_type: string; supplementary_note?: string },
   idempotencyKey: string,
   fetcher?: WebFetcher,
 ) {
@@ -520,6 +520,7 @@ export function auditPlantRecord(
 export function terminatePlantInspection(
   recordId: string,
   idempotencyKey: string,
+  reason?: string,
   fetcher?: WebFetcher,
 ) {
   return request<Record<string, unknown>>(
@@ -527,7 +528,7 @@ export function terminatePlantInspection(
     {
       method: "POST",
       headers: { ...csrfHeaders(true), "Idempotency-Key": idempotencyKey },
-      body: JSON.stringify({ confirm: true }),
+      body: JSON.stringify({ confirm: true, reason: reason || "" }),
     },
     fetcher,
   );
@@ -566,13 +567,14 @@ export function decidePlantInspectionAppeal(
   recordId: string,
   approve: boolean,
   note: string,
+  idempotencyKey?: string,
   fetcher?: WebFetcher,
 ) {
   return request<Record<string, unknown>>(
     `/api/v1/plant/inspection-queue/${recordId}/appeal/decision`,
     {
       method: "POST",
-      headers: { ...csrfHeaders(true), "Idempotency-Key": crypto.randomUUID() },
+      headers: { ...csrfHeaders(true), "Idempotency-Key": idempotencyKey || crypto.randomUUID() },
       body: JSON.stringify({ approve, note }),
     },
     fetcher,
@@ -689,6 +691,27 @@ export function decidePayrollRule(
       method: "POST",
       headers: csrfHeaders(true),
       body: JSON.stringify({ approved, note: approved ? "管理员批准" : "管理员退回" }),
+    },
+    fetcher,
+  );
+}
+
+export function adminTrialPayroll(
+  ruleVersionId: string,
+  periodStart: string,
+  periodEnd: string,
+  fetcher?: WebFetcher,
+) {
+  return request<TrialPayrollResult>(
+    `/api/v1/admin/payroll-approvals/${ruleVersionId}/trial`,
+    {
+      method: "POST",
+      headers: csrfHeaders(true),
+      body: JSON.stringify({
+        rule_version_id: ruleVersionId,
+        period_start: periodStart,
+        period_end: periodEnd,
+      }),
     },
     fetcher,
   );
@@ -839,8 +862,14 @@ export function createGovernedExport(
   templateVersionId: string,
   mappingVersionId: string,
   factoryId: string,
+  dateStart?: string,
+  dateEnd?: string,
   fetcher?: WebFetcher,
 ) {
+  const filters: Record<string, string> = {};
+  if (factoryId) filters.factory_id = factoryId;
+  if (dateStart) filters.date_start = dateStart;
+  if (dateEnd) filters.date_end = dateEnd;
   return request<GovernedExportBatch>(
     "/api/v1/finance/exports",
     {
@@ -849,7 +878,7 @@ export function createGovernedExport(
       body: JSON.stringify({
         template_version_id: templateVersionId,
         mapping_version_id: mappingVersionId,
-        filters: factoryId ? { factory_id: factoryId } : {},
+        filters,
         idempotency_key: crypto.randomUUID(),
       }),
     },
@@ -861,15 +890,21 @@ export interface ExportPreview {
   record_count: number;
   employee_count: number;
   total_amount: string;
-  anomaly_count: number;
+  anomaly_count: number | null;
 }
 
 export function previewGovernedExport(
   templateVersionId: string,
   mappingVersionId: string,
   factoryId: string,
+  dateStart?: string,
+  dateEnd?: string,
   fetcher?: WebFetcher,
 ) {
+  const filters: Record<string, string> = {};
+  if (factoryId) filters.factory_id = factoryId;
+  if (dateStart) filters.date_start = dateStart;
+  if (dateEnd) filters.date_end = dateEnd;
   return request<ExportPreview>(
     "/api/v1/finance/exports/preview",
     {
@@ -878,7 +913,7 @@ export function previewGovernedExport(
       body: JSON.stringify({
         template_version_id: templateVersionId,
         mapping_version_id: mappingVersionId,
-        filters: factoryId ? { factory_id: factoryId } : {},
+        filters,
       }),
     },
     fetcher,

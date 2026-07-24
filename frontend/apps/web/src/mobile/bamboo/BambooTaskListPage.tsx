@@ -5,6 +5,7 @@ import {
   MobileApiError,
   mobileApiClient,
   type BambooDashboard,
+  type BambooInspectionWindow,
   type BambooRecord,
   type BambooRecordPresetOptions,
   type BambooTaskBucket,
@@ -14,11 +15,20 @@ import { createMobileClientId, getMobileDeviceId } from "../device";
 import { useMobileSession } from "../session/MobileSessionProvider";
 import { clearBambooDraft, readBambooDraft, writeBambooDraft, type BambooDraftScope } from "../storage/bambooDrafts";
 
-const BUCKETS: Array<{ key: BambooTaskBucket; label: string }> = [
-  { key: "available", label: "可记录" },
-  { key: "waiting", label: "等待上游" },
-  { key: "completed", label: "已完成" },
-];
+function getBuckets(role: string): Array<{ key: BambooTaskBucket; label: string }> {
+  if (role === "INSPECTOR") {
+    return [
+      { key: "available", label: "可检测" },
+      { key: "waiting", label: "等待检测条件" },
+      { key: "completed", label: "我的检测记录" },
+    ];
+  }
+  return [
+    { key: "available", label: "可记录" },
+    { key: "waiting", label: "等待上游" },
+    { key: "completed", label: "已完成" },
+  ];
+}
 
 type PickerKey = "special_classes" | "length" | "shade" | "grade";
 type BaseInfoDraft = {
@@ -68,6 +78,7 @@ export function BambooTaskListPage() {
   const [searchedCage, setSearchedCage] = useState("");
   const [dashboard, setDashboard] = useState<BambooDashboard>({ available: 0, waiting: 0, completed: 0 });
   const [tasks, setTasks] = useState<BambooRecord[]>([]);
+  const [inspectionWindows, setInspectionWindows] = useState<BambooInspectionWindow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [creating, setCreating] = useState(false);
@@ -83,7 +94,10 @@ export function BambooTaskListPage() {
   const [createIdempotencyKey, setCreateIdempotencyKey] = useState("");
   const [stageIdempotencyKey, setStageIdempotencyKey] = useState("");
   const [pendingSubmission, setPendingSubmission] = useState<PendingSortingSubmission | null>(null);
-  const roleRequiresCageSearch = ["DIPPING_OPERATOR", "DRYING_RACK_OPERATOR", "INSPECTOR"].includes(session?.bamboo_role ?? "") && bucket === "available";
+  const roleRequiresCageSearch = ["DIPPING_OPERATOR", "DRYING_RACK_OPERATOR"].includes(session?.bamboo_role ?? "") && bucket === "available";
+  const isInspector = session?.bamboo_role === "INSPECTOR";
+  const roleSupportsCageSearch = roleRequiresCageSearch || (isInspector && bucket === "available");
+  const buckets = getBuckets(session?.bamboo_role ?? "");
   const sortingDraftScope = useMemo<BambooDraftScope | null>(() => session ? ({
     employeeCode: session.employee_code,
     factoryId: session.factory_id,
@@ -127,24 +141,45 @@ export function BambooTaskListPage() {
     setLoading(true);
     setError("");
     try {
-      const [summary, result] = await Promise.all([
-        mobileApiClient.getBambooDashboard(),
-        roleRequiresCageSearch && !searchedCage
-          ? Promise.resolve({ tasks: [] as BambooRecord[] })
-          : roleRequiresCageSearch
-            ? mobileApiClient.listBambooTasks(bucket, searchedCage)
-            : mobileApiClient.listBambooTasks(bucket),
-      ]);
-      if (generation !== loadGeneration.current) return;
-      setDashboard(summary);
-      setTasks(result.tasks);
+      if (isInspector && bucket !== "waiting") {
+        const queueBucket = bucket === "available" ? "active" : "history";
+        const [summary, queue] = await Promise.all([
+          mobileApiClient.getBambooDashboard(),
+          mobileApiClient.listBambooInspectionQueue(queueBucket, searchedCage),
+        ]);
+        if (generation !== loadGeneration.current) return;
+        setDashboard(summary);
+        setInspectionWindows(queue.items);
+        setTasks([]);
+        if (searchedCage && queue.items.length === 1) {
+          navigate(`/mobile/records/${encodeURIComponent(queue.items[0].record_id)}`);
+          return;
+        }
+      } else {
+        const [summary, result] = await Promise.all([
+          mobileApiClient.getBambooDashboard(),
+          roleRequiresCageSearch && !searchedCage
+            ? Promise.resolve({ tasks: [] as BambooRecord[] })
+            : roleRequiresCageSearch
+              ? mobileApiClient.listBambooTasks(bucket, searchedCage)
+              : mobileApiClient.listBambooTasks(bucket),
+        ]);
+        if (generation !== loadGeneration.current) return;
+        setDashboard(summary);
+        setTasks(result.tasks);
+        setInspectionWindows([]);
+        if (searchedCage && result.tasks.length === 1) {
+          navigate(`/mobile/records/${encodeURIComponent(result.tasks[0].record_id)}`);
+          return;
+        }
+      }
     } catch (cause) {
       if (generation !== loadGeneration.current) return;
       setError(message(cause, "无法加载工作记录，请检查网络后重试。"));
     } finally {
       if (generation === loadGeneration.current) setLoading(false);
     }
-  }, [bucket, roleRequiresCageSearch, searchedCage, session?.bamboo_role]);
+  }, [bucket, isInspector, roleRequiresCageSearch, searchedCage, session?.bamboo_role, navigate]);
 
   const loadPresets = useCallback(async () => {
     setPresetsLoading(true);
@@ -354,17 +389,17 @@ export function BambooTaskListPage() {
 
       {error && <div className="banner danger" role="alert">{error}</div>}
 
-      {roleRequiresCageSearch && (
+      {roleSupportsCageSearch && (
         <form className="bamboo-cage-search card" onSubmit={(event) => { event.preventDefault(); const value = cageQuery.trim(); if (!value) { setError("请先输入笼号。"); return; } setError(""); setSearchedCage(value); }}>
-          <label htmlFor="bamboo-cage-query">按笼号查找{session?.bamboo_role === "INSPECTOR" ? "待检测表单" : "上游表单"}</label>
+          <label htmlFor="bamboo-cage-query">{isInspector ? "按笼号查找可检测记录（可选）" : `按笼号查找${session?.bamboo_role === "DIPPING_OPERATOR" ? "上游表单" : "上游表单"}`}</label>
           <div className="btnrow"><input id="bamboo-cage-query" value={cageQuery} onChange={(event) => setCageQuery(event.target.value)} placeholder="输入完整或部分笼号" autoComplete="off" /><button type="submit" className="btn primary">搜索</button></div>
-          <p>{session?.bamboo_role === "DIPPING_OPERATOR" ? "查到分选来源后才能填写浸胶。" : session?.bamboo_role === "DRYING_RACK_OPERATOR" ? "查到已完成浸胶的联合表后才能填写干燥。" : "生产工序完成后即可抽查，不必等待主管签字。"}</p>
-          {searchedCage && <button type="button" className="btn secondary small" onClick={() => { setSearchedCage(""); setCageQuery(""); }}>清除“{searchedCage}”</button>}
+          <p>{session?.bamboo_role === "DIPPING_OPERATOR" ? "查到分选来源后才能填写浸胶。" : session?.bamboo_role === "DRYING_RACK_OPERATOR" ? "查到已完成浸胶的联合表后才能填写干燥。" : "不搜索时显示全部可检测记录；输入笼号可精确查找。"}</p>
+          {searchedCage && <button type="button" className="btn secondary small" onClick={() => { setSearchedCage(""); setCageQuery(""); }}>清除"{searchedCage}"</button>}
         </form>
       )}
 
       <nav className="tabs" aria-label="工作分类">
-        {BUCKETS.map((item) => (
+        {buckets.map((item) => (
           <button
             key={item.key}
             type="button"
@@ -380,33 +415,59 @@ export function BambooTaskListPage() {
         <div className="mobile-loading">加载工作中…</div>
       ) : roleRequiresCageSearch && !searchedCage ? (
         <div className="card empty"><h3>请先搜索笼号</h3><p>系统只显示与该笼号匹配、当前可处理的表单，避免逐张翻找。</p></div>
-      ) : tasks.length === 0 ? (
+      ) : isInspector && inspectionWindows.length === 0 && tasks.length === 0 ? (
+        <div className="card empty">
+          <h3>{searchedCage ? (() => { const msg = cageSearchEmptyMessage(searchedCage, bucket); if (msg) return msg.title; return "未找到匹配笼号的记录。"; })() : "当前分类暂无记录"}</h3>
+          <p>{searchedCage ? cageSearchEmptyMessage(searchedCage, bucket)?.detail ?? "未找到匹配笼号的记录。" : (bucket === "available" ? "当前没有可检测的生产记录。" : bucket === "waiting" ? "生产尚未完成，没有可用的检测窗口。" : "你尚未完成任何检测记录。")}</p>
+        </div>
+      ) : tasks.length === 0 && inspectionWindows.length === 0 ? (
         <div className="card empty">
           <h3>当前分类暂无记录</h3>
           <p>前面流程完成后，后续岗位才会看到对应记录。</p>
         </div>
       ) : (
         <div className="list" aria-label="竹丝记录列表">
-          {tasks.map((record) => (
-            <Link to={`/mobile/records/${encodeURIComponent(record.record_id)}`} className="record-card" key={record.record_id}>
-              <div className="record-top">
-                <div>
-                  <div className="record-no">{record.display_no}</div>
-                  <div className="record-meta">
-                    {formTypeLabel(record.form_type)} · {recordState(record)}
-                    <br />
-                    竹笼号 {String(record.base_info.cage_no || "—")} · 等级 {String(record.base_info.grade || "—")} · 把数 {String(record.base_info.bundle_count || "—")}
-                    <br />
-                    当前表内状态：{stageLabel(record.current_stage)} · 更新于 {formatTime(record.updated_at)}
+          {isInspector && inspectionWindows.length > 0
+            ? inspectionWindows.map((window) => (
+                <Link to={`/mobile/records/${encodeURIComponent(window.record_id)}`} className="record-card" key={window.record_id}>
+                  <div className="record-top">
+                    <div>
+                      <div className="record-no">{window.display_no}</div>
+                      <div className="record-meta">
+                        {window.form_type === "DIPPING_DRYING" ? "浸胶+干燥联合表" : "分选表"} · 笼号 {window.cage_no || "—"}
+                        <br />
+                        检测窗口状态：{inspectionWindowStatusLabel(window)}
+                        <br />
+                        开放于 {formatTime(window.opened_at)}{window.deadline_at ? ` · 截止 ${formatTime(window.deadline_at)}` : ""}
+                      </div>
+                    </div>
+                    <span className={`chip ${bucket === "available" ? "info" : bucket === "waiting" ? "wait" : "ok"}`}>{bucketLabel(bucket, session?.bamboo_role)}</span>
                   </div>
-                </div>
-                <span className={`chip ${bucket === "available" ? "info" : bucket === "waiting" ? "wait" : "ok"}`}>{bucketLabel(bucket)}</span>
-              </div>
-              <div className="record-actions">
-                <span className="btn primary small">{bucket === "available" ? "去记录" : "查看表单"}</span>
-              </div>
-            </Link>
-          ))}
+                  <div className="record-actions">
+                    <span className="btn primary small">{bucket === "available" ? "去检测" : "查看表单"}</span>
+                  </div>
+                </Link>
+              ))
+            : tasks.map((record) => (
+                <Link to={`/mobile/records/${encodeURIComponent(record.record_id)}`} className="record-card" key={record.record_id}>
+                  <div className="record-top">
+                    <div>
+                      <div className="record-no">{record.display_no}</div>
+                      <div className="record-meta">
+                        {formTypeLabel(record.form_type)} · {recordState(record)}
+                        <br />
+                        竹笼号 {String(record.base_info.cage_no || "—")} · 等级 {String(record.base_info.grade || "—")} · 把数 {String(record.base_info.bundle_count || "—")}
+                        <br />
+                        当前表内状态：{stageLabel(record.current_stage)} · 更新于 {formatTime(record.updated_at)}
+                      </div>
+                    </div>
+                    <span className={`chip ${bucket === "available" ? "info" : bucket === "waiting" ? "wait" : "ok"}`}>{bucketLabel(bucket, session?.bamboo_role)}</span>
+                  </div>
+                  <div className="record-actions">
+                    <span className="btn primary small">{bucket === "available" ? (isInspector ? "去检测" : "去记录") : "查看表单"}</span>
+                  </div>
+                </Link>
+              ))}
         </div>
       )}
 
@@ -696,13 +757,13 @@ function validateDraft(draft: BaseInfoDraft, moisture: string[]): string {
 }
 
 function workTitle(role = ""): string {
-  if (role === "INSPECTOR") return "记录随机检测";
+  if (role === "INSPECTOR") return "记录质量检测";
   if (role === "SUPERVISOR" || role === "PLANT_MANAGER") return "待把关记录";
   return `记录${roleStageLabel(role)}工序`;
 }
 
 function workDescription(role = ""): string {
-  if (role === "INSPECTOR") return "随机检测为选做，不阻断主流程";
+  if (role === "INSPECTOR") return "查看当前可检测的生产记录并填写现场检测结果。";
   if (role === "SUPERVISOR" || role === "PLANT_MANAGER") return "上游完成后，本环节才可以处理";
   return "仅显示本人岗位允许填写的工序和生产对象";
 }
@@ -711,7 +772,10 @@ function roleStageLabel(role = ""): string {
   return ({ SORT_OPERATOR: "分选/分选+装笼", DIPPING_OPERATOR: "浸胶", DRYING_RACK_OPERATOR: "干燥装架" } as Record<string, string>)[role] ?? "";
 }
 
-function bucketLabel(bucket: BambooTaskBucket): string {
+function bucketLabel(bucket: BambooTaskBucket, role = ""): string {
+  if (role === "INSPECTOR") {
+    return ({ available: "可检测", waiting: "等待检测条件", completed: "我的检测记录" } as Record<BambooTaskBucket, string>)[bucket];
+  }
   return ({ available: "可记录", waiting: "等待上游", completed: "已完成" } as Record<BambooTaskBucket, string>)[bucket];
 }
 
@@ -806,4 +870,28 @@ function isBaseInfoDraft(value: unknown): value is BaseInfoDraft {
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function cageSearchEmptyMessage(cageNo: string, bucket: BambooTaskBucket): { title: string; detail: string } | null {
+  if (!cageNo.trim()) return null;
+  if (bucket === "waiting") {
+    return { title: "该笼号尚未满足检测条件。", detail: "生产工序尚未全部完成，检测窗口暂未开放。请等待生产完成后刷新。" };
+  }
+  if (bucket === "available") {
+    return { title: "未找到可检测的匹配记录。", detail: `未找到笼号"${cageNo}"的可检测记录。该笼号可能尚未满足检测条件，或正由另一检测员检测中。` };
+  }
+  return { title: "未找到匹配笼号的记录。", detail: `未找到笼号"${cageNo}"的相关检测记录。` };
+}
+
+function inspectionWindowStatusLabel(window: BambooInspectionWindow): string {
+  if (window.status === "OPEN") return "待领取";
+  if (window.status === "CLAIMED") return window.claimed_by ? `检测中（${window.claimed_by}）` : "检测中";
+  if (window.status === "COMPLETED") return "检测完成";
+  if (window.status === "EARLY_TERMINATED") return "厂长提前终止";
+  if (window.status === "EXPIRED") return "检测超时";
+  if (window.status === "APPEAL_CLAIMED") return "申诉填写中";
+  if (window.status === "APPEAL_SUBMITTED") return "申诉待审批";
+  if (window.status === "APPEAL_APPROVED") return "申诉已通过";
+  if (window.status === "APPEAL_REJECTED") return "申诉已驳回";
+  return window.status;
 }

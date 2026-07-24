@@ -17,6 +17,7 @@ from app.api.schemas.managed_forms_ds import (
     PlantActivationResponse,
 )
 from app.api.schemas.payroll_rules_ds import (
+    CalculatePayrollRequest,
     PayrollDecisionRequest,
     RecalculatePayrollRequest,
 )
@@ -75,14 +76,32 @@ def overview(request: Request) -> WorkspaceOverviewResponse:
             status_code=403,
             detail={"code": "WEB_ROLE_FORBIDDEN", "detail": "当前账号不能进入管理员工作区。"},
         )
+    form_approvals = _forms(request).list_approvals()
+    workflow_approvals = _workflows(request).list_pending()
+    payroll_items = _payroll(request).list_rules(approvals_only=True).get("items", [])
+    form_count = len(form_approvals)
+    workflow_count = len(workflow_approvals)
+    payroll_count = len(payroll_items) if isinstance(payroll_items, list) else 0
     return WorkspaceOverviewResponse(
         workspace=WebWorkspace.ADMIN.value,
         title="系统概览",
         scope="GLOBAL",
         cards=[
-            OverviewCard(key="pending_approvals", label="待审核", value=0),
-            OverviewCard(key="version_exceptions", label="版本异常", value=0),
-            OverviewCard(key="high_risk_events", label="高风险操作", value=0),
+            OverviewCard(
+                key="pending_form_approvals",
+                label="待表单审批",
+                value=form_count,
+            ),
+            OverviewCard(
+                key="pending_workflow_approvals",
+                label="待流程审批",
+                value=workflow_count,
+            ),
+            OverviewCard(
+                key="pending_payroll_approvals",
+                label="待工资规则审批",
+                value=payroll_count,
+            ),
         ],
     )
 
@@ -119,6 +138,28 @@ def decide_payroll_rule(
             approved=body.approved,
             actor_id=actor.employee_code,
             note=body.note,
+        )
+    except PayrollError as error:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": error.code, "detail": error.detail},
+        ) from error
+
+
+@router.post("/payroll-approvals/{version_id}/trial")
+def trial_payroll_rule(
+    version_id: str,
+    body: CalculatePayrollRequest,
+    request: Request,
+    x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token"),
+) -> dict[str, object]:
+    actor = _admin_actor(request)
+    require_web_csrf(request, x_csrf_token)
+    try:
+        return _payroll(request).calculate(
+            **body.model_dump(),
+            actor_id=actor.employee_code,
+            dry_run=True,
         )
     except PayrollError as error:
         raise HTTPException(

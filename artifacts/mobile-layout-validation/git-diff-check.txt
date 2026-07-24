@@ -1,0 +1,5 @@
+warning: in the working copy of 'docs/acceptance-report.md', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'docs/superpowers/plans/2026-07-22-bamboo-process-v3-complete.md', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/apps/web/src/mobile/bamboo/BambooTaskListPage.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/apps/web/src/styles.css', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'tests/acceptance/test_bamboo_bug_probes.py', LF will be replaced by CRLF the next time Git touches it

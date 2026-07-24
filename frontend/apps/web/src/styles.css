@@ -1673,7 +1673,7 @@ button { cursor: pointer; }
 /* Bamboo V3 login and role-aware home */
 .bamboo-v3-login {
   justify-content: center;
-  background: var(--bg);
+  background: var(--bg) url("/images/login-bg.png") center / cover no-repeat;
   color: var(--text);
 }
 .bamboo-v3-login .mobile-login-header {

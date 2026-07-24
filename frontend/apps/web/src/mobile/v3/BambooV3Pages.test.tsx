@@ -311,7 +311,7 @@ describe("independent bamboo forms", () => {
   it("limits inspector and supervisor targets by form type", async () => {
     mocks.getBambooRecord.mockResolvedValue({ ...sortingRecord, current_stage: "PLANT_AUDIT", revision: 3 });
     withSession(<BambooRecordDetailPage recordId="SORT-18" />, { ...worker, bamboo_role: "INSPECTOR", position: "检测人" });
-    await userEvent.setup().click(await screen.findByRole("button", { name: "报告异常" }));
+    await userEvent.setup().click(await screen.findByLabelText("不合格"));
     expect(await screen.findByLabelText("检测目标")).toBeTruthy();
     expect(Array.from((screen.getByLabelText("检测目标") as HTMLSelectElement).options).map((item) => item.text)).toEqual(["分选"]);
     cleanup();
@@ -334,13 +334,16 @@ describe("independent bamboo forms", () => {
     expect(await screen.findByText(/检测剩余时间/)).toBeTruthy();
     expect(screen.getByLabelText("搜索表号或笼号")).toBeTruthy();
     expect(screen.getByText("3-018")).toBeTruthy();
-    await user.click(screen.getByRole("button", { name: "检测合格" }));
+    // New UI: radio group for conclusion
+    await user.click(screen.getByLabelText("合格"));
+    await user.click(screen.getByRole("button", { name: "核对并提交检测记录" }));
+    await user.click(screen.getByRole("button", { name: "确认提交" }));
     await waitFor(() => expect(mocks.submitBambooInspection).toHaveBeenCalledWith(
       "SORT-18",
-      expect.objectContaining({ conclusion: "CONFORMING" }),
+      expect.objectContaining({ conclusion: "CONFORMING", moisturePoints: [0, 0, 0] }),
       "inspection-key",
     ));
-    await user.click(screen.getByRole("button", { name: "报告异常" }));
+    await user.click(screen.getByLabelText("不合格"));
     expect(screen.getByRole("button", { name: "点击拍照" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "点击录音" })).toBeTruthy();
     expect(screen.queryByLabelText("检测序号")).toBeNull();

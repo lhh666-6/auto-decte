@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 
 import {
   listFinanceCorrections,
@@ -26,7 +27,7 @@ type EmptyReason =
 
 type CorrectionType = "quantity" | "attribution" | "rule_applicability" | "other";
 
-const FILTER_OPTIONS: FilterOption[] = [
+const STATIC_FILTER_OPTIONS: FilterOption[] = [
   { key: "factory_id", label: "工厂", options: [] },
   { key: "subject_employee_code", label: "员工", options: [] },
   { key: "status", label: "状态", options: [
@@ -65,6 +66,7 @@ const SCOPE_LABELS: Record<LedgerScope, string> = {
 };
 
 export function FinanceLedgerPage({ scope }: { scope: LedgerScope }) {
+  const navigate = useNavigate();
   const [, setOverview] = useState({ today: 0, month: 0, year: 0 });
   const [records, setRecords] = useState<FinanceRecord[]>([]);
   const [corrections, setCorrections] = useState<SubmissionCorrection[]>([]);
@@ -138,6 +140,25 @@ export function FinanceLedgerPage({ scope }: { scope: LedgerScope }) {
     );
   }, [records, appliedFilters]);
 
+  // Dynamic filter options derived from loaded records
+  const filterOptions = useMemo<FilterOption[]>(() => {
+    const factoryIds = [...new Set(records.map((r) => r.factory_id).filter(Boolean))].sort();
+    const employeeCodes = [...new Set(records.map((r) => r.subject_employee_code).filter(Boolean))].sort();
+    const dates = [...new Set(records.map((r) => r.business_date).filter(Boolean))].sort();
+    return STATIC_FILTER_OPTIONS.map((opt) => {
+      if (opt.key === "factory_id") {
+        return { ...opt, options: factoryIds.map((v) => ({ value: v, label: v })) };
+      }
+      if (opt.key === "subject_employee_code") {
+        return { ...opt, options: employeeCodes.map((v) => ({ value: v, label: v })) };
+      }
+      if (opt.key === "business_date") {
+        return { ...opt, options: dates.map((v) => ({ value: v, label: v })) };
+      }
+      return opt;
+    });
+  }, [records]);
+
   // Summary computation
   const employeeCount = useMemo(() => {
     const codes = new Set(filteredRecords.map((r) => r.subject_employee_code));
@@ -180,7 +201,7 @@ export function FinanceLedgerPage({ scope }: { scope: LedgerScope }) {
     try {
       await submitFinanceCorrection(
         detailRecord.root_submission_id,
-        { reason: correctionReason, correction_type: correctionType },
+        { reason: correctionReason, correction_type: correctionType, supplementary_note: correctionDesc || undefined },
         correctionIdempotencyKey,
       );
       setCorrectionOpen(false);
@@ -225,7 +246,7 @@ export function FinanceLedgerPage({ scope }: { scope: LedgerScope }) {
                 className="primary"
                 onClick={() => {
                   // Navigate to exceptions center
-                  window.location.hash = "#/finance/exceptions";
+                  navigate("/finance/exceptions");
                 }}
               >
                 前往异常中心
@@ -272,7 +293,7 @@ export function FinanceLedgerPage({ scope }: { scope: LedgerScope }) {
               <button
                 type="button"
                 onClick={() => {
-                  window.location.hash = "#/finance/today";
+                  navigate("/finance/today");
                 }}
               >
                 返回可访问范围
@@ -314,7 +335,7 @@ export function FinanceLedgerPage({ scope }: { scope: LedgerScope }) {
       {/* Filters */}
       <div data-testid="finance-ledger-filter">
         <FilterToolbar
-          filters={FILTER_OPTIONS}
+          filters={filterOptions}
           applied={appliedFilters}
           onChange={setAppliedFilters}
         />
@@ -443,44 +464,11 @@ export function FinanceLedgerPage({ scope }: { scope: LedgerScope }) {
               {/* Tab 2: 来源事实 */}
               {drawerTab === "source" && (
                 <div className="finance-detail-tab-content">
-                  <h3>关联来源</h3>
-                  <div className="finance-detail-kv">
-                    <dt>Bamboo 记录</dt>
-                    <dd className="finance-pending-data">
-                      {detailRecord.values?.bamboo_record_id ? String(detailRecord.values.bamboo_record_id) : "数据收集中 — bamboo_record_id"}
-                    </dd>
-                    <dt>Stage 提交</dt>
-                    <dd className="finance-pending-data">
-                      {detailRecord.values?.stage_submission_id ? String(detailRecord.values.stage_submission_id) : "数据收集中 — stage_submission_id"}
-                    </dd>
-                    <dt>托管表单记录</dt>
-                    <dd className="finance-pending-data">
-                      {detailRecord.values?.managed_form_record_id ? String(detailRecord.values.managed_form_record_id) : "数据收集中 — managed_form_record_id"}
-                    </dd>
-                  </div>
-
-                  <h3>原始字段</h3>
-                  <pre className="finance-detail-json">
-                    {JSON.stringify(detailRecord.values, null, 2)}
-                  </pre>
-
-                  <h3>来源版本</h3>
                   <div className="finance-detail-kv">
                     <dt>表单版本</dt>
                     <dd>{detailRecord.definition_version_id}</dd>
-                    <dt>来源版本</dt>
-                    <dd className="finance-pending-data">数据收集中 — source_version</dd>
-                  </div>
-
-                  <h3>证据链接</h3>
-                  <p className="finance-pending-data">数据收集中 — evidence_links</p>
-
-                  <h3>上下游关联</h3>
-                  <div className="finance-detail-kv">
-                    <dt>上游记录</dt>
-                    <dd className="finance-pending-data">数据收集中 — upstream_submission_id</dd>
-                    <dt>下游记录</dt>
-                    <dd className="finance-pending-data">数据收集中 — downstream_submission_ids</dd>
+                    <dt>来源追溯</dt>
+                    <dd className="finance-pending-data">来源追溯暂未接入</dd>
                   </div>
                 </div>
               )}
@@ -490,34 +478,20 @@ export function FinanceLedgerPage({ scope }: { scope: LedgerScope }) {
                 <div className="finance-detail-tab-content">
                   <div className="finance-detail-kv">
                     <dt>规则版本</dt>
-                    <dd>{String(detailRecord.values?.rule_version ?? "数据收集中 — rule_version")}</dd>
-                    <dt>输入变量</dt>
-                    <dd className="finance-pending-data">数据收集中 — input_variables</dd>
+                    <dd>{detailRecord.values?.rule_version ? String(detailRecord.values.rule_version) : "—"}</dd>
                     <dt>计算结果</dt>
                     <dd className="amount">{formatAmount(detailRecord.values?.amount)}</dd>
-                    <dt>舍入策略</dt>
-                    <dd className="finance-pending-data">数据收集中 — rounding_strategy</dd>
-                    <dt>规则启用范围</dt>
-                    <dd className="finance-pending-data">数据收集中 — rule_scope</dd>
-                    <dt>正式批次</dt>
-                    <dd className="finance-pending-data">数据收集中 — official_batch_id</dd>
+                    <dt>数量</dt>
+                    <dd>{formatQty(detailRecord.values?.quantity ?? detailRecord.values?.qty)}</dd>
                   </div>
+                  <p className="finance-pending-data" style={{ margin: 0 }}>计算明细（输入变量、舍入策略、规则范围等）暂未接入</p>
                 </div>
               )}
 
               {/* Tab 4: 审批/确认 */}
               {drawerTab === "approval" && (
                 <div className="finance-detail-tab-content">
-                  <div className="finance-detail-kv">
-                    <dt>财务确认人</dt>
-                    <dd className="finance-pending-data">数据收集中 — finance_confirmed_by</dd>
-                    <dt>确认时间</dt>
-                    <dd className="finance-pending-data">数据收集中 — finance_confirmed_at</dd>
-                    <dt>管理员规则批准</dt>
-                    <dd className="finance-pending-data">数据收集中 — admin_approval_info</dd>
-                    <dt>厂长生产签字状态</dt>
-                    <dd className="finance-pending-data">数据收集中 — manager_signature_status</dd>
-                  </div>
+                  <p className="finance-pending-data">审批/确认追溯暂未接入</p>
                 </div>
               )}
 
@@ -546,7 +520,7 @@ export function FinanceLedgerPage({ scope }: { scope: LedgerScope }) {
                           <strong>原始记录</strong>
                           <span className="finance-correction-chain-id">{detailRecord.root_submission_id}</span>
                           <span className="finance-correction-chain-time">
-                            数据收集中 — original_submitted_at
+                            原始提交时间暂未提供
                           </span>
                         </div>
                       </div>
@@ -590,20 +564,7 @@ export function FinanceLedgerPage({ scope }: { scope: LedgerScope }) {
               {/* Tab 6: 导出血缘 */}
               {drawerTab === "lineage" && (
                 <div className="finance-detail-tab-content">
-                  <div className="finance-detail-kv">
-                    <dt>导出批次</dt>
-                    <dd className="finance-pending-data">数据收集中 — export_batch_id</dd>
-                    <dt>模板版本</dt>
-                    <dd className="finance-pending-data">数据收集中 — template_version_id</dd>
-                    <dt>映射版本</dt>
-                    <dd className="finance-pending-data">数据收集中 — mapping_version_id</dd>
-                    <dt>文件哈希</dt>
-                    <dd className="finance-pending-data">数据收集中 — file_hash</dd>
-                    <dt>单元格/列位置</dt>
-                    <dd className="finance-pending-data">数据收集中 — cell_position</dd>
-                    <dt>是否已被后续重导替代</dt>
-                    <dd className="finance-pending-data">数据收集中 — superseded_by_re_export</dd>
-                  </div>
+                  <p className="finance-pending-data">导出血缘追溯暂未接入</p>
                 </div>
               )}
 
@@ -668,16 +629,15 @@ export function FinanceLedgerPage({ scope }: { scope: LedgerScope }) {
             <div className="finance-correction-impact">
               <h3>影响预览</h3>
               <ul>
-                <li><strong>原记录保留：</strong>原记录 {detailRecord.effective_submission_id} 不会被删除或修改，状态标记为 REPLACED 并保留在更正链中。</li>
-                <li><strong>新增更正记录：</strong>系统将追加一条 CORRECTION_APPENDED 事件记录，包含本次更正的全部信息。</li>
-                <li><strong>有效投影切换：</strong>财务账本的有效投影将从原记录切换为新更正记录，今日/月度/年度投影随之更新。</li>
-                <li><strong>已导出批次标记需重导：</strong>所有包含原记录的已导出批次将标记为"已被后续更正影响"，财务需重新导出以获取最新数据。</li>
+                <li><strong>原正式记录不会删除：</strong>当前有效记录进入 HELD（冻结）状态。</li>
+                <li><strong>创建更正请求：</strong>系统创建更正请求（RETURNED），并生成 CORRECTION_REFILL 任务指派给原填写人。</li>
+                <li><strong>填写人重新提交：</strong>原填写人重新提交后，更正进入 REPLACED 状态，有效投影切换到 PENDING_REVIEW。</li>
+                <li><strong>财务复核：</strong>财务复核通过后，更正标记为 APPROVED，有效投影恢复 ACTIVE；退回则 REJECTED，保持 HELD。</li>
               </ul>
             </div>
 
             <div className="finance-correction-info">
-              <p><strong>Idempotency-Key：</strong>{correctionIdempotencyKey.slice(0, 8)}...（保障幂等，重试复用）</p>
-              <p><strong>预期 Revision：</strong>原记录 revision + 1</p>
+              <p>系统保障：操作具备防重复提交保护</p>
             </div>
 
             <div className="finance-correction-actions">

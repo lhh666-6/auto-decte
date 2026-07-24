@@ -4,7 +4,7 @@ import hashlib
 import json
 from collections.abc import Callable
 from copy import deepcopy
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from datetime import datetime
 
 from app.modules.bamboo_process.errors_ds import (
@@ -31,6 +31,20 @@ from app.modules.bamboo_process.state_machine_ds import (
     next_stage,
     visible_to_role,
 )
+
+
+@dataclass(frozen=True)
+class InspectionContext:
+    """Pre-fetched inspection data for the INSPECTOR task model.
+
+    Passed from the DB layer because the facade is persistence-agnostic.
+    """
+
+    open_window_record_ids: frozenset[str]
+    """Records whose inspection windows are OPEN and inside the deadline."""
+
+    completed_record_ids: frozenset[str]
+    """Records this actor has already inspected (formal)."""
 
 
 def _sha256_canonical(payload: object) -> str:
@@ -109,6 +123,7 @@ class BambooProcessFacade:
         actor: BambooActor,
         bucket: TaskBucket,
         cage_no: str | None = None,
+        inspection_context: InspectionContext | None = None,
     ) -> list[BambooRecord]:
         records = (
             self._repository.list_all()
@@ -124,7 +139,16 @@ class BambooProcessFacade:
             )
         }
         if bucket is TaskBucket.AVAILABLE:
-            if actor.role is BambooRole.INSPECTOR:
+            if actor.role is BambooRole.INSPECTOR and inspection_context is not None:
+                available = [
+                    record
+                    for record in records
+                    if record.status is BambooRecordStatus.ACTIVE
+                    and record.record_id in inspection_context.open_window_record_ids
+                ]
+            elif actor.role is BambooRole.INSPECTOR:
+                # Fallback when context not provided: use production stage
+                # (kept for read-only dashboard queries that bypass this path).
                 available = [
                     record
                     for record in records
@@ -143,12 +167,55 @@ class BambooProcessFacade:
                 ]
             return _filter_by_cage(available, cage_no)
         if bucket is TaskBucket.COMPLETED:
+            if actor.role is BambooRole.INSPECTOR and inspection_context is not None:
+                return _filter_by_cage(
+                    [
+                        record
+                        for record in records
+                        if record.record_id in inspection_context.completed_record_ids
+                    ],
+                    cage_no,
+                )
             return _filter_by_cage(
                 [record for record in records if record.record_id in completed],
                 cage_no,
             )
         if bucket is TaskBucket.WAITING:
-            waiting: list[BambooRecord] = []
+            if actor.role is BambooRole.INSPECTOR:
+                # INSPECTOR waiting = active records where production is
+                # finished (SUPERVISOR / PLANT_AUDIT) but no inspection
+                # window exists and no inspection has been submitted.
+                waiting: list[BambooRecord] = []
+                if inspection_context is not None:
+                    for record in records:
+                        if (
+                            record.status is not BambooRecordStatus.ACTIVE
+                            or record.record_id in inspection_context.open_window_record_ids
+                            or record.record_id in inspection_context.completed_record_ids
+                        ):
+                            continue
+                        # Production is done when the supervisor stage has
+                        # been signed (but before plant audit).
+                        has_supervisor = any(
+                            submission.stage is BambooStage.SUPERVISOR
+                            and not submission.invalidated
+                            for submission in record.submissions
+                        )
+                        if has_supervisor:
+                            waiting.append(record)
+                    return _filter_by_cage(waiting, cage_no)
+                # Fallback without context
+                for record in records:
+                    if (
+                        record.status is not BambooRecordStatus.ACTIVE
+                        or record.record_id in completed
+                        or record.current_stage is None
+                    ):
+                        continue
+                    if visible_to_role(record.submissions, actor.role, record.form_type):
+                        waiting.append(record)
+                return _filter_by_cage(waiting, cage_no)
+            _waiting: list[BambooRecord] = []
             for record in records:
                 if (
                     record.status is not BambooRecordStatus.ACTIVE
@@ -166,8 +233,8 @@ class BambooProcessFacade:
                 if role_stage is None:
                     continue
                 if stage_order.index(record.current_stage) < stage_order.index(role_stage):
-                    waiting.append(record)
-            return _filter_by_cage(waiting, cage_no)
+                    _waiting.append(record)
+            return _filter_by_cage(_waiting, cage_no)
         return []
 
     def get_visible(

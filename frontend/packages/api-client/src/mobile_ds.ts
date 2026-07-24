@@ -207,6 +207,9 @@ export interface BambooInspectionWindow {
   claimed_by: string | null;
   claimed_at: string | null;
   completed_at: string | null;
+  terminated_by: string | null;
+  terminated_at: string | null;
+  termination_reason: string | null;
   appeal_deadline_at: string | null;
   appeal_claimed_by: string | null;
   appeal_submitted_at: string | null;
@@ -232,6 +235,7 @@ export interface SubmitBambooInspectionInput {
   photos?: File[];
   audio?: File | null;
   deviceId: string;
+  moisturePoints?: number[];
 }
 
 export interface BambooRoleOption {
@@ -727,6 +731,9 @@ export class MobileApiClient {
     body.set("device_id", input.deviceId);
     if (input.targetStage) body.set("target_stage", input.targetStage);
     if (input.textEvidence) body.set("text_evidence", input.textEvidence);
+    if (input.moisturePoints && input.moisturePoints.length > 0) {
+      body.set("moisture_points", JSON.stringify(input.moisturePoints));
+    }
     for (const photo of input.photos ?? []) body.append("photos", photo);
     if (input.audio) body.set("audio", input.audio);
     return this.request(`/bamboo/records/${encodeURIComponent(recordId)}/inspection-submit`, {

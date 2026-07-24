@@ -39,6 +39,7 @@ from app.adapters.database.models import (
 )
 from app.adapters.storage.local import LocalEvidenceStorage
 from app.application.mobile_identity_ds import hash_pin
+from app.modules.bamboo_process.facade_ds import InspectionContext
 from app.modules.bamboo_process.models_ds import (
     BambooActor,
     BambooFormType,
@@ -627,7 +628,7 @@ class BambooOperationsService:
                     window.status = "EXPIRED"
                     window.appeal_deadline_at = _utc(window.deadline_at) + timedelta(hours=24)
                     window.revision += 1
-                is_active = window.status in {"OPEN", "CLAIMED"}
+                is_active = window.status in {"OPEN", "CLAIMED", "APPEAL_SUBMITTED"}
                 if (bucket == "active") != is_active:
                     continue
                 search = query.strip().casefold()
@@ -641,11 +642,151 @@ class BambooOperationsService:
                 items.append(self._inspection_window(window, record, now))
             return {"bucket": bucket, "items": items}
 
-    def claim_inspection(self, record_id: str, *, actor: BambooActor) -> dict[str, Any]:
+    def get_dashboard(self, actor: BambooActor) -> dict[str, int]:
+        """Return {available, waiting, completed} counts for any bamboo role.
+
+        For INSPECTOR the counts are derived from BambooInspectionWindowRow
+        (inspection windows), not from the production stage.
+        """
+        if actor.role is not BambooRole.INSPECTOR:
+            raise BambooOperationError(
+                "DASHBOARD_DELEGATE",
+                "Non-inspector dashboards are computed by the process facade.",
+            )
+        now = datetime.now(UTC)
+        with Session(self._engine) as session:
+            # ― available: inspection windows that are OPEN and within the deadline
+            open_count = session.scalar(
+                select(func.count())
+                .select_from(BambooInspectionWindowRow)
+                .where(
+                    BambooInspectionWindowRow.factory_id == actor.factory_id,
+                    BambooInspectionWindowRow.status == "OPEN",
+                    BambooInspectionWindowRow.deadline_at > now,
+                )
+            ) or 0
+            # ― completed: formal inspections submitted by this actor in this factory
+            completed_count = session.scalar(
+                select(func.count())
+                .select_from(BambooInspectionRow)
+                .where(
+                    BambooInspectionRow.actor_id == actor.actor_id,
+                    BambooInspectionRow.factory_id == actor.factory_id,
+                    BambooInspectionRow.inspection_kind == "FORMAL",
+                )
+            ) or 0
+            # ― waiting: records where supervisor is done but no window exists yet
+            #   (records at SUPERVISOR or PLANT_AUDIT stage without a window)
+            records_with_supervisor_done = (
+                select(BambooRecordRow.record_id)
+                .join(
+                    BambooStageSubmissionRow,
+                    BambooStageSubmissionRow.record_id == BambooRecordRow.record_id,
+                )
+                .where(
+                    BambooRecordRow.factory_id == actor.factory_id,
+                    BambooRecordRow.status == "ACTIVE",
+                    BambooStageSubmissionRow.stage_key == BambooStage.SUPERVISOR.value,
+                    BambooStageSubmissionRow.invalidated.is_(False),
+                )
+            )
+            records_with_windows = (
+                select(BambooInspectionWindowRow.record_id)
+                .where(
+                    BambooInspectionWindowRow.factory_id == actor.factory_id,
+                )
+            )
+            waiting_count = session.scalar(
+                select(func.count())
+                .select_from(BambooRecordRow)
+                .where(
+                    BambooRecordRow.record_id.in_(records_with_supervisor_done),
+                    BambooRecordRow.record_id.notin_(records_with_windows),
+                    BambooRecordRow.factory_id == actor.factory_id,
+                )
+            ) or 0
+            return {
+                "available": open_count,
+                "waiting": waiting_count,
+                "completed": completed_count,
+            }
+
+    def build_inspection_context(
+        self,
+        actor: BambooActor,
+    ) -> InspectionContext:
+        """Pre-fetch inspection window IDs for the facade's INSPECTOR task model."""
+        now = datetime.now(UTC)
+        with Session(self._engine) as session:
+            open_ids = frozenset(
+                session.scalars(
+                    select(BambooInspectionWindowRow.record_id).where(
+                        BambooInspectionWindowRow.factory_id == actor.factory_id,
+                        BambooInspectionWindowRow.status == "OPEN",
+                        BambooInspectionWindowRow.deadline_at > now,
+                    )
+                ).all()
+            )
+            completed_ids = frozenset(
+                session.scalars(
+                    select(BambooInspectionRow.record_id).where(
+                        BambooInspectionRow.actor_id == actor.actor_id,
+                        BambooInspectionRow.factory_id == actor.factory_id,
+                        BambooInspectionRow.inspection_kind == "FORMAL",
+                    )
+                ).all()
+            )
+            return InspectionContext(
+                open_window_record_ids=open_ids,
+                completed_record_ids=completed_ids,
+            )
+
+    def claim_inspection(
+        self,
+        record_id: str,
+        *,
+        actor: BambooActor,
+        idempotency_key: str,
+    ) -> dict[str, Any]:
         if actor.role is not BambooRole.INSPECTOR:
             raise BambooOperationError("INSPECTOR_REQUIRED", "仅检测人可以领取检测任务")
+        # ── Compute payload hash for the claim operation ──
+        claim_payload_obj = {
+            "actor_id": actor.actor_id,
+            "record_id": record_id,
+        }
+        claim_payload_hash = hashlib.sha256(
+            json.dumps(
+                claim_payload_obj,
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=False,
+            ).encode()
+        ).hexdigest()
         now = datetime.now(UTC)
         with Session(self._engine) as session, session.begin():
+            # ── Idempotency gate: same actor + same key → check prior use ──
+            prior = session.scalar(
+                select(BambooInspectionWindowRow).where(
+                    BambooInspectionWindowRow.claimed_by == actor.actor_id,
+                    BambooInspectionWindowRow.claim_idempotency_key == idempotency_key,
+                    BambooInspectionWindowRow.status == "CLAIMED",
+                )
+            )
+            if prior is not None:
+                if prior.record_id == record_id:
+                    # Same key, same record → return existing claim
+                    record = session.get(BambooRecordRow, record_id)
+                    if record is None:  # pragma: no cover
+                        raise BambooOperationError(
+                            "INSPECTION_WINDOW_NOT_FOUND", "检测任务不存在"
+                        )
+                    return self._inspection_window(prior, record, now)
+                # Same key, different record → conflict
+                raise BambooOperationError(
+                    "IDEMPOTENCY_CONFLICT",
+                    "该幂等键已用于领取另一条记录的检测任务。",
+                )
             window = session.get(BambooInspectionWindowRow, record_id)
             if window is None or window.factory_id != actor.factory_id:
                 raise BambooOperationError("INSPECTION_WINDOW_NOT_FOUND", "检测任务不存在")
@@ -673,6 +814,8 @@ class BambooOperationsService:
                         status="CLAIMED",
                         claimed_by=actor.actor_id,
                         claimed_at=now,
+                        claim_idempotency_key=idempotency_key,
+                        claim_payload_hash=claim_payload_hash,
                         revision=BambooInspectionWindowRow.revision + 1,
                     )
                 )
@@ -695,12 +838,27 @@ class BambooOperationsService:
         *,
         actor: BambooActor,
         confirm: bool,
+        idempotency_key: str,
+        reason: str,
     ) -> dict[str, Any]:
         if actor.role is not BambooRole.PLANT_MANAGER:
             raise BambooOperationError("MANAGER_REQUIRED", "仅厂长可以提前终止检测")
         if not confirm:
             raise BambooOperationError("TERMINATION_CONFIRMATION_REQUIRED", "请二次确认提前签字")
         now = datetime.now(UTC)
+        canonical = json.dumps(
+            {
+                "record_id": record_id,
+                "actor_id": actor.actor_id,
+                "confirm": confirm,
+                "reason": reason,
+                "idempotency_key": idempotency_key,
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+        _payload_hash = hashlib.sha256(canonical).hexdigest()
         with Session(self._engine) as session, session.begin():
             window = session.get(BambooInspectionWindowRow, record_id)
             if window is None or window.factory_id != actor.factory_id:
@@ -708,6 +866,7 @@ class BambooOperationsService:
             record = session.get(BambooRecordRow, record_id)
             if record is None:  # pragma: no cover
                 raise BambooOperationError("INSPECTION_WINDOW_NOT_FOUND", "检测任务不存在")
+            # Idempotency: same actor, already terminated → return same result
             if window.status == "EARLY_TERMINATED" and window.terminated_by == actor.actor_id:
                 return self._inspection_window(window, record, now)
             if window.status not in {"OPEN", "CLAIMED"}:
@@ -720,6 +879,7 @@ class BambooOperationsService:
             window.status = "EARLY_TERMINATED"
             window.terminated_by = actor.actor_id
             window.terminated_at = now
+            window.termination_reason = reason
             window.appeal_deadline_at = now + timedelta(hours=24)
             window.revision += 1
             self._notify_factory_role(
@@ -728,9 +888,12 @@ class BambooOperationsService:
                 role=BambooRole.INSPECTOR,
                 category="INSPECTION_TERMINATED",
                 title="检测已由厂长提前终止",
-                body=f"表单 {record.display_no} 的检测权限已停止，可在24小时内申诉。",
+                body=(
+                    f"表单 {record.display_no} 的检测权限已停止，可在24小时内申诉。"
+                    f"终止原因：{reason or '(未提供)'}"
+                ),
                 link=f"/mobile/bamboo/{record_id}",
-                payload={"record_id": record_id},
+                payload={"record_id": record_id, "termination_reason": reason},
                 now=now,
             )
             return self._inspection_window(window, record, now)
@@ -1196,6 +1359,18 @@ class BambooOperationsService:
             BambooStage.DRYING,
         }:
             raise BambooOperationError("INVALID_INSPECTION_STAGE", "检测流程只能选择前三个生产环节")
+        # ── Validate every moisture point is a finite number ──
+        for value in moisture_points:
+            if not value.is_finite():
+                raise BambooOperationError(
+                    "INVALID_MOISTURE_POINTS",
+                    "含水率检测点必须是有效数字",
+                )
+            if value != value.to_integral_value() or not 1 <= value <= 100:
+                raise BambooOperationError(
+                    "INVALID_MOISTURE_POINTS",
+                    "含水率检测点必须是 1 至 100 的正整数",
+                )
         now = datetime.now(UTC)
         canonical = json.dumps(
             {
@@ -1210,6 +1385,7 @@ class BambooOperationsService:
             sort_keys=True,
             separators=(",", ":"),
         ).encode()
+        request_hash = hashlib.sha256(canonical).hexdigest()
         with Session(self._engine) as session, session.begin():
             existing = session.scalar(
                 select(BambooInspectionRow).where(
@@ -1218,11 +1394,19 @@ class BambooOperationsService:
                 )
             )
             if existing is not None:
+                if existing.payload_hash != request_hash:
+                    raise BambooOperationError(
+                        "IDEMPOTENCY_CONFLICT",
+                        "该幂等键已用于另一组检测数据，请刷新后重新提交。",
+                    )
                 return self._inspection(session, existing)
             record = self._record(session, record_id, actor)
             window = session.get(BambooInspectionWindowRow, record_id)
             if window is None:
-                raise BambooOperationError("INSPECTION_WINDOW_NOT_OPEN", "主管审核后才开放检测")
+                raise BambooOperationError(
+                    "INSPECTION_WINDOW_NOT_OPEN",
+                    "生产环节未完成，暂未开放检测",
+                )
             submitted = session.scalar(
                 select(BambooInspectionRow).where(
                     BambooInspectionRow.record_id == record_id,
@@ -1286,7 +1470,7 @@ class BambooOperationsService:
                 factory_id=actor.factory_id,
                 role_code=actor.role.value,
                 signed_at=now,
-                payload_hash=hashlib.sha256(canonical).hexdigest(),
+                payload_hash=request_hash,
                 device_id=device_id,
                 request_id=request_id,
                 idempotency_key=idempotency_key,
@@ -1596,6 +1780,74 @@ class BambooOperationsService:
             return_row.result_payload = result
             session.add(return_row)
             return result
+
+    def preview_return(
+        self,
+        record_id: str,
+        *,
+        actor: BambooActor,
+        target_stages: list[BambooStage],
+    ) -> dict[str, Any]:
+        """Calculate which submissions would be invalidated without executing the return."""
+        if actor.role not in {BambooRole.SUPERVISOR, BambooRole.PLANT_MANAGER}:
+            raise BambooOperationError("RETURN_FORBIDDEN", "仅主管或厂长可以选择返工环节")
+        selected = set(target_stages)
+        if not selected:
+            raise BambooOperationError("INVALID_RETURN_STAGES", "请选择需要重写的生产环节")
+        with Session(self._engine) as session:
+            record = self._record(session, record_id, actor)
+            form_type = BambooFormType(record.form_type)
+            allowed_stages = (
+                {BambooStage.SORT}
+                if form_type is BambooFormType.SORTING
+                else {BambooStage.DIPPING, BambooStage.DRYING}
+            )
+            if not selected <= allowed_stages:
+                raise BambooOperationError(
+                    "INVALID_RETURN_STAGES",
+                    "退回环节必须属于当前独立表单",
+                )
+            invalidated_stages = {
+                stage
+                for selected_stage in selected
+                for stage in REWORK_DEPENDENCIES[selected_stage]
+                if stage
+                in (
+                    {
+                        BambooStage.SORT,
+                        BambooStage.SUPERVISOR,
+                        BambooStage.PLANT_AUDIT,
+                    }
+                    if form_type is BambooFormType.SORTING
+                    else {
+                        BambooStage.DIPPING,
+                        BambooStage.DRYING,
+                        BambooStage.SUPERVISOR,
+                        BambooStage.PLANT_AUDIT,
+                    }
+                )
+            }
+            submissions = session.scalars(
+                select(BambooStageSubmissionRow).where(
+                    BambooStageSubmissionRow.record_id == record_id,
+                    BambooStageSubmissionRow.invalidated.is_(False),
+                    BambooStageSubmissionRow.stage_key.in_(
+                        [stage.value for stage in invalidated_stages]
+                    ),
+                )
+            ).all()
+            affected_counts: dict[str, int] = {}
+            for sub in submissions:
+                affected_counts[sub.stage_key] = affected_counts.get(sub.stage_key, 0) + 1
+            earliest = min(selected, key=lambda stage: list(BambooStage).index(stage))
+            return {
+                "record_id": record_id,
+                "requested_stages": [stage.value for stage in sorted(selected)],
+                "invalidated_stages": sorted([stage.value for stage in invalidated_stages]),
+                "affected_submissions": affected_counts,
+                "resulting_stage": earliest.value,
+                "current_revision": record.revision,
+            }
 
     def list_production_records(self, actor: BambooActor) -> list[dict[str, Any]]:
         """Return the factory Bamboo records used by both mobile and Web views."""
@@ -1927,7 +2179,6 @@ class BambooOperationsService:
         approve: bool,
         note: str,
     ) -> dict[str, Any]:
-        del note
         if actor.role is not BambooRole.PLANT_MANAGER:
             raise BambooOperationError("MANAGER_REQUIRED", "仅目标工厂厂长可以审批跨厂调动")
         now = datetime.now(UTC)
@@ -1944,6 +2195,10 @@ class BambooOperationsService:
             row.target_manager_id = actor.actor_id
             row.target_manager_decision = "APPROVED" if approve else "REJECTED"
             row.target_manager_decided_at = now
+            # NOTE: DB migration needed for target_manager_note column on
+            # bamboo_personnel_transfers. Once the column exists the note will be
+            # persisted automatically; until then it lives only in the serialised response.
+            row.target_manager_note = note
             row.status = "ADMIN_PENDING" if approve else "REJECTED"
             row.revision += 1
             return self._personnel_transfer(row)
@@ -2344,6 +2599,9 @@ class BambooOperationsService:
             "claimed_by": window.claimed_by,
             "claimed_at": window.claimed_at,
             "completed_at": window.completed_at,
+            "terminated_by": window.terminated_by,
+            "terminated_at": window.terminated_at,
+            "termination_reason": window.termination_reason,
             "appeal_deadline_at": window.appeal_deadline_at,
             "appeal_claimed_by": window.appeal_claimed_by,
             "appeal_submitted_at": window.appeal_submitted_at,
@@ -2549,6 +2807,7 @@ class BambooOperationsService:
             "requested_at": row.requested_at,
             "source_manager_decision": row.source_manager_decision,
             "target_manager_decision": row.target_manager_decision,
+            "target_manager_note": getattr(row, "target_manager_note", None),
             "admin_decision": row.admin_decision,
             "admin_note": row.admin_note,
             "executed_at": row.executed_at,

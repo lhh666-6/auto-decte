@@ -1,0 +1,17 @@
+{
+  "ok": true,
+  "row": "look-row-10",
+  "directions": [
+    {"degree":"180","verdict":"pass","expected":"down","observed":"eyes, chin and upper body point down with compressed stance and lowered hair/cape","reason":"clear full-pose downward drag cue"},
+    {"degree":"202.5","verdict":"pass","expected":"down-left","observed":"downward face begins turning screen-left","reason":"even first step toward left"},
+    {"degree":"225","verdict":"pass","expected":"down-left","observed":"eyes and face diagonally down-left","reason":"both axes remain visible"},
+    {"degree":"247.5","verdict":"pass","expected":"down-left","observed":"stronger screen-left turn with residual lowered chin","reason":"continuous approach to 270"},
+    {"degree":"270","verdict":"pass","expected":"left","observed":"nose, pupils and face point screen-left","reason":"left cardinal is unmistakable"},
+    {"degree":"292.5","verdict":"pass","expected":"up-left","observed":"leftward face begins lifting","reason":"even first step toward up"},
+    {"degree":"315","verdict":"pass","expected":"up-left","observed":"eyes and face diagonally up-left with rising hair posture","reason":"both axes read clearly"},
+    {"degree":"337.5","verdict":"pass","expected":"up-left","observed":"near-up frontal pose retains a small leftward cue","reason":"one coherent step before 000"}
+  ],
+  "continuity_review": "pass with reviewed warnings: 292.5, 315 and 337.5 now raise the hands, hair and cape progressively into 000. The remaining 337.5->000 metric warning (11.2px center, 1.24 area ratio) reflects the final full up-drag spread; normal-size review shows no abrupt arm snap, identity change, attachment break or reversal.",
+  "edge_review": "pass: all normalized cells have visible padding and no clipping",
+  "warnings_reviewed": ["natural negative space between legs/hair reported as alpha-hole candidates", "000->022.5 silhouette change", "090->112.5 local diff", "157.5->180 down-pose transition", "337.5->000 center and area change visually accepted after arm-lift repair"]
+}

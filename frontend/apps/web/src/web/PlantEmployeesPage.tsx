@@ -8,6 +8,7 @@ import {
   listPlantRoleOptions,
 } from "./api";
 import type { BambooEmployee, BambooPersonnelTransfer } from "./types";
+import { useWebSession } from "./WebSessionProvider";
 import "./ledger-pages.css";
 
 const TRANSFER_STATUS_LABELS: Record<string, string> = {
@@ -21,9 +22,11 @@ const TRANSFER_STATUS_LABELS: Record<string, string> = {
 };
 
 export function PlantEmployeesPage() {
+  const { session } = useWebSession();
   const [employees, setEmployees] = useState<BambooEmployee[]>([]);
   const [transfers, setTransfers] = useState<BambooPersonnelTransfer[]>([]);
   const [roles, setRoles] = useState<Array<{ role_code: string; display_name: string }>>([]);
+  const [factories, setFactories] = useState<Array<{ factory_id: string; factory_name: string }>>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -35,8 +38,16 @@ export function PlantEmployeesPage() {
   const [reason, setReason] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
-  // 调动决定备注
-  const [decisionNote, setDecisionNote] = useState("");
+  // 调动决定备注（按 transfer_id 独立存储，避免跨调动串用）
+  const [decisionNote, setDecisionNote] = useState<Record<string, string>>({});
+
+  function getDecisionNote(transferId: string): string {
+    return decisionNote[transferId] || "";
+  }
+
+  function setDecisionNoteFor(transferId: string, note: string) {
+    setDecisionNote((prev) => ({ ...prev, [transferId]: note }));
+  }
 
   function reload() {
     setLoading(true);
@@ -44,10 +55,12 @@ export function PlantEmployeesPage() {
       listPlantEmployees(),
       listPlantPersonnelTransfers(),
       listPlantRoleOptions(),
-    ]).then(([people, movement, options]) => {
+      fetch("/api/v1/plant/factories", { credentials: "include" }).then((r) => r.json()) as Promise<{ items: Array<{ factory_id: string; factory_name: string }> }>,
+    ]).then(([people, movement, options, factoryResult]) => {
       setEmployees(people.items);
       setTransfers(movement.items);
       setRoles(options.items);
+      setFactories(factoryResult.items || []);
       setLoading(false);
     }).catch((cause: unknown) => {
       setError(cause instanceof Error ? cause.message : "人员数据加载失败");
@@ -95,7 +108,7 @@ export function PlantEmployeesPage() {
   ) {
     try {
       await decidePlantPersonnelTransfer(transferId, approve, note);
-      setDecisionNote("");
+      setDecisionNoteFor(transferId, "");
       reload();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "调动决定失败");
@@ -208,19 +221,22 @@ export function PlantEmployeesPage() {
           </label>
 
           <label>
-            目标工厂（留空则为本厂调动）
-            <input
-              value={targetFactory}
-              onChange={(event) => setTargetFactory(event.target.value)}
-              placeholder="输入目标工厂 ID，留空为本厂内调动"
-            />
+            目标工厂（留空则为本厂调岗）
+            <select value={targetFactory} onChange={(event) => setTargetFactory(event.target.value)}>
+              <option value="">本厂调岗（{session?.factory_name || session?.factory_id || "当前工厂"}）</option>
+              {factories.map((f) => (
+                <option key={f.factory_id} value={f.factory_id}>
+                  {f.factory_name}（{f.factory_id}）
+                </option>
+              ))}
+            </select>
           </label>
 
           {targetFactory && selectedEmployee && (
             <div className={`ledger-transfer-type ${isIntraPlant(selectedEmployee, targetFactory) ? "ledger-transfer-intra" : "ledger-transfer-cross"}`}>
               {isIntraPlant(selectedEmployee, targetFactory)
-                ? "本厂调动 — 仅需你审批"
-                : "跨厂调动 — 需目标厂长审批后由管理员执行"}
+                ? "本厂调岗 — 由你发起，提交后由管理员执行"
+                : "跨厂调动 — 你发起 → 目标厂长审批 → 管理员最终执行"}
             </div>
           )}
 
@@ -289,31 +305,35 @@ export function PlantEmployeesPage() {
                 {item.reason && ` · 原因：${item.reason}`}
               </p>
 
-              {/* 当前厂长（目标厂长）可审批 */}
+              {/* 当前厂长（目标厂长）可审批；非目标工厂仅展示状态 */}
               {item.status === "TARGET_MANAGER_PENDING" && item.target_factory_id && (
-                <div className="ledger-exception-actions">
-                  <textarea
-                    aria-label="审批意见"
-                    value={decisionNote}
-                    onChange={(event) => setDecisionNote(event.target.value)}
-                    placeholder="审批意见（可选）"
-                  />
-                  <div className="ledger-inline-actions">
-                    <button
-                      type="button"
-                      onClick={() => void handleTransferDecision(item.transfer_id, true, decisionNote || "目标厂长同意")}
-                    >
-                      同意
-                    </button>
-                    <button
-                      type="button"
-                      className="secondary-button"
-                      onClick={() => void handleTransferDecision(item.transfer_id, false, decisionNote || "目标厂长拒绝")}
-                    >
-                      拒绝
-                    </button>
+                session?.factory_id === item.target_factory_id ? (
+                  <div className="ledger-exception-actions">
+                    <textarea
+                      aria-label="审批意见"
+                      value={getDecisionNote(item.transfer_id)}
+                      onChange={(event) => setDecisionNoteFor(item.transfer_id, event.target.value)}
+                      placeholder="审批意见（可选）"
+                    />
+                    <div className="ledger-inline-actions">
+                      <button
+                        type="button"
+                        onClick={() => void handleTransferDecision(item.transfer_id, true, getDecisionNote(item.transfer_id) || "目标厂长同意")}
+                      >
+                        同意
+                      </button>
+                      <button
+                        type="button"
+                        className="secondary-button"
+                        onClick={() => void handleTransferDecision(item.transfer_id, false, getDecisionNote(item.transfer_id) || "目标厂长拒绝")}
+                      >
+                        拒绝
+                      </button>
+                    </div>
                   </div>
-                </div>
+                ) : (
+                  <p className="signature-muted">等待目标厂长审批</p>
+                )
               )}
             </article>
           ))}

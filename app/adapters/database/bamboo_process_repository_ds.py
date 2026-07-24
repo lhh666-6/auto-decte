@@ -496,12 +496,23 @@ class SqlAlchemyBambooProcessRepository:
             self._create_joint_fact(session, record, submission, signature)
         elif submission.stage is BambooStage.PLANT_AUDIT:
             self._activate_payroll_and_export(session, record, submission, signature)
-        if submission.stage is BambooStage.SUPERVISOR:
-            opened_at = submission.submitted_at
-            if opened_at is None:  # pragma: no cover - signed submissions have server time
-                raise RuntimeError("supervisor submission is missing server time")
+        # Create inspection window when the last production stage is submitted
+        # (SORT for SORTING, DRYING for DIPPING_DRYING). Inspectors can then work
+        # in parallel with the supervisor instead of waiting for supervisor sign-off.
+        # SUPERVISOR submission is kept as a fallback for records created before
+        # this change shipped.
+        is_last_production = (
+            (record.form_type is BambooFormType.SORTING
+             and submission.stage is BambooStage.SORT)
+            or (record.form_type is BambooFormType.DIPPING_DRYING
+                and submission.stage is BambooStage.DRYING)
+        )
+        if is_last_production or submission.stage is BambooStage.SUPERVISOR:
             window = session.get(BambooInspectionWindowRow, record.record_id)
             if window is None:
+                opened_at = submission.submitted_at
+                if opened_at is None:  # pragma: no cover - signed submissions have server time
+                    raise RuntimeError("submission is missing server time")
                 session.add(
                     BambooInspectionWindowRow(
                         record_id=record.record_id,

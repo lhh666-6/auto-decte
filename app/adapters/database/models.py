@@ -1004,12 +1004,15 @@ class BambooInspectionWindowRow(Base):
     status: Mapped[str] = mapped_column(String, nullable=False)
     claimed_by: Mapped[str | None] = mapped_column(String)
     claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    claim_idempotency_key: Mapped[str | None] = mapped_column(String)
+    claim_payload_hash: Mapped[str | None] = mapped_column(String(64))
     inspection_id: Mapped[str | None] = mapped_column(
         ForeignKey("bamboo_inspections.inspection_id")
     )
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     terminated_by: Mapped[str | None] = mapped_column(String)
     terminated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    termination_reason: Mapped[str | None] = mapped_column(String(2000))
     appeal_deadline_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     appeal_claimed_by: Mapped[str | None] = mapped_column(String)
     appeal_claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -1180,6 +1183,7 @@ class BambooPersonnelTransferRow(Base):
     source_manager_decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     target_manager_id: Mapped[str | None] = mapped_column(String)
     target_manager_decision: Mapped[str | None] = mapped_column(String)
+    target_manager_note: Mapped[str | None] = mapped_column(String(2000))
     target_manager_decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     admin_id: Mapped[str | None] = mapped_column(String)
     admin_decision: Mapped[str | None] = mapped_column(String)
@@ -1355,6 +1359,8 @@ class SubmissionCorrectionRow(Base):
     status: Mapped[str] = mapped_column(String, nullable=False)
     idempotency_key: Mapped[str | None] = mapped_column(String)
     request_hash: Mapped[str | None] = mapped_column(String(64))
+    correction_type: Mapped[str | None] = mapped_column(String(50))
+    supplementary_note: Mapped[str | None] = mapped_column(String(500))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     replaced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -1540,6 +1546,7 @@ class GovernedExportBatchRow(Base):
         String,
         nullable=True,
     )
+    record_count: Mapped[int | None] = mapped_column(Integer)
 
 
 class ExportCellLineageRow(Base):

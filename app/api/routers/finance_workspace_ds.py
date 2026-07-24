@@ -183,6 +183,8 @@ def create_correction(
             requested_by=actor.employee_code,
             assigned_to=assigned_to,
             idempotency_key=idempotency_key.strip(),
+            correction_type=body.correction_type,
+            supplementary_note=body.supplementary_note,
         )
     except SubmissionLedgerError as error:
         status_code_http = (

@@ -43,13 +43,13 @@ export function FinanceOverviewEnhancement() {
           officialRecordsMonth: ledgerSum.month,
           exceptions: null, // no dedicated exceptions API yet; real data requires separate endpoint
           pendingCorrections: correctionsRes.items.filter(
-            (c: SubmissionCorrection) => c.status === "PENDING_REVIEW" || c.status === "SUBMITTED",
+            (c: SubmissionCorrection) => c.status === "RETURNED",
           ).length,
           pendingReview: correctionsRes.items.filter(
-            (c: SubmissionCorrection) => c.status === "PENDING_REVIEW",
+            (c: SubmissionCorrection) => c.status === "REPLACED",
           ).length,
           needReExport: exportsRes.items.filter(
-            (e: GovernedExportBatch) => e.status === "FAILED" || e.status === "EXPIRED" || e.status === "SUPERSEDED",
+            (e: GovernedExportBatch) => e.status === "FAILED" || e.status === "EXPIRED",
           ).length,
           recentBatches: batchesRes.items.slice(0, 3),
           recentExports: exportsRes.items.slice(0, 3),
@@ -80,15 +80,15 @@ export function FinanceOverviewEnhancement() {
         </button>
         <button type="button" className="finance-overview-main-card" onClick={() => go("/finance/exceptions")}>
           <span className="finance-overview-main-card-value alert">{kpiValue(data.exceptions)}</span>
-          <span className="finance-overview-main-card-label">异常记录</span>
+          <span className="finance-overview-main-card-label">诊断</span>
         </button>
         <button type="button" className="finance-overview-main-card" onClick={() => go("/finance/exceptions")}>
           <span className="finance-overview-main-card-value">{kpiValue(data.pendingCorrections)}</span>
-          <span className="finance-overview-main-card-label">待更正</span>
+          <span className="finance-overview-main-card-label">待重新填报更正</span>
         </button>
         <button type="button" className="finance-overview-main-card" onClick={() => go("/finance/today")}>
           <span className="finance-overview-main-card-value">{kpiValue(data.pendingReview)}</span>
-          <span className="finance-overview-main-card-label">待审批版本</span>
+          <span className="finance-overview-main-card-label">待财务复核</span>
         </button>
       </div>
 

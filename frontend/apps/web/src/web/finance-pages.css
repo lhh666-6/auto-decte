@@ -2025,6 +2025,14 @@
   background: #fef5f5;
 }
 
+.finance-precheck-item--neutral {
+  background: #f8fafc;
+}
+
+.finance-precheck-item--neutral .finance-precheck-label {
+  color: #8593a8;
+}
+
 .finance-precheck-icon {
   font-size: 14px;
   text-align: center;

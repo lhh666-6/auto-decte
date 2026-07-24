@@ -1,0 +1,7 @@
+Create one clean full-body reference sprite for Codex pet Lance.
+
+Pet identity: Original compact blue shark scholar companion inspired by the reference: oversized expressive deep-blue eyes, cobalt-blue hair tuft, rounded shark hood silhouette with dorsal fin and side fins, white-and-blue hoodie-like body, small attached shark tail. Thoughtful, methodical, quietly playful, resilient. No notebook or detached props; intelligence is conveyed through focused expressions and careful gestures. Distinct original mascot, not a copy of any known character..
+Style: Pet-safe sprite: compact full-body mascot, readable in a 192x208 cell, clear silhouette, simple face, stable palette/materials, and crisp edges for chroma-key extraction. Style `auto`: Infer the most appropriate pet-safe style from the user request and reference images, then keep that exact style consistent across every row. User style notes: Polished chibi anime mascot with slight soft 3D-toy volume, bold clean shapes, minimal tiny details, compact full-body silhouette readable at 192x208, consistent blue-white palette..
+
+
+Place a single centered pose on a perfectly flat pure green #00FF00 chroma-key background. Keep the full pet visible, compact, readable at 192x208, and easy to animate. Preserve approved reference identity cues. No scenery, text, borders, checkerboard transparency, shadows, glows, detached effects, or extra props. Keep #00FF00 and close colors out of the pet, props, highlights, and effects.

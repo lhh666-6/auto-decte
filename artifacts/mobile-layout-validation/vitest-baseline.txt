@@ -1,0 +1,15 @@
+[36m [2m❯[22m packages/shell-ports/src/ports_ds.test.ts:[2m92:49[22m[39m
+    [90m 90| [39m[90m// FileHandle read returns Promise<Uint8Array>[39m
+    [90m 91| [39m[35mconst[39m _fileHandle[33m:[39m [33mFileHandle[39m [33m=[39m {} [35mas[39m [33mFileHandle[39m[33m;[39m
+    [90m 92| [39m[35mconst[39m _bytes[33m:[39m [33mPromise[39m[33m<[39m[33mUint8Array[39m[33m>[39m [33m=[39m _fileHandle[33m.[39m[34mread[39m()[33m;[39m
+    [90m   | [39m                                                [31m^[39m
+    [90m 93| [39m[35mvoid[39m _bytes[33m;[39m
+    [90m 94| [39m
+
+[31m[2m⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯[22m[39m
+
+[2m Test Files [22m [1m[31m2 failed[39m[22m[2m | [22m[1m[32m59 passed[39m[22m[90m (61)[39m
+[2m      Tests [22m [1m[32m286 passed[39m[22m[90m (286)[39m
+[2m   Start at [22m 00:22:35
+[2m   Duration [22m 19.36s[2m (transform 13.68s, setup 0ms, collect 93.91s, tests 31.65s, environment 337.92s, prepare 25.37s)[22m
+
