@@ -19,6 +19,8 @@ import { RequireMobileSession } from "../mobile/session/RequireMobileSession";
 import { RequireWebSession } from "../web/RequireWebSession";
 import { AdminAISettingsPage } from "../web/AdminAISettingsPage";
 import { AdminAuditPage } from "../web/AdminAuditPage";
+import { AdminFactoriesPage } from "../web/AdminFactoriesPage";
+import { AdminOverviewPage } from "../web/AdminOverviewPage";
 import { AdminFormApprovalsPage } from "../web/AdminFormApprovalsPage";
 import { AdminNotificationsPage } from "../web/AdminNotificationsPage";
 import { AdminOrganizationPage } from "../web/AdminOrganizationPage";
@@ -30,6 +32,7 @@ import { AdminWorkflowApprovalsPage } from "../web/AdminWorkflowApprovalsPage";
 import { BusinessModelingPage } from "../web/BusinessModelingPage";
 import { FinanceExceptionsPage } from "../web/FinanceExceptionsPage";
 import { FinanceFormsPage } from "../web/FinanceFormsPage";
+import { FinancePositionDataPage } from "../web/FinancePositionDataPage";
 import { FinanceLedgerPage } from "../web/FinanceLedgerPage";
 import { FinanceOverviewEnhancement } from "../web/FinanceOverviewEnhancement";
 import { FinanceGovernedExportsPage } from "../web/FinanceGovernedExportsPage";
@@ -110,7 +113,12 @@ export function AppRoutes() {
         <Route path="login" element={<WebLoginPage />} />
 
         <Route path="finance" element={<WebWorkspaceLayout workspace="FINANCE" />}>
-          <Route index element={<Navigate to="/finance/overview" replace />} />
+          <Route index element={<Navigate to="/finance/position-data" replace />} />
+          <Route path="position-data" element={<FinancePositionDataPage />} />
+          <Route path="payroll" element={<PayrollResultsPage workspace="plant" />} />
+          <Route path="payroll-rules" element={<PayrollRulesPage />} />
+          <Route path="exports" element={<FinanceGovernedExportsPage />} />
+          {/* V1 暂缓: overview, forms, workflows, business-modeling, today, month, year, exceptions, report-templates */}
           <Route path="overview" element={<FinanceOverviewEnhancement />} />
           <Route path="forms" element={<FinanceFormsPage />} />
           <Route path="workflows" element={<WorkflowDesignerPage />} />
@@ -119,18 +127,18 @@ export function AppRoutes() {
           <Route path="month" element={<FinanceLedgerPage scope="month" />} />
           <Route path="year" element={<FinanceLedgerPage scope="year" />} />
           <Route path="exceptions" element={<FinanceExceptionsPage />} />
-          <Route path="payroll-rules" element={<PayrollRulesPage />} />
           <Route path="report-templates" element={<FinanceReportTemplatesPage />} />
-          <Route path="exports" element={<FinanceGovernedExportsPage />} />
           <Route path="*" element={<WorkspaceComingSoon />} />
         </Route>
 
         <Route path="admin" element={<WebWorkspaceLayout workspace="ADMIN" />}>
           <Route index element={<Navigate to="/admin/overview" replace />} />
-          <Route path="overview" element={<WorkspaceOverviewPage workspace="ADMIN" />} />
+          <Route path="overview" element={<AdminOverviewPage />} />
           <Route path="organization" element={<AdminOrganizationPage />} />
-          <Route path="roles" element={<AdminRolesPage />} />
+          <Route path="factories" element={<AdminFactoriesPage />} />
           <Route path="audit" element={<AdminAuditPage />} />
+          {/* V1 暂缓导航入口，路由保留: roles, notifications, form-approvals, workflow-approvals, payroll-approvals, version-exceptions, ai-settings, payroll, report-templates */}
+          <Route path="roles" element={<AdminRolesPage />} />
           <Route path="notifications" element={<AdminNotificationsPage />} />
           <Route path="form-approvals" element={<AdminFormApprovalsPage />} />
           <Route path="workflow-approvals" element={<AdminWorkflowApprovalsPage />} />

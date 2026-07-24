@@ -25,33 +25,21 @@ const NAVIGATION: Record<WorkspaceRole, {
   FINANCE: {
     label: "财务工作区导航",
     links: [
-      { to: "/finance/overview", label: "财务概览" },
-      { to: "/finance/today", label: "今日提交" },
-      { to: "/finance/month", label: "月度统计" },
-      { to: "/finance/year", label: "年度统计" },
-      { to: "/finance/exceptions", label: "异常记录" },
-      { to: "/finance/forms", label: "表单查询" },
-      { to: "/finance/workflows", label: "工作流管理" },
-      { to: "/finance/business-modeling", label: "业务建模" },
-      { to: "/finance/payroll-rules", label: "工资规则" },
-      { to: "/finance/report-templates", label: "报表模板" },
-      { to: "/finance/exports", label: "报表导出" },
+      { to: "/finance/position-data", label: "岗位数据" },
+      { to: "/finance/payroll", label: "工资数据" },
+      { to: "/finance/payroll-rules", label: "业务预设" },
+      { to: "/finance/exports", label: "导出历史" },
+      // V1 暂缓: 财务概览, 今日提交, 月度统计, 年度统计, 异常记录, 表单查询, 工作流管理, 业务建模, 报表模板
     ],
   },
   ADMIN: {
     label: "管理工作区导航",
     links: [
-      { to: "/admin/overview", label: "系统概览" },
-      { to: "/admin/organization", label: "组织架构" },
-      { to: "/admin/roles", label: "角色权限" },
-      { to: "/admin/form-approvals", label: "表单审批" },
-      { to: "/admin/workflow-approvals", label: "流程审批" },
-      { to: "/admin/payroll-approvals", label: "工资审批" },
-      { to: "/admin/version-exceptions", label: "版本异常" },
-      { to: "/admin/report-templates", label: "报表模板" },
-      { to: "/admin/ai-settings", label: "智能服务" },
-      { to: "/admin/notifications", label: "通知管理" },
-      { to: "/admin/audit", label: "审计日志" },
+      { to: "/admin/overview", label: "业务全景" },
+      { to: "/admin/organization", label: "组织与员工" },
+      { to: "/admin/factories", label: "工厂与岗位" },
+      { to: "/admin/audit", label: "审计记录" },
+      // V1 暂缓: 角色权限, 表单审批, 流程审批, 工资审批, 版本异常, 报表模板, 智能服务, 通知管理
     ],
   },
 };

@@ -94,7 +94,7 @@ TEST_ACCOUNTS = [
         "web_roles": [],
         "factory_id": "PLANT_A",
         "factory_name": "甲厂",
-        "bamboo_role": "SORT",
+        "bamboo_role": "SORT_OPERATOR",
         "position": "分选操作员",
     },
 ]

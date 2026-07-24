@@ -23,6 +23,7 @@ from app.application.mobile_identity_ds import (
     MobileSessionRecord,
     hash_pin,
 )
+from app.modules.bamboo_process.models_ds import BambooRole
 
 EMPLOYEE_CATALOG = "employees"
 
@@ -165,6 +166,13 @@ class SqlAlchemyMobileIdentityRepository:
                 )
             )
             if factory_id and bamboo_role:
+                try:
+                    BambooRole(bamboo_role)
+                except ValueError as error:
+                    raise ValueError(
+                        f"bamboo_role {bamboo_role!r} 不是有效的竹丝工序角色，"
+                        f"有效值: {[r.value for r in BambooRole]}"
+                    ) from error
                 session.merge(
                     BambooFactoryRow(
                         factory_id=factory_id,

@@ -6,9 +6,9 @@ import hashlib
 import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Protocol
+from typing import Any, Protocol
 
-from app.adapters.templates.print_renderer_ds import TemplatePrintRenderer
+# OCR retired: TemplatePrintRenderer — seed templates no longer render paper artifacts
 from app.domain.templates_ds import (
     ExportTarget,
     FieldDefinition,
@@ -22,11 +22,9 @@ from app.modules.templates.core_payroll_layouts_ds import (
     core_payroll_metadata,
     core_payroll_seed_templates,
 )
-from app.modules.templates.payroll_profiles_ds import (
-    reviewed_payroll_export_seed_templates,
-    reviewed_payroll_metadata,
-    reviewed_payroll_seed_templates,
-)
+
+# OCR retired: payroll_profiles_ds — reviewed_payroll_seed_templates removed
+# These are now in core_payroll_layouts_ds with different names
 
 _WORKBOOK = "企业工资记录.xlsx"
 _SEED_METADATA = {
@@ -34,7 +32,7 @@ _SEED_METADATA = {
     "PAYROLL_STANDARD_PIECE": ("标准计件单", "适用于标准计件生产记录"),
     "PAYROLL_FIXED_PRODUCTION_GRID": ("固定生产明细单", "适用于固定生产明细岗位"),
     "PAYROLL_EQUIPMENT_PROCESS": ("设备工序单", "适用于设备与工序计件岗位"),
-    **reviewed_payroll_metadata(),
+    # OCR retired: reviewed_payroll_metadata()
     **core_payroll_metadata(),
 }
 _COMMON_FIELDS = (
@@ -147,15 +145,14 @@ def all_payroll_seed_templates() -> tuple[TemplateVersion, ...]:
     """Return historical templates plus the six controlled V2 core layouts."""
     return (
         legacy_payroll_seed_templates()
-        + reviewed_payroll_seed_templates()
-        + reviewed_payroll_export_seed_templates()
+        # OCR retired: reviewed_payroll_seed_templates() + reviewed_payroll_export_seed_templates()
         + core_payroll_seed_templates()
     )
 
 
 def install_legacy_payroll_seed_templates(
     repository: SeedTemplateRepository,
-    renderer: TemplatePrintRenderer,
+    renderer: Any,  # was TemplatePrintRenderer (OCR retired)
 ) -> SeedInstallResult:
     """Install reviewed V1 templates once and repair a missing artifact kind on retry."""
     installed: list[str] = []
@@ -255,7 +252,7 @@ def _field(
 
 def _install_missing_artifacts(
     repository: SeedTemplateRepository,
-    renderer: TemplatePrintRenderer,
+    renderer: Any,  # was TemplatePrintRenderer (OCR retired)
     version: TemplateVersion,
 ) -> None:
     base_name = f"{version.template_key}-v{version.version}"

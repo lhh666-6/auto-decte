@@ -37,11 +37,11 @@ export function BambooOperationsPanel({
   const [summary, setSummary] = useState<BambooOperationsSummary | null>(null);
   const [inquiries, setInquiries] = useState<Array<{ inquiry_id: string; subject: string; status: string; messages: Array<{ actor_name: string; body: string }> }>>([]);
   const productionStages = useMemo<BambooStage[]>(() => record.form_type === "DIPPING_DRYING" ? ["DIPPING", "DRYING"] : ["SORT"], [record.form_type]);
-  const [targetStage, setTargetStage] = useState<BambooStage>(() => record.form_type === "DIPPING_DRYING" ? "DIPPING" : "SORT");
+  const [targetStage, setTargetStage] = useState<BambooStage>(() => record.form_type === "DIPPING_DRYING" ? "DRYING" : "SORT");
   const [note, setNote] = useState("");
   const [photos, setPhotos] = useState<File[]>([]);
   const [audio, setAudio] = useState<File | null>(null);
-  const [moisturePoints, setMoisturePoints] = useState<number[]>([0, 0, 0]);
+  const [moisturePoints, setMoisturePoints] = useState<number[]>([]);
   const [conclusion, setConclusion] = useState<"CONFORMING" | "NONCONFORMING" | null>(null);
   const [showConfirm, setShowConfirm] = useState(false);
   const [submitSuccess, setSubmitSuccess] = useState<BambooInspection | null>(null);
@@ -279,6 +279,12 @@ export function BambooOperationsPanel({
             <h3>检测与证据留痕</h3>
             {inspectionQueueBlock()}
             {windowStatusBlock()}
+            {role === "INSPECTOR" && summary && !currentWindow && (
+              <div className="card empty" style={{ margin: "12px 0" }}>
+                <h3>当前记录尚未生成检测窗口</h3>
+                <p>请确认生产工序已完成提交。如已提交，请联系主管或管理员确认检测窗口状态。</p>
+              </div>
+            )}
             {existingInspectionsList()}
 
             {currentWindow?.status === "OPEN" && (
@@ -301,8 +307,11 @@ export function BambooOperationsPanel({
                         <input
                           aria-label={`含水率检测点 ${index + 1}`}
                           type="number"
-                          step="0.1"
-                          value={value}
+                          step="1"
+                          min="1"
+                          max="100"
+                          inputMode="numeric"
+                          value={value || ""}
                           onChange={(event) => setMoisturePoints(moisturePoints.map((item, itemIndex) => itemIndex === index ? Number(event.target.value) : item))}
                         />
                       </label>
@@ -310,7 +319,7 @@ export function BambooOperationsPanel({
                   </div>
                   <div className="bamboo-point-actions">
                     <button type="button" disabled={moisturePoints.length >= 20} onClick={() => setMoisturePoints([...moisturePoints, 0])}>增加检测点</button>
-                    <button type="button" disabled={moisturePoints.length <= 1} onClick={() => setMoisturePoints(moisturePoints.slice(0, -1))}>删除最后一个</button>
+                    <button type="button" disabled={moisturePoints.length === 0} onClick={() => setMoisturePoints(moisturePoints.slice(0, -1))}>删除最后一个</button>
                   </div>
                   <p className="bamboo-moisture-average">已填写 {moisturePoints.length} 点 · 平均值 {moistureAvg ?? "—"}%</p>
                 </fieldset>

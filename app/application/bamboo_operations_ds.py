@@ -1153,6 +1153,92 @@ class BambooOperationsService:
                 for row in rows
             ]
 
+    def list_factories_for_admin(self) -> list[dict[str, Any]]:
+        """List all active factories (no actor check — for admin page use)."""
+        with Session(self._engine) as session:
+            rows = session.scalars(
+                select(BambooFactoryRow)
+                .where(BambooFactoryRow.active.is_(True))
+                .order_by(BambooFactoryRow.name)
+            ).all()
+            return [
+                {"factory_id": row.factory_id, "code": row.code, "name": row.name}
+                for row in rows
+            ]
+
+    def list_position_data(
+        self,
+        *,
+        factory_id: str | None = None,
+        stage: str | None = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        employee_code: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """V1: Query production records with submissions for finance position view."""
+        from datetime import UTC, datetime
+
+        with Session(self._engine) as session:
+            query = (
+                select(
+                    BambooRecordRow,
+                    BambooStageSubmissionRow,
+                )
+                .join(
+                    BambooStageSubmissionRow,
+                    BambooStageSubmissionRow.record_id == BambooRecordRow.record_id,
+                )
+                .where(
+                    BambooStageSubmissionRow.invalidated.is_(False),
+                )
+                .order_by(
+                    BambooStageSubmissionRow.submitted_at.desc(),
+                )
+            )
+            if factory_id:
+                query = query.where(BambooRecordRow.factory_id == factory_id)
+            if stage:
+                query = query.where(BambooStageSubmissionRow.stage_key == stage)
+            if date_from:
+                dt_from = datetime.fromisoformat(date_from).replace(tzinfo=UTC)
+                query = query.where(BambooStageSubmissionRow.submitted_at >= dt_from)
+            if date_to:
+                dt_to = datetime.fromisoformat(date_to).replace(tzinfo=UTC)
+                query = query.where(BambooStageSubmissionRow.submitted_at <= dt_to)
+            if employee_code:
+                query = query.where(
+                    BambooStageSubmissionRow.actor_id == employee_code,
+                )
+
+            rows = session.execute(query).all()
+            items: list[dict[str, Any]] = []
+            for record, submission in rows:
+                base = record.base_info or {}
+                items.append({
+                    "record_id": record.record_id,
+                    "display_no": record.display_no,
+                    "form_type": record.form_type,
+                    "factory_id": record.factory_id,
+                    "date": submission.submitted_at.isoformat() if submission.submitted_at else "",
+                    "employee_code": submission.actor_id,
+                    "employee_name": submission.actor_name,
+                    "stage": submission.stage_key,
+                    "cage_no": str(base.get("cage_no", "")),
+                    "values": submission.values,
+                    "status": record.status,
+                    "current_stage": record.current_stage or "",
+                })
+            return items
+
+    # ── Roles that a PLANT_MANAGER is allowed to assign ──
+    _MANAGER_ASSIGNABLE_ROLES: set[str] = {
+        BambooRole.SORT_OPERATOR.value,
+        BambooRole.DIPPING_OPERATOR.value,
+        BambooRole.DRYING_RACK_OPERATOR.value,
+        BambooRole.INSPECTOR.value,
+        BambooRole.SUPERVISOR.value,
+    }
+
     def create_factory_employee(
         self,
         *,
@@ -1160,46 +1246,79 @@ class BambooOperationsService:
         employee_name: str,
         initial_pin: str,
         role_code: str,
+        employee_code: str = "",
+        factory_id: str = "",
+        web_roles: list[str] | None = None,
     ) -> dict[str, Any]:
-        if actor.role is not BambooRole.PLANT_MANAGER:
-            raise BambooOperationError("MANAGER_REQUIRED", "仅厂长可新增本厂人员")
-        manager_roles = PRODUCTION_ROLES | {
-            BambooRole.INSPECTOR.value,
-            BambooRole.SUPERVISOR.value,
-        }
-        if role_code not in manager_roles:
+        # ── Role validation: reject stage codes ──
+        try:
+            BambooRole(role_code)
+        except ValueError as error:
+            raise BambooOperationError(
+                "INVALID_ROLE_CODE",
+                f"角色代码 {role_code!r} 无效，有效值: {[r.value for r in BambooRole]}",
+            ) from error
+
+        is_admin = actor.role is BambooRole.SYSTEM_ADMIN
+        is_manager = actor.role is BambooRole.PLANT_MANAGER
+        if not is_admin and not is_manager:
+            raise BambooOperationError("MANAGER_REQUIRED", "仅厂长或管理员可新增人员")
+
+        if is_manager and role_code not in self._MANAGER_ASSIGNABLE_ROLES:
             raise BambooOperationError("ASSIGNMENT_FORBIDDEN", "厂长不能分配该职位")
+
         name = employee_name.strip()
         if not name:
             raise BambooOperationError("EMPLOYEE_NAME_REQUIRED", "请填写员工姓名")
+
+        target_factory_id = factory_id or actor.factory_id
+        web_role_list = web_roles or (["WORKER"] if is_manager else [])
+
         now = datetime.now(UTC)
         with Session(self._engine) as session, session.begin():
-            factory = session.get(BambooFactoryRow, actor.factory_id)
-            role = session.get(BambooRoleDefinitionRow, role_code)
+            # ── Validate factory ──
+            factory = session.get(BambooFactoryRow, target_factory_id)
             if factory is None or not factory.active:
-                raise BambooOperationError("FACTORY_NOT_FOUND", "当前工厂不存在或已停用")
+                raise BambooOperationError("FACTORY_NOT_FOUND", "目标工厂不存在或已停用")
+
+            # ── Validate role definition ──
+            role = session.get(BambooRoleDefinitionRow, role_code)
             if role is None or not role.active:
                 raise BambooOperationError(
                     "ROLE_NOT_PUBLISHED",
                     "该职位尚未由管理员发布或已经停用",
                 )
-            codes = session.scalars(
-                select(MasterDataRecordRow.code).where(
-                    MasterDataRecordRow.catalog == "employees",
-                    MasterDataRecordRow.code.like("YG%"),
+
+            # ── Determine employee_code ──
+            if employee_code:
+                code = employee_code.strip()
+                existing = session.get(
+                    MasterDataRecordRow, ("employees", code),
                 )
-            ).all()
-            sequence = max(
-                (int(code[2:]) for code in codes if code[2:].isdigit()),
-                default=0,
-            ) + 1
-            employee_code = f"YG{sequence:04d}"
+                if existing is not None:
+                    raise BambooOperationError(
+                        "EMPLOYEE_CODE_EXISTS",
+                        f"工号 {code!r} 已存在，请使用其他工号。",
+                    )
+            else:
+                codes = session.scalars(
+                    select(MasterDataRecordRow.code).where(
+                        MasterDataRecordRow.catalog == "employees",
+                        MasterDataRecordRow.code.like("YG%"),
+                    )
+                ).all()
+                sequence = max(
+                    (int(c[2:]) for c in codes if c[2:].isdigit()),
+                    default=0,
+                ) + 1
+                code = f"YG{sequence:04d}"
+
             session.add(
                 MasterDataRecordRow(
                     catalog="employees",
-                    code=employee_code,
+                    code=code,
                     display_name=name,
-                    attributes={"factory_id": actor.factory_id},
+                    attributes={"factory_id": target_factory_id},
                     active=True,
                     revision=1,
                     created_at=now,
@@ -1213,7 +1332,7 @@ class BambooOperationsService:
             session.add(
                 MobileCredentialRow(
                     employee_catalog="employees",
-                    employee_code=employee_code,
+                    employee_code=code,
                     pin_salt=salt,
                     pin_hash=digest,
                     failed_attempts=0,
@@ -1225,13 +1344,15 @@ class BambooOperationsService:
             session.add(
                 MobileAccessProfileRow(
                     employee_catalog="employees",
-                    employee_code=employee_code,
-                    team_id=f"TEAM-{actor.factory_id}",
+                    employee_code=code,
+                    team_id=f"TEAM-{target_factory_id}",
                     team_name=factory.name,
                     position=role.display_name,
-                    roles=["WORKER"],
+                    roles=web_role_list,
                     allowed_form_types=[],
                     allowed_processes=["BAMBOO_PROCESS"],
+                    factory_id=target_factory_id,
+                    factory_name=factory.name,
                     active=True,
                 )
             )
@@ -1239,8 +1360,8 @@ class BambooOperationsService:
             assignment = EmployeeBambooAssignmentRow(
                 assignment_id=f"MBA-{uuid4().hex}",
                 employee_catalog="employees",
-                employee_code=employee_code,
-                factory_id=actor.factory_id,
+                employee_code=code,
+                factory_id=target_factory_id,
                 role_code=role_code,
                 status="ACTIVE",
                 effective_at=now,
@@ -1250,10 +1371,13 @@ class BambooOperationsService:
             )
             session.add(assignment)
             return {
-                "employee_code": employee_code,
+                "employee_code": code,
                 "employee_name": name,
                 "role_code": role_code,
                 "role_name": role.display_name,
+                "factory_id": target_factory_id,
+                "factory_name": factory.name,
+                "web_roles": web_role_list,
             }
 
     def list_actor_history(self, actor: BambooActor) -> list[dict[str, Any]]:

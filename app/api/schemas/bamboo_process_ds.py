@@ -172,6 +172,15 @@ class CreateFactoryEmployeeRequest(BaseModel):
     role_code: str = Field(min_length=1, max_length=64)
 
 
+class AdminCreateEmployeeRequest(BaseModel):
+    employee_code: str = Field(min_length=1, max_length=100)
+    employee_name: str = Field(min_length=1, max_length=100)
+    factory_id: str = Field(min_length=1, max_length=64)
+    bamboo_role: str = Field(min_length=1, max_length=64)
+    web_roles: list[str] = Field(default_factory=list)
+    initial_pin: str = Field(min_length=4, max_length=12, pattern=r"^\d+$")
+
+
 class CreateFactoryRequest(BaseModel):
     code: str = Field(min_length=1, max_length=64)
     name: str = Field(min_length=1, max_length=200)

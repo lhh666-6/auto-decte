@@ -34,9 +34,11 @@ from app.adapters.database.report_definition_repository_ds import (
 from app.adapters.database.repositories import SqlAlchemyFormRepository
 from app.adapters.database.template_repository_ds import SqlAlchemyTemplateRepository
 from app.adapters.export.xlsx import XlsxExporter
-from app.adapters.recognition.opencv import OpenCvImagePipeline
+
+# from app.adapters.recognition.opencv import OpenCvImagePipeline  # OCR retired
 from app.adapters.storage.local import LocalEvidenceStorage
-from app.adapters.templates.print_renderer_ds import TemplatePrintRenderer
+
+# OCR retired: TemplatePrintRenderer
 from app.adapters.vector.local import LocalVectorIndex
 from app.application.ai_review_forms import AIReviewForms
 from app.application.bamboo_operations_ds import BambooOperationsService
@@ -46,7 +48,8 @@ from app.application.import_forms import ImportForms
 from app.application.job_profiles_ds import JobProfiles
 from app.application.mobile_identity_ds import MobileIdentityService
 from app.application.query_forms import QueryForms
-from app.application.recognize_forms import RecognizeForms
+
+# OCR retired: RecognizeForms
 from app.application.report_assistant_ds import ReportAssistant
 from app.application.review_forms import ReviewForms
 from app.application.template_versions_ds import TemplateVersions
@@ -82,7 +85,7 @@ from app.modules.templates.core_payroll_layouts_ds import (
 )
 from app.modules.templates.seed_templates_ds import (
     SeedTemplateConflict,
-    install_legacy_payroll_seed_templates,
+    # OCR retired: install_legacy_payroll_seed_templates
 )
 from app.services.demo_web_accounts_ds import install_demo_web_accounts
 from config.settings import Settings
@@ -99,14 +102,14 @@ class Services:
     report_definition_repository: SqlAlchemyReportDefinitionRepository
     templates: TemplateVersions
     job_profiles: JobProfiles
-    template_renderer: TemplatePrintRenderer
+    # OCR retired: template_renderer
     imports: ImportForms
     reviews: ReviewForms
     queries: QueryForms
     exports: ExportForms
     reporting: ReportingFacade
     export_handler: ExportHandler
-    recognition: RecognizeForms
+    # OCR retired: recognition
     ai_reviews: AIReviewForms
     report_assistant: ReportAssistant
     vector_index: LocalVectorIndex
@@ -166,13 +169,8 @@ def build_services(settings: Settings, *, install_seed_templates: bool = False) 
     report_definition_repository = SqlAlchemyReportDefinitionRepository(engine)
     install_builtin_report_definitions(report_definition_repository)
     storage = LocalEvidenceStorage(settings.evidence_root)
-    font_candidates = (settings.cjk_font_path,) if settings.cjk_font_path is not None else None
-    template_renderer = TemplatePrintRenderer(
-        settings.evidence_root,
-        font_candidates=font_candidates,
-    )
+    # OCR retired: template_renderer, font_candidates, pipeline
     queries = QueryForms(repository)
-    pipeline = OpenCvImagePipeline()
     review_repository = SqlAlchemyReviewLeaseRepository(engine)
     master_data_repository = SqlAlchemyMasterDataRepository(engine)
     master_data = MasterDataFacade(master_data_repository)
@@ -225,7 +223,7 @@ def build_services(settings: Settings, *, install_seed_templates: bool = False) 
         report_definition_repository=report_definition_repository,
         templates=TemplateVersions(template_repository),
         job_profiles=JobProfiles(template_repository, template_repository),
-        template_renderer=template_renderer,
+        # OCR retired: template_renderer
         imports=ImportForms(repository, repository, repository, storage),
         reviews=ReviewForms(repository, repository),
         queries=queries,
@@ -237,14 +235,7 @@ def build_services(settings: Settings, *, install_seed_templates: bool = False) 
             repository,
             settings.exports_root,
         ),
-        recognition=RecognizeForms(
-            repository,
-            repository,
-            repository,
-            storage,
-            pipeline,
-            template_repository,
-        ),
+        # OCR retired: recognition (RecognizeForms)
         ai_reviews=AIReviewForms(repository, repository, DisabledAIReview()),
         report_assistant=ReportAssistant(
             report_definition_repository,
@@ -292,7 +283,7 @@ def build_services(settings: Settings, *, install_seed_templates: bool = False) 
         install_demo_web_accounts(master_data, mobile_identity_repository)
     if install_seed_templates:
         try:
-            install_legacy_payroll_seed_templates(template_repository, template_renderer)
+            # OCR retired: install_legacy_payroll_seed_templates (required print_renderer)
             install_reviewed_job_profile_seeds(template_repository)
         except SeedTemplateConflict as error:
             logger.warning("Built-in template installation skipped: %s", error)

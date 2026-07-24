@@ -86,8 +86,8 @@ class ElectronicFormDefinitionVersion:
     def publish(self) -> None:
         if self.status != DefinitionStatus.DRAFT:
             raise ValueError("Only DRAFT definitions can be published.")
-        if not self.template_version_id:
-            raise ValueError("Cannot publish without a bound template version.")
+        # OCR retired: template_version_id is no longer required.
+        # Electronic forms can be published standalone.
         self.status = DefinitionStatus.PUBLISHED
         self.published_at = utc_now()
 

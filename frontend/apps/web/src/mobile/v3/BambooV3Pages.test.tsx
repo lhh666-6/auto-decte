@@ -340,7 +340,7 @@ describe("independent bamboo forms", () => {
     await user.click(screen.getByRole("button", { name: "确认提交" }));
     await waitFor(() => expect(mocks.submitBambooInspection).toHaveBeenCalledWith(
       "SORT-18",
-      expect.objectContaining({ conclusion: "CONFORMING", moisturePoints: [0, 0, 0] }),
+      expect.objectContaining({ conclusion: "CONFORMING", moisturePoints: [] }),
       "inspection-key",
     ));
     await user.click(screen.getByLabelText("不合格"));

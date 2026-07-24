@@ -174,10 +174,11 @@ function effectiveSubmissions(record: BambooRecord, flow: FlowStep[]): Set<strin
 function stageState(record: BambooRecord): string {
   if (record.form_type === "DIPPING_DRYING" && record.current_stage === "SUPERVISOR") return "联合作业已完成 · 待主管审核";
   if (record.current_stage === "SUPERVISOR") return "分选已完成 · 待主管审核";
+  if (record.current_stage === "PLANT_AUDIT") return "待厂长审核";
   return stageLabel(record.current_stage);
 }
 function formTypeLabel(record: BambooRecord): string { return record.form_type === "DIPPING_DRYING" ? "浸胶+干燥联合表" : "分选表"; }
-function stageLabel(stage: BambooStage | null): string { return ({ SORT: "分选签字", DIPPING: "浸胶记录", DRYING: "干燥联合签字", SUPERVISOR: "待主管审核", PLANT_AUDIT: "待厂长审核" } as Record<string, string>)[stage ?? ""] ?? "已生效"; }
+function stageLabel(stage: BambooStage | null): string { return ({ SORT: "分选签字", DIPPING: "浸胶记录", DRYING: "干燥联合签字", SUPERVISOR: "主管审核", PLANT_AUDIT: "厂长审核" } as Record<string, string>)[stage ?? ""] ?? "已生效"; }
 function roleLabel(role: string): string { return ({ SORT_OPERATOR: "分选工", DIPPING_OPERATOR: "浸胶工", DRYING_RACK_OPERATOR: "干燥工", SUPERVISOR: "主管", PLANT_MANAGER: "厂长" } as Record<string, string>)[role] ?? role; }
 function baseLabel(key: string): string { return ({ mode: "作业模式", special_classes: "特殊类", cage_no: "竹笼号", length: "长度", shade: "深浅", grade: "品级", supplier: "供应商", bundle_count: "把数", net_weight: "净重", options_version: "预设版本" } as Record<string, string>)[key] ?? key; }
 function valueLabel(key: string): string { return ({ moisture: "含水率检测点", sort_quantity: "分选数量", wage_amount: "工资金额", note: "备注/评价", glue_batch: "胶液批次", glue_before_weight: "胶前重", glue_after_weight: "胶后重", glue_gain: "上胶量", rack_numbers: "干燥架号", rack_count: "架数", conclusion: "审核结论", started_at: "开始时间", ended_at: "结束时间" } as Record<string, string>)[key] ?? key; }

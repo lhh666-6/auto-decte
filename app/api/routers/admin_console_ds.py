@@ -1,10 +1,12 @@
 """Phase 1 administrator workspace endpoints."""
 
+from typing import Any, cast
 from urllib.parse import unquote
 
-from fastapi import APIRouter, Header, HTTPException, Query, Request
+from fastapi import APIRouter, Header, HTTPException, Query, Request, status
 
 from app.api.routers.web_auth_ds import require_web_actor, require_web_csrf
+from app.api.schemas.bamboo_process_ds import AdminCreateEmployeeRequest
 from app.api.schemas.business_workflows_ds import (
     WorkflowActivationRequest,
     WorkflowApprovalDecisionRequest,
@@ -22,6 +24,11 @@ from app.api.schemas.payroll_rules_ds import (
     RecalculatePayrollRequest,
 )
 from app.api.schemas.web_workspaces_ds import OverviewCard, WorkspaceOverviewResponse
+from app.application.bamboo_operations_ds import (
+    BambooOperationError,
+    BambooOperationsService,
+)
+from app.modules.bamboo_process.models_ds import BambooRole
 from app.modules.electronic_forms.governance_ds import ManagedFormError, ManagedFormService
 from app.modules.identity_access.web_policy_ds import WebWorkspace, allows_workspace
 from app.modules.payroll_rules.service_ds import PayrollError, PayrollService
@@ -58,6 +65,24 @@ def _payroll(request: Request) -> PayrollService:
 
 def _reports(request: Request) -> ReportTemplateService:
     return ReportTemplateService(request.app.state.services.engine)
+
+
+def _bamboo(request: Request) -> BambooOperationsService:
+    return cast(BambooOperationsService, request.app.state.services.bamboo_operations)
+
+
+# ── Admin Job Presets ──
+# Maps the admin-facing Chinese position label to internal bamboo_role + web_roles.
+_ADMIN_JOB_PRESETS: list[dict[str, object]] = [
+    {"label": "分选工",     "bamboo_role": "SORT_OPERATOR",      "web_roles": []},
+    {"label": "浸胶工",     "bamboo_role": "DIPPING_OPERATOR",    "web_roles": []},
+    {"label": "干燥工",     "bamboo_role": "DRYING_RACK_OPERATOR", "web_roles": []},
+    {"label": "检测人",     "bamboo_role": "INSPECTOR",           "web_roles": []},
+    {"label": "主管",       "bamboo_role": "SUPERVISOR",           "web_roles": []},
+    {"label": "厂长",       "bamboo_role": "PLANT_MANAGER",        "web_roles": ["PLANT_MANAGER"]},
+    {"label": "财务审批",   "bamboo_role": "FINANCE_APPROVER",     "web_roles": ["FINANCE"]},
+    {"label": "系统管理员", "bamboo_role": "SYSTEM_ADMIN",          "web_roles": ["ADMIN"]},
+]
 
 
 def _form_error(error: ManagedFormError) -> HTTPException:
@@ -370,3 +395,71 @@ def activate_workflow(
             status_code=409,
             detail={"code": error.code, "detail": error.detail},
         ) from error
+
+
+# ─────────────────────────────────────────────────────────────
+# Admin Organization & Employee Management
+# ─────────────────────────────────────────────────────────────
+
+
+def _bamboo_error(error: BambooOperationError) -> HTTPException:
+    status_code = 404 if error.code.endswith("NOT_FOUND") else 409
+    return HTTPException(
+        status_code=status_code,
+        detail={"code": error.code, "detail": str(error)},
+    )
+
+
+@router.get("/factories")
+def list_admin_factories(request: Request) -> dict[str, object]:
+    """List all active factories (for admin employee creation dropdown)."""
+    _admin_actor(request)
+    try:
+        factories = _bamboo(request).list_factories_for_admin()
+    except BambooOperationError as error:
+        raise _bamboo_error(error) from error
+    return {"items": factories}
+
+
+@router.get("/job-presets")
+def list_job_presets(request: Request) -> dict[str, object]:
+    """Return the canonical job presets with Chinese labels and role mappings."""
+    _admin_actor(request)
+    return {"items": _ADMIN_JOB_PRESETS}
+
+
+@router.post("/employees", status_code=status.HTTP_201_CREATED)
+def admin_create_employee(
+    body: AdminCreateEmployeeRequest,
+    request: Request,
+    x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token"),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+) -> dict[str, object]:
+    """Admin creates a new employee with factory + job preset selection."""
+    actor = _admin_actor(request)
+    require_web_csrf(request, x_csrf_token)
+    try:
+        return _bamboo(request).create_factory_employee(
+            actor=_admin_bamboo_actor(actor, body.factory_id),
+            employee_name=body.employee_name,
+            initial_pin=body.initial_pin,
+            role_code=body.bamboo_role,
+            employee_code=body.employee_code,
+            factory_id=body.factory_id,
+            web_roles=body.web_roles,
+        )
+    except BambooOperationError as error:
+        raise _bamboo_error(error) from error
+
+
+def _admin_bamboo_actor(web_actor: Any, factory_id: str) -> Any:
+    """Build a BambooActor from a web actor for admin operations."""
+    from app.modules.bamboo_process.models_ds import BambooActor
+    return BambooActor(
+        actor_id=web_actor.employee_code,
+        employee_code=web_actor.employee_code,
+        employee_name=web_actor.employee_name,
+        factory_id=factory_id,
+        factory_name="",
+        role=BambooRole.SYSTEM_ADMIN,
+    )

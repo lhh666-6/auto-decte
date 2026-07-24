@@ -11,27 +11,8 @@ export {
   type MasterDataRecord,
   type UpdateMasterDataInput,
 } from "./master-data_ds.js";
-export {
-  TemplateApi,
-  type FillPolicy,
-  type PaperEntryMode,
-  type PreflightReport,
-  type RecognitionMode,
-  type TemplateArtifact,
-  type TemplateDraftSummary,
-  type TemplateElementKind,
-  type TemplateField,
-  type TemplateFieldInput,
-  type TemplateLibraryItem,
-  type TemplatePage,
-  type TemplatePageInput,
-  type TemplatePrintImposition,
-  type TemplateRect,
-  type TemplateStaticElement,
-  type TemplateStatus,
-  type TemplateVersion,
-  isEditableTemplateStatus,
-} from "./templates_ds.js";
+// TemplateApi — retired (Paper OCR system removed)
+// ImportApi — retired (Paper OCR system removed)
 export {
   ApiRequestError,
   ReviewWorkbenchApi,
@@ -79,14 +60,7 @@ export {
   TaskApi,
   type TaskStatusDetail,
 } from "./tasks_ds.js";
-export {
-  ImportApi,
-  type ImportBatchItem,
-  type ImportBatchSummary,
-  type ImportedImageSummary,
-  type ImportItemStatus,
-  type UploadImageResult,
-} from "./imports_ds.js";
+// Re-exports removed: ImportApi (Paper OCR retired)
 export {
   MobileApiClient,
   MobileApiError,

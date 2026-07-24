@@ -10,7 +10,7 @@ const EMPTY_DASHBOARD: BambooDashboard = { available: 0, waiting: 0, completed: 
 const ROLE_LABELS: Record<string, string> = {
   SORT_OPERATOR: "分选工",
   DIPPING_OPERATOR: "浸胶工",
-  DRYING_RACK_OPERATOR: "干燥装架工",
+  DRYING_RACK_OPERATOR: "干燥工",
   INSPECTOR: "检测人",
   SUPERVISOR: "主管",
   PLANT_MANAGER: "厂长",
@@ -63,6 +63,7 @@ export function BambooV3HomePage() {
   const [inspectionHistory, setInspectionHistory] = useState<BambooInspectionWindow[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [loaded, setLoaded] = useState(false);
 
   const role = session?.bamboo_role ?? "";
   const isFinance = role === "FINANCE_APPROVER";
@@ -93,6 +94,7 @@ export function BambooV3HomePage() {
         setDashboard(summary);
         setSubmissions(remoteSubmissions.submissions.slice(0, 3));
       }
+      setLoaded(true);
     } catch (cause) {
       setError(cause instanceof MobileApiError
         ? cause.problem.detail
@@ -119,11 +121,11 @@ export function BambooV3HomePage() {
       <section className="hero" aria-label="当前账号">
         <div className="hello">你好，{session?.employee_name || "当前人员"}</div>
         <div className="meta">{session?.employee_code || "—"} · {session?.factory_name || session?.team_name || "待分配工厂"} · {roleLabel}</div>
-        {hasMobileWork && (
+        {hasMobileWork && !error && (
           <div className="stats" aria-label="工作统计" aria-busy={loading}>
-            <div className="stat"><span className="visually-hidden">可处理</span><b>{loading ? "—" : dashboard.available}</b><span>当前可记录</span></div>
-            <div className="stat"><span className="visually-hidden">等待中</span><b>{loading ? "—" : dashboard.waiting}</b><span>等待上游</span></div>
-            <div className="stat"><span className="visually-hidden">已完成</span><b>{loading ? "—" : dashboard.completed}</b><span>今日提交</span></div>
+            <div className="stat"><span className="visually-hidden">可处理</span><b>{loading || !loaded ? "—" : dashboard.available}</b><span>当前可记录</span></div>
+            <div className="stat"><span className="visually-hidden">等待中</span><b>{loading || !loaded ? "—" : dashboard.waiting}</b><span>等待上游</span></div>
+            <div className="stat"><span className="visually-hidden">已完成</span><b>{loading || !loaded ? "—" : dashboard.completed}</b><span>今日提交</span></div>
           </div>
         )}
       </section>

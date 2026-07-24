@@ -69,7 +69,39 @@ export function PlantEmployeesPage() {
   }
   useEffect(reload, []);
 
-  // 是否为本厂调动（目标工厂为空或等于当前员工的工厂）
+  // ---- 岗位分组标签 ----
+  const ROLE_GROUP_LABELS: Record<string, string> = {
+    SORT: "分选",
+    DIP: "浸胶",
+    DRY: "干燥",
+    INSPECTION: "检测",
+    SUPERVISOR: "主管",
+  };
+
+  function roleGroupLabel(roleCode: string): string {
+    for (const [prefix, label] of Object.entries(ROLE_GROUP_LABELS)) {
+      if (roleCode.toUpperCase().startsWith(prefix)) return label;
+    }
+    return roleCode;
+  }
+
+  // ---- 按岗位分组统计 ----
+  const roleGroupCounts: Record<string, number> = {};
+  for (const emp of employees) {
+    const group = roleGroupLabel(emp.role_code);
+    roleGroupCounts[group] = (roleGroupCounts[group] || 0) + 1;
+  }
+
+  // ---- 当前员工是否有待处理调动 ----
+  function employeePendingTransfer(empCode: string): boolean {
+    return transfers.some(
+      (t) =>
+        t.employee_code === empCode &&
+        !["APPROVED", "EXECUTED", "REJECTED", "CANCELLED"].includes(t.status),
+    );
+  }
+
+  // ---- 是否为本厂调动（目标工厂为空或等于当前员工的工厂） ----
   function isIntraPlant(
     employee: BambooEmployee,
     targetFactoryId: string,
@@ -126,6 +158,25 @@ export function PlantEmployeesPage() {
       {error && <div role="alert">{error}</div>}
       {loading && <div role="status">正在加载员工数据…</div>}
 
+      {/* 统计横幅 */}
+      {employees.length > 0 && (
+        <section className="ledger-stats-banner">
+          <div className="ledger-stats-header">
+            <strong>
+              {session?.factory_name || session?.factory_id || "本厂"}人员
+            </strong>
+            <span className="ledger-stats-total">总人数: {employees.length}</span>
+          </div>
+          <div className="ledger-stats-groups">
+            {Object.entries(roleGroupCounts).map(([group, count]) => (
+              <span key={group} className="ledger-stats-chip">
+                {group}: {count}
+              </span>
+            ))}
+          </div>
+        </section>
+      )}
+
       {/* 员工列表 */}
       <section>
         <div className="ledger-section-header">
@@ -149,37 +200,44 @@ export function PlantEmployeesPage() {
                 <tr>
                   <th>工号</th>
                   <th>姓名</th>
-                  <th>工厂</th>
-                  <th>岗位</th>
-                  <th>角色</th>
+                  <th>当前岗位</th>
+                  <th>状态</th>
                   <th>操作</th>
                 </tr>
               </thead>
               <tbody>
-                {employees.map((emp) => (
-                  <tr key={emp.employee_code}>
-                    <td>{emp.employee_code}</td>
-                    <td>{emp.employee_name}</td>
-                    <td>{emp.factory_id}</td>
-                    <td>{emp.role_name}</td>
-                    <td><span className="ledger-tag ledger-tag-stage">{emp.role_code}</span></td>
-                    <td>
-                      <button
-                        type="button"
-                        className="secondary-button"
-                        onClick={() => {
-                          setEmployeeCode(emp.employee_code);
-                          setToRole("");
-                          setTargetFactory("");
-                          setReason("");
-                          setShowTransferForm(true);
-                        }}
-                      >
-                        调动
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                {employees.map((emp) => {
+                  const hasPending = employeePendingTransfer(emp.employee_code);
+                  return (
+                    <tr key={emp.employee_code}>
+                      <td>{emp.employee_code}</td>
+                      <td>{emp.employee_name}</td>
+                      <td>{emp.role_name}</td>
+                      <td>
+                        {hasPending ? (
+                          <span className="ledger-tag ledger-tag-stage">调动中</span>
+                        ) : (
+                          <span className="ledger-tag ledger-tag-done">在岗</span>
+                        )}
+                      </td>
+                      <td>
+                        <button
+                          type="button"
+                          className="secondary-button"
+                          onClick={() => {
+                            setEmployeeCode(emp.employee_code);
+                            setToRole("");
+                            setTargetFactory("");
+                            setReason("");
+                            setShowTransferForm(true);
+                          }}
+                        >
+                          调岗
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -203,9 +261,18 @@ export function PlantEmployeesPage() {
           </label>
 
           {selectedEmployee && (
-            <p className="signature-muted">
-              当前岗位：{selectedEmployee.role_name} · 当前工厂：{selectedEmployee.factory_id}
-            </p>
+            <div className="ledger-current-info">
+              <p className="signature-muted">
+                当前岗位：<strong>{selectedEmployee.role_name}</strong>
+                {" · "}
+                当前工厂：
+                <strong>
+                  {factories.find((f) => f.factory_id === selectedEmployee.factory_id)?.factory_name ||
+                    session?.factory_name ||
+                    selectedEmployee.factory_id}
+                </strong>
+              </p>
+            </div>
           )}
 
           <label>
@@ -237,6 +304,19 @@ export function PlantEmployeesPage() {
               {isIntraPlant(selectedEmployee, targetFactory)
                 ? "本厂调岗 — 由你发起，提交后由管理员执行"
                 : "跨厂调动 — 你发起 → 目标厂长审批 → 管理员最终执行"}
+            </div>
+          )}
+
+          {/* 影响预览 */}
+          {selectedEmployee && toRole && (
+            <div className="ledger-impact-preview">
+              <h3>影响预览</h3>
+              <p>
+                <strong>{selectedEmployee.employee_name}</strong>
+                {" "}
+                {selectedEmployee.role_name} → {roles.find((r) => r.role_code === toRole)?.display_name || toRole}
+                。未来可填写：{roles.find((r) => r.role_code === toRole)?.display_name || toRole}记录。历史记录：不受影响。
+              </p>
             </div>
           )}
 

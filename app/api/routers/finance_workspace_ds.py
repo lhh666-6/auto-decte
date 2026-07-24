@@ -795,3 +795,95 @@ def submit_workflow(
             status_code=409,
             detail={"code": error.code, "detail": error.detail},
         ) from error
+
+
+# ─────────────────────────────────────────────────────────────
+# V1 Position Data (simplified finance)
+# ─────────────────────────────────────────────────────────────
+
+from typing import cast  # noqa: E402
+
+from app.application.bamboo_operations_ds import BambooOperationsService  # noqa: E402
+
+
+def _bamboo(request: Request) -> BambooOperationsService:
+    return cast(BambooOperationsService, request.app.state.services.bamboo_operations)
+
+
+@router.get("/position-data")
+def position_data(
+    request: Request,
+    factory_id: str = Query(default=""),
+    stage: str = Query(default=""),
+    date_from: str = Query(default=""),
+    date_to: str = Query(default=""),
+    employee_code: str = Query(default=""),
+) -> dict[str, object]:
+    """V1: List production/payroll data filtered by position (stage)."""
+    _finance_actor(request)
+    items = _bamboo(request).list_position_data(
+        factory_id=factory_id or None,
+        stage=stage or None,
+        date_from=date_from or None,
+        date_to=date_to or None,
+        employee_code=employee_code or None,
+    )
+    return {"items": items, "count": len(items)}
+
+
+@router.get("/position-data/export")
+def export_position_data(
+    request: Request,
+    factory_id: str = Query(default=""),
+    stage: str = Query(default=""),
+    date_from: str = Query(default=""),
+    date_to: str = Query(default=""),
+    employee_code: str = Query(default=""),
+) -> Response:
+    """V1: Export position data as XLSX."""
+    _finance_actor(request)
+    from io import BytesIO
+
+    items = _bamboo(request).list_position_data(
+        factory_id=factory_id or None,
+        stage=stage or None,
+        date_from=date_from or None,
+        date_to=date_to or None,
+        employee_code=employee_code or None,
+    )
+    from openpyxl import Workbook
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "岗位数据"
+    if items:
+        sample = items[0]
+        headers = ["日期", "工号", "姓名", "工厂", "记录号", "笼号", "工序"]
+        if sample.get("values"):
+            headers += list(sample["values"].keys())
+        headers.append("状态")
+        ws.append(headers)
+        for item in items:
+            row = [
+                item.get("date", ""),
+                item.get("employee_code", ""),
+                item.get("employee_name", ""),
+                item.get("factory_id", ""),
+                item.get("display_no", ""),
+                item.get("cage_no", ""),
+                item.get("stage", ""),
+            ]
+            for vk in (sample.get("values") or {}).keys():
+                row.append(str(item.get("values", {}).get(vk, "")))
+            row.append(item.get("status", ""))
+            ws.append(row)
+    dest = BytesIO()
+    wb.save(dest)
+    dest.seek(0)
+    stage_label = stage or "all"
+    filename = f"position-data-{stage_label}.xlsx"
+    return Response(
+        content=dest.getvalue(),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )

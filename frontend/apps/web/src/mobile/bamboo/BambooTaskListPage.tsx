@@ -81,6 +81,7 @@ export function BambooTaskListPage() {
   const [inspectionWindows, setInspectionWindows] = useState<BambooInspectionWindow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [loaded, setLoaded] = useState(false);
   const [creating, setCreating] = useState(false);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState("");
@@ -140,6 +141,7 @@ export function BambooTaskListPage() {
     const generation = ++loadGeneration.current;
     setLoading(true);
     setError("");
+    setLoaded(false);
     try {
       if (isInspector && bucket !== "waiting") {
         const queueBucket = bucket === "available" ? "active" : "history";
@@ -151,6 +153,7 @@ export function BambooTaskListPage() {
         setDashboard(summary);
         setInspectionWindows(queue.items);
         setTasks([]);
+        setLoaded(true);
         if (searchedCage && queue.items.length === 1) {
           navigate(`/mobile/records/${encodeURIComponent(queue.items[0].record_id)}`);
           return;
@@ -168,6 +171,7 @@ export function BambooTaskListPage() {
         setDashboard(summary);
         setTasks(result.tasks);
         setInspectionWindows([]);
+        setLoaded(true);
         if (searchedCage && result.tasks.length === 1) {
           navigate(`/mobile/records/${encodeURIComponent(result.tasks[0].record_id)}`);
           return;
@@ -406,7 +410,7 @@ export function BambooTaskListPage() {
             className={`tab${bucket === item.key ? " on" : ""}`}
             onClick={() => setBucket(item.key)}
           >
-            {item.label} {dashboard[item.key]}
+            {item.label}{loaded ? ` ${dashboard[item.key]}` : " —"}
           </button>
         ))}
       </nav>
