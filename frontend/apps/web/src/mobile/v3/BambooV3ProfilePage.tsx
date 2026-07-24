@@ -39,7 +39,7 @@ export function BambooV3ProfilePage() {
   const role = profile.bamboo_role ?? "";
 
   const handleLogout = async () => {
-    const pending = await getPendingLogoutCount();
+    const pending = await getPendingLogoutCount(profile.employee_code);
     if (pending > 0 && !window.confirm(`本机还有 ${pending} 条未同步记录，确认退出吗？`)) return;
     setBusy(true);
     try {

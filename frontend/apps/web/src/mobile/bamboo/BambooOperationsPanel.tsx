@@ -191,7 +191,7 @@ export function BambooOperationsPanel({
               <span>{inspection.conclusion === "CONFORMING" ? "合格" : "异常"} · {inspection.actor_name}</span>
               <p>{inspection.note}</p>
               <p>留痕：{inspection.evidence.map((item) => item.evidence_type).join("、") || "无"}</p>
-              {inspection.exception?.status === "OPEN" && role === "INSPECTOR" && (
+              {inspection.exception?.status === "OPEN" && ["INSPECTOR", "SUPERVISOR"].includes(role) && (
                 <button disabled={busy} onClick={() => void run(
                   () => mobileApiClient.closeBambooException(inspection.exception!.exception_id, "复测后关闭"),
                   "异常已关闭，主管可以继续审核",
@@ -270,6 +270,7 @@ export function BambooOperationsPanel({
       {role === "SUPERVISOR" && (
         <section className="bamboo-sheet-section bamboo-operations-panel">
           <h3>主管处理</h3>
+          {inspections.filter((item) => item.exception?.status === "OPEN").map((item) => <div className="error-banner" role="alert" key={item.inspection_id}>存在未关闭的检测异常（{item.serial_no}），请先处理后再签字</div>)}
           {(summary?.corrections ?? []).filter((item) => item.status === "OPEN").map((item) => <div className="error-banner" key={item.case_id}>财务要求纠错：{item.reason}</div>)}
           {!returnOpen ? (
             <><p>核对无误请直接使用下方“通过并签字”。只有发现错误时才发起回退。</p><button type="button" className="btn secondary" onClick={() => setReturnOpen(true)}>发现问题，发起回退</button></>
@@ -282,7 +283,7 @@ export function BambooOperationsPanel({
                 ))}
               </div>
               <label>回退原因<textarea value={returnReason} onChange={(event) => setReturnReason(event.target.value)} /></label>
-              <div className="btnrow"><button type="button" className="btn secondary" onClick={() => setReturnOpen(false)} disabled={busy}>取消回退</button><button type="button" className="btn danger" disabled={busy || returnStages.length === 0 || !returnReason} onClick={() => void run(() => mobileApiClient.returnBambooRecord(record.record_id, returnStages, returnReason), "已按选择回退")}>确认回退</button></div>
+              <div className="btnrow"><button type="button" className="btn secondary" onClick={() => setReturnOpen(false)} disabled={busy}>取消回退</button><button type="button" className="btn danger" disabled={busy || returnStages.length === 0 || !returnReason} onClick={() => void run(() => mobileApiClient.returnBambooRecord(record.record_id, returnStages, returnReason, record.revision), "已按选择回退")}>确认回退</button></div>
             </div>
           )}
         </section>

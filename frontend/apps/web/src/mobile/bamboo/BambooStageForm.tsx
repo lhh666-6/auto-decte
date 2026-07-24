@@ -17,10 +17,12 @@ export function BambooStageForm({
   record,
   stage,
   onSigned,
+  unresolvedExceptions = false,
 }: {
   record: BambooRecord;
   stage: BambooStage;
   onSigned(updated: BambooRecord): void;
+  unresolvedExceptions?: boolean;
 }) {
   const { sessionMetadata: session } = useMobileSession();
   const [moisture, setMoisture] = useState(() => Array.from({ length: 8 }, () => ""));
@@ -188,6 +190,7 @@ export function BambooStageForm({
           </label>
         ))}
       </div>
+      {stage === "SUPERVISOR" && unresolvedExceptions && <div className="error-banner" role="alert">存在未关闭的检测异常，请先处理后再签字</div>}
       <button type="button" className="bamboo-sign-button" onClick={requestReview}>{primaryLabel(stage)}</button>
 
       {reviewing && (

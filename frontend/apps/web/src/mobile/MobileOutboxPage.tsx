@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 
+import { useMobileSession } from "./session/MobileSessionProvider";
 import { listAll, remove, resetPending, type OutboxEntry } from "./storage/outbox";
 import { flushPendingOutbox } from "./sync/SubmissionCoordinator";
 
@@ -11,6 +12,7 @@ const STATUS_LABELS: Record<OutboxEntry["status"], string> = {
 };
 
 export function MobileOutboxPage() {
+  const { sessionMetadata } = useMobileSession();
   const [items, setItems] = useState<OutboxEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -18,14 +20,14 @@ export function MobileOutboxPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      setItems(await listAll());
+      setItems(await listAll(sessionMetadata?.employee_code));
       setError("");
     } catch {
       setError("无法读取待同步记录，请重试。");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [sessionMetadata?.employee_code]);
 
   useEffect(() => { void load(); }, [load]);
 

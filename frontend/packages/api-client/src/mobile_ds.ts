@@ -624,11 +624,12 @@ export class MobileApiClient {
     recordId: string,
     targetStages: BambooStage[],
     reason: string,
+    expectedRevision: number,
   ): Promise<Record<string, unknown>> {
     return this.request(`/bamboo/records/${encodeURIComponent(recordId)}/return`, {
       method: "POST",
       headers: { "Idempotency-Key": createMobileClientId("bamboo-return") },
-      body: JSON.stringify({ target_stages: targetStages, reason, source: "SUPERVISOR" }),
+      body: JSON.stringify({ target_stages: targetStages, reason, expected_revision: expectedRevision, source: "SUPERVISOR" }),
     });
   }
 

@@ -55,6 +55,8 @@ export function BambooRecordDetailPage({ recordId }: { recordId: string }) {
     : flow.findIndex((item) => item.stage === record.current_stage);
   const canSign = record.current_stage !== null && ROLE_STAGE[session?.bamboo_role ?? ""] === record.current_stage;
   const effectiveSubmissionIds = effectiveSubmissions(record, flow);
+  const effectiveSubs = record.submissions.filter(s => effectiveSubmissionIds.has(s.submission_id));
+  const invalidatedSubs = record.submissions.filter(s => !effectiveSubmissionIds.has(s.submission_id));
 
   return <div className="mobile-page bamboo-v3-page bamboo-detail-page">
     <header className="bamboo-v3-page-header bamboo-v3-detail-heading">
@@ -91,19 +93,31 @@ export function BambooRecordDetailPage({ recordId }: { recordId: string }) {
 
     <section className="bamboo-sheet-section bamboo-submission-history">
       <div className="bamboo-section-title"><h3>提交与签字记录</h3><span>有效与失效版本全部保留</span></div>
-      {record.submissions.length === 0 ? <p className="bamboo-v3-empty-copy">尚无提交记录</p> : record.submissions.map((submission) => {
-        const effective = effectiveSubmissionIds.has(submission.submission_id);
-        return <article className={`bamboo-submission-detail${effective ? " effective" : " invalidated"}`} key={submission.submission_id}>
+      {record.submissions.length === 0 ? <p className="bamboo-v3-empty-copy">尚无提交记录</p> : <>
+        {effectiveSubs.map((submission) => <article className="bamboo-submission-detail effective" key={submission.submission_id}>
           <header>
             <div><strong>{stageLabel(submission.stage)} · 第 {submission.version} 次提交</strong><span>{submission.actor_name}（{roleLabel(submission.role_code)}）</span></div>
-            <em>{effective ? "当前有效" : "历史/已失效"}</em>
+            <em>当前有效</em>
           </header>
           <time dateTime={submission.submitted_at ?? undefined}>{submission.submitted_at ? formatTime(submission.submitted_at) : "服务器签字时间待同步"}</time>
           <dl className="bamboo-sheet-grid">
             {Object.entries(submission.values).map(([key, value]) => <div key={key}><dt>{valueLabel(key)}</dt><dd>{formatValue(value)}</dd></div>)}
           </dl>
-        </article>;
-      })}
+        </article>)}
+        {invalidatedSubs.length > 0 && <details className="bamboo-invalidated-history">
+          <summary>历史/已失效（{invalidatedSubs.length} 条）</summary>
+          {invalidatedSubs.map((submission) => <article className="bamboo-submission-detail invalidated" key={submission.submission_id}>
+            <header>
+              <div><strong>{stageLabel(submission.stage)} · 第 {submission.version} 次提交</strong><span>{submission.actor_name}（{roleLabel(submission.role_code)}）</span></div>
+              <em>历史/已失效</em>
+            </header>
+            <time dateTime={submission.submitted_at ?? undefined}>{submission.submitted_at ? formatTime(submission.submitted_at) : "服务器签字时间待同步"}</time>
+            <dl className="bamboo-sheet-grid">
+              {Object.entries(submission.values).map(([key, value]) => <div key={key}><dt>{valueLabel(key)}</dt><dd>{formatValue(value)}</dd></div>)}
+            </dl>
+          </article>)}
+        </details>}
+      </>}
     </section>
 
     {!canSign && <div className="banner info bamboo-readonly-banner">当前记录以只读方式显示；你没有修改此工序的权限。</div>}

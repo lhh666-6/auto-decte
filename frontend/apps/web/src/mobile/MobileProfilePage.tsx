@@ -13,7 +13,7 @@ export function MobileProfilePage() {
   const handleLogout = async () => {
     setError("");
     try {
-      const pending = await getPendingLogoutCount();
+      const pending = await getPendingLogoutCount(profile?.employee_code);
       if (pending > 0 && !window.confirm(
         `本机还有 ${pending} 条未提交记录。退出后会保留这些记录，确认继续退出吗？`,
       )) return;

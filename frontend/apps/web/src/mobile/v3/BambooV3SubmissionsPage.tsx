@@ -20,10 +20,10 @@ export function BambooV3SubmissionsPage() {
     setError("");
     try {
       setItems(await mobileApiClient.listBambooHistory());
-      setDraftCount(countBambooDrafts(sessionMetadata.employee_code, sessionMetadata.factory_id, getMobileDeviceId()));
     } catch {
       setError("无法加载历史记录，本机草稿仍会保留。");
     } finally {
+      setDraftCount(countBambooDrafts(sessionMetadata.employee_code, sessionMetadata.factory_id, getMobileDeviceId()));
       setLoading(false);
     }
   }, [sessionMetadata]);

@@ -14,6 +14,7 @@ function notifyOutboxChanged(): void {
 
 export interface OutboxEntry {
   outboxId: string;
+  owner: string;
   operation: string;
   idempotencyKey: string;
   payload: Record<string, unknown>;
@@ -120,29 +121,32 @@ export async function remove(outboxId: string): Promise<void> {
   notifyOutboxChanged();
 }
 
-export async function listPending(): Promise<OutboxEntry[]> {
+export async function listPending(owner?: string): Promise<OutboxEntry[]> {
   const db = await getDB();
-  const all = await db.getAll("outbox");
+  const all = await db.getAll("outbox") as OutboxEntry[];
   const now = Date.now();
   return all.filter(
     (e) =>
       (e.status === "PENDING"
         || e.status === "FAILED_RETRYABLE"
         || e.status === "SUBMITTING")
-      && (e.status === "SUBMITTING" || new Date(e.nextRetryAt).getTime() <= now),
+      && (e.status === "SUBMITTING" || new Date(e.nextRetryAt).getTime() <= now)
+      && (!owner || e.owner === owner),
   );
 }
 
-export async function listAll(): Promise<OutboxEntry[]> {
+export async function listAll(owner?: string): Promise<OutboxEntry[]> {
   const db = await getDB();
-  return db.getAll("outbox");
+  const all = await db.getAll("outbox") as OutboxEntry[];
+  if (!owner) return all;
+  return all.filter((e) => e.owner === owner);
 }
 
-export async function countPending(): Promise<number> {
-  const pending = await listPending();
+export async function countPending(owner?: string): Promise<number> {
+  const pending = await listPending(owner);
   return pending.length;
 }
 
-export async function countAll(): Promise<number> {
-  return (await listAll()).length;
+export async function countAll(owner?: string): Promise<number> {
+  return (await listAll(owner)).length;
 }

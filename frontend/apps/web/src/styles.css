@@ -2132,6 +2132,8 @@ button { cursor: pointer; }
   font-weight: 800;
 }
 .bamboo-submission-detail.invalidated > header em { color: #6f7471; background: #e7e9e8; }
+.bamboo-invalidated-history { margin: 12px 0; }
+.bamboo-invalidated-history summary { cursor: pointer; color: var(--sub); font-size: var(--font-caption); padding: 8px 0; }
 .bamboo-sign-identity {
   display: grid;
   gap: 4px;

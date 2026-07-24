@@ -43,6 +43,7 @@ export async function submitWithOutbox(
     outboxId: idempotencyKey,
     operation: "CREATE_ELECTRONIC_FORM",
     idempotencyKey,
+    owner: draftRef?.owner ?? "",
     payload: payload as unknown as Record<string, unknown>,
     draftRef,
   });
