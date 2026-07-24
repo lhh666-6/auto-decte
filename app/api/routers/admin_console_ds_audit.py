@@ -1,4 +1,4 @@
-"""P0 audit-log endpoint — minimal read-only view over existing fact tables."""
+"""P0 audit-log endpoint — read-only view over operational fact tables."""
 
 from typing import Any
 
@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.adapters.database.models import (
     BambooDailyExportBatchRow,
     BambooPlantAuditRow,
+    BambooRecordRow,
     BambooReturnRow,
     SubmissionCorrectionRow,
 )
@@ -23,16 +24,21 @@ def _audits(session: Session, limit: int) -> list[dict[str, Any]]:
             BambooPlantAuditRow.audited_at.desc()
         ).limit(limit)
     ).all():
+        factory_id = ""
+        record_row = session.get(BambooRecordRow, row.record_id)
+        if record_row is not None:
+            factory_id = record_row.factory_id or ""
         result.append({
             "id": f"audit-{row.audit_id}",
             "timestamp": row.audited_at.isoformat() if row.audited_at else "",
-            "actor_name": row.actor_id,
-            "actor_code": row.actor_id,
+            "actor_name": row.actor_id or "",
+            "actor_code": row.actor_id or "",
             "action": "厂长签字",
             "object_type": "bamboo_record",
             "object_id": row.record_id,
-            "factory_id": "",
-            "request_id": "",
+            "factory_id": factory_id,
+            "request_id": row.audit_id,
+            "idempotency_key": "",
         })
     return result
 
@@ -44,16 +50,22 @@ def _returns(session: Session, limit: int) -> list[dict[str, Any]]:
             BambooReturnRow.created_at.desc()
         ).limit(limit)
     ).all():
+        factory_id = ""
+        record_row = session.get(BambooRecordRow, row.record_id)
+        if record_row is not None:
+            factory_id = record_row.factory_id or ""
         result.append({
             "id": f"return-{row.return_id}",
             "timestamp": row.created_at.isoformat() if row.created_at else "",
-            "actor_name": row.actor_id,
-            "actor_code": row.actor_id,
+            "actor_name": row.actor_id or "",
+            "actor_code": row.actor_id or "",
             "action": "生产打回",
             "object_type": "bamboo_return",
             "object_id": row.return_id,
-            "factory_id": "",
-            "request_id": row.idempotency_key or "",
+            "factory_id": factory_id,
+            "request_id": row.return_id,
+            "idempotency_key": row.idempotency_key or "",
+            "requested_role": row.requested_role or "",
         })
     return result
 
@@ -73,8 +85,10 @@ def _corrections(session: Session, limit: int) -> list[dict[str, Any]]:
             "action": "财务更正",
             "object_type": "submission_correction",
             "object_id": row.correction_id,
-            "factory_id": "",
-            "request_id": "",
+            "factory_id": row.factory_id or "",
+            "request_id": row.correction_id,
+            "idempotency_key": row.idempotency_key or "",
+            "reviewed_by": row.reviewed_by or "",
         })
     return result
 
@@ -95,7 +109,8 @@ def _exports(session: Session, limit: int) -> list[dict[str, Any]]:
             "object_type": "daily_export_batch",
             "object_id": row.batch_id,
             "factory_id": row.factory_id or "",
-            "request_id": "",
+            "request_id": row.batch_id,
+            "idempotency_key": "",
         })
     return result
 

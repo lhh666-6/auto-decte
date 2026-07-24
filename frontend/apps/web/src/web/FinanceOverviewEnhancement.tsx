@@ -6,12 +6,18 @@ import type { WorkspaceOverview, GovernedExportBatch, PayrollBatch, SubmissionCo
 
 interface FinanceOverviewData {
   officialRecords: number;
-  exceptions: number;
+  officialRecordsMonth: number;
+  exceptions: number | null;
   pendingCorrections: number;
   pendingReview: number;
   needReExport: number;
   recentBatches: PayrollBatch[];
   recentExports: GovernedExportBatch[];
+}
+
+function kpiValue(v: number | null): string {
+  if (v === null || v === undefined) return "—";
+  return String(v);
 }
 
 export function FinanceOverviewEnhancement() {
@@ -34,14 +40,17 @@ export function FinanceOverviewEnhancement() {
         setBase(overview);
         setData({
           officialRecords: ledgerSum.today,
-          exceptions: ledgerSum.today, // placeholder from overview; real exceptions come from separate endpoint
+          officialRecordsMonth: ledgerSum.month,
+          exceptions: null, // no dedicated exceptions API yet; real data requires separate endpoint
           pendingCorrections: correctionsRes.items.filter(
             (c: SubmissionCorrection) => c.status === "PENDING_REVIEW" || c.status === "SUBMITTED",
           ).length,
           pendingReview: correctionsRes.items.filter(
-            (c: SubmissionCorrection) => c.status === "REPLACED",
+            (c: SubmissionCorrection) => c.status === "PENDING_REVIEW",
           ).length,
-          needReExport: 0, // would come from a dedicated re-export check endpoint
+          needReExport: exportsRes.items.filter(
+            (e: GovernedExportBatch) => e.status === "FAILED" || e.status === "EXPIRED" || e.status === "SUPERSEDED",
+          ).length,
           recentBatches: batchesRes.items.slice(0, 3),
           recentExports: exportsRes.items.slice(0, 3),
         });
@@ -66,19 +75,19 @@ export function FinanceOverviewEnhancement() {
 
       <div className="finance-overview-main-cards">
         <button type="button" className="finance-overview-main-card" onClick={() => go("/finance/today")}>
-          <span className="finance-overview-main-card-value">{data.officialRecords}</span>
+          <span className="finance-overview-main-card-value">{kpiValue(data.officialRecords)}</span>
           <span className="finance-overview-main-card-label">今日正式记录</span>
         </button>
         <button type="button" className="finance-overview-main-card" onClick={() => go("/finance/exceptions")}>
-          <span className="finance-overview-main-card-value alert">{data.exceptions}</span>
+          <span className="finance-overview-main-card-value alert">{kpiValue(data.exceptions)}</span>
           <span className="finance-overview-main-card-label">异常记录</span>
         </button>
         <button type="button" className="finance-overview-main-card" onClick={() => go("/finance/exceptions")}>
-          <span className="finance-overview-main-card-value">{data.pendingCorrections}</span>
+          <span className="finance-overview-main-card-value">{kpiValue(data.pendingCorrections)}</span>
           <span className="finance-overview-main-card-label">待更正</span>
         </button>
         <button type="button" className="finance-overview-main-card" onClick={() => go("/finance/today")}>
-          <span className="finance-overview-main-card-value">{data.pendingReview}</span>
+          <span className="finance-overview-main-card-value">{kpiValue(data.pendingReview)}</span>
           <span className="finance-overview-main-card-label">待审批版本</span>
         </button>
       </div>

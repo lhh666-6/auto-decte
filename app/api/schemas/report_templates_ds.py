@@ -15,3 +15,9 @@ class CreateGovernedExportRequest(BaseModel):
     mapping_version_id: str
     filters: dict[str, Any] = {}
     idempotency_key: str = Field(min_length=1, max_length=200)
+
+
+class PreviewGovernedExportRequest(BaseModel):
+    template_version_id: str
+    mapping_version_id: str
+    filters: dict[str, Any] = {}

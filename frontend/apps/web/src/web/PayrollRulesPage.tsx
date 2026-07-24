@@ -10,7 +10,9 @@ import {
   listPayrollBatches,
   listPayrollRules,
   submitPayrollRule,
+  trialCalculatePayroll,
 } from "./api";
+import type { TrialPayrollResult } from "./api";
 import type { PayrollBatch, PayrollResult, PayrollRuleVersion, SubmissionCorrection } from "./types";
 import { DetailDrawer, DetailField, StatusBadge, ReasonConfirmDialog } from "./shared";
 import type { PreCheckResult } from "./shared";
@@ -31,7 +33,8 @@ export function PayrollRulesPage() {
 
   // Trial state
   const [trialRule, setTrialRule] = useState<PayrollRuleVersion | null>(null);
-  const [trialResults, setTrialResults] = useState<PayrollResult[]>([]);
+  const [trialResults, setTrialResults] = useState<TrialPayrollResult | null>(null);
+  const [trialLoading, setTrialLoading] = useState(false);
   const [trialOpen, setTrialOpen] = useState(false);
 
   // Submit approval dialog
@@ -95,8 +98,19 @@ export function PayrollRulesPage() {
 
   function openTrial(rule: PayrollRuleVersion) {
     setTrialRule(rule);
-    setTrialResults([]);
+    setTrialResults(null);
+    setTrialLoading(true);
     setTrialOpen(true);
+    const today = new Date().toISOString().slice(0, 10);
+    trialCalculatePayroll(rule.rule_version_id, `${today.slice(0, 7)}-01`, today)
+      .then((result) => {
+        setTrialResults(result);
+        setTrialLoading(false);
+      })
+      .catch((cause: unknown) => {
+        setError(cause instanceof Error ? cause.message : "试算失败");
+        setTrialLoading(false);
+      });
   }
 
   function openApproval(rule: PayrollRuleVersion) {
@@ -353,39 +367,49 @@ export function PayrollRulesPage() {
         title={`试算面板 — ${trialRule?.name ?? ""} V${trialRule?.version ?? ""}`}
       >
         <div className="finance-payroll-trial-panel">
-          <h3>历史样本对比</h3>
-          {trialResults.length === 0 ? (
-            <p>暂无试算数据。需先对规则执行一次正式计算后，试算对比才可显示。</p>
-          ) : (
-            <table className="finance-trial-table">
-              <thead>
-                <tr>
-                  <th>员工</th>
-                  <th>旧规则金额</th>
-                  <th>新规则金额</th>
-                  <th>差额</th>
-                  <th>结果</th>
-                </tr>
-              </thead>
-              <tbody>
-                {trialResults.map((r) => {
-                  const oldAmt = Number(r.original_amount ?? 0);
-                  const newAmt = Number(r.amount);
-                  const delta = newAmt - oldAmt;
-                  return (
-                    <tr key={r.result_id}>
-                      <td>{r.employee_code}</td>
-                      <td className="amount">{oldAmt.toFixed(2)}</td>
-                      <td className="amount">{newAmt.toFixed(2)}</td>
-                      <td className={`amount ${delta >= 0 ? "delta-positive" : "delta-negative"}`}>
-                        {delta >= 0 ? "+" : ""}{delta.toFixed(2)}
-                      </td>
-                      <td>{delta === 0 ? "无变化" : "有差异"}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+          <h3>实时试算结果</h3>
+          {trialLoading && <p>正在从后端计算试算结果…</p>}
+          {!trialLoading && trialResults === null && (
+            <p>无法加载试算数据。</p>
+          )}
+          {!trialLoading && trialResults && trialResults.items.length === 0 && (
+            <p>当前周期内无适用记录。</p>
+          )}
+          {!trialLoading && trialResults && trialResults.items.length > 0 && (
+            <>
+              <p style={{ fontSize: 13, color: "#596579" }}>
+                共 {trialResults.result_count} 条记录（干跑模式，未创建持久批次）
+              </p>
+              <table className="finance-trial-table">
+                <thead>
+                  <tr>
+                    <th>员工</th>
+                    <th>旧规则金额</th>
+                    <th>新规则金额</th>
+                    <th>差额</th>
+                    <th>结果</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {trialResults.items.map((r, idx) => {
+                    const oldAmt = Number(r.original_amount ?? 0);
+                    const newAmt = Number(r.amount);
+                    const delta = newAmt - oldAmt;
+                    return (
+                      <tr key={`${r.employee_code}-${idx}`}>
+                        <td>{r.employee_code}</td>
+                        <td className="amount">{oldAmt.toFixed(2)}</td>
+                        <td className="amount">{newAmt.toFixed(2)}</td>
+                        <td className={`amount ${delta >= 0 ? "delta-positive" : "delta-negative"}`}>
+                          {delta >= 0 ? "+" : ""}{delta.toFixed(2)}
+                        </td>
+                        <td>{delta === 0 ? "无变化" : "有差异"}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </>
           )}
           {trialRule && (
             <DetailField label="规则" value={`${trialRule.name} V${trialRule.version}`} />

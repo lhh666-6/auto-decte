@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
@@ -145,6 +147,25 @@ class SubmissionLedgerService:
             )
         )
 
+    @staticmethod
+    def _correction_request_hash(
+        submission_id: str,
+        factory_id: str,
+        reason: str,
+        requested_by: str,
+        assigned_to: str,
+    ) -> str:
+        """Canonical SHA-256 hash of correction-request fields (no timestamp, no random)."""
+        payload = {
+            "submission_id": submission_id,
+            "factory_id": factory_id,
+            "reason": reason.strip(),
+            "requested_by": requested_by,
+            "assigned_to": assigned_to,
+        }
+        canonical = json.dumps(payload, ensure_ascii=False, sort_keys=True)
+        return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
     def return_submission(
         self,
         submission_id: str,
@@ -153,8 +174,18 @@ class SubmissionLedgerService:
         reason: str,
         requested_by: str,
         assigned_to: str,
+        idempotency_key: str | None = None,
+        request_hash: str | None = None,
     ) -> dict[str, str]:
         now = self._clock()
+        if idempotency_key:
+            request_hash = request_hash or self._correction_request_hash(
+                submission_id=submission_id,
+                factory_id=factory_id,
+                reason=reason,
+                requested_by=requested_by,
+                assigned_to=assigned_to,
+            )
         with Session(self._engine) as session, session.begin():
             projection = session.scalar(
                 select(FinanceEffectiveRecordRow).where(
@@ -167,6 +198,29 @@ class SubmissionLedgerService:
                 raise SubmissionLedgerError(
                     "CROSS_FACTORY_FORBIDDEN", "厂长只能打回本厂提交。"
                 )
+
+            # ── Idempotency check FIRST: see if we already created this correction ──
+            if idempotency_key:
+                existing = session.scalar(
+                    select(SubmissionCorrectionRow).where(
+                        SubmissionCorrectionRow.requested_by == requested_by,
+                        SubmissionCorrectionRow.idempotency_key == idempotency_key,
+                    )
+                )
+                if existing is not None:
+                    if existing.request_hash != request_hash:
+                        raise SubmissionLedgerError(
+                            "IDEMPOTENCY_CONFLICT",
+                            "同一幂等键对应不同更正请求。",
+                        )
+                    # same hash → replay: return the original correction
+                    return {
+                        "correction_id": existing.correction_id,
+                        "task_id": "",
+                        "status": existing.status,
+                    }
+
+            # ── Only check CORRECTION_OPEN if not idempotent replay ──
             if session.scalar(
                 select(SubmissionCorrectionRow.correction_id).where(
                     SubmissionCorrectionRow.root_submission_id
@@ -175,48 +229,76 @@ class SubmissionLedgerService:
                 )
             ):
                 raise SubmissionLedgerError("CORRECTION_OPEN", "该提交已有待处理更正。")
+
             correction_id = self._id("COR")
             task_id = self._id("BT")
-            session.add(
-                SubmissionCorrectionRow(
-                    correction_id=correction_id,
-                    root_submission_id=projection.root_submission_id,
-                    original_submission_id=submission_id,
-                    factory_id=factory_id,
-                    reason=reason.strip(),
-                    delegate_reason="",
-                    original_actor_id=projection.subject_employee_code,
-                    requested_by=requested_by,
-                    review_note="",
-                    status="RETURNED",
-                    created_at=now,
+            try:
+                session.add(
+                    SubmissionCorrectionRow(
+                        correction_id=correction_id,
+                        root_submission_id=projection.root_submission_id,
+                        original_submission_id=submission_id,
+                        factory_id=factory_id,
+                        reason=reason.strip(),
+                        delegate_reason="",
+                        original_actor_id=projection.subject_employee_code,
+                        requested_by=requested_by,
+                        review_note="",
+                        status="RETURNED",
+                        idempotency_key=idempotency_key,
+                        request_hash=request_hash,
+                        created_at=now,
+                    )
                 )
-            )
-            session.add(
-                BusinessTaskRow(
-                    task_id=task_id,
-                    task_type="CORRECTION_REFILL",
-                    resource_id=correction_id,
-                    factory_id=factory_id,
-                    assigned_to=assigned_to,
-                    status="PENDING",
-                    payload={"submission_id": submission_id, "reason": reason.strip()},
-                    created_at=now,
+                session.add(
+                    BusinessTaskRow(
+                        task_id=task_id,
+                        task_type="CORRECTION_REFILL",
+                        resource_id=correction_id,
+                        factory_id=factory_id,
+                        assigned_to=assigned_to,
+                        status="PENDING",
+                        payload={"submission_id": submission_id, "reason": reason.strip()},
+                        created_at=now,
+                    )
                 )
-            )
-            projection.status = "HELD"
-            projection.updated_at = now
-            self._event(
-                session,
-                "FINANCE_HELD",
-                submission_id,
-                projection.root_submission_id,
-                factory_id,
-                requested_by,
-                {"correction_id": correction_id, "reason": reason.strip()},
-                now,
-                projection.business_date,
-            )
+                projection.status = "HELD"
+                projection.updated_at = now
+                self._event(
+                    session,
+                    "FINANCE_HELD",
+                    submission_id,
+                    projection.root_submission_id,
+                    factory_id,
+                    requested_by,
+                    {"correction_id": correction_id, "reason": reason.strip()},
+                    now,
+                    projection.business_date,
+                )
+                session.flush()
+            except IntegrityError:
+                session.rollback()
+                # Race: another transaction created the same (requested_by, idempotency_key)
+                # Re-read and decide
+                with Session(self._engine) as retry_session:
+                    race_existing = retry_session.scalar(
+                        select(SubmissionCorrectionRow).where(
+                            SubmissionCorrectionRow.requested_by == requested_by,
+                            SubmissionCorrectionRow.idempotency_key == idempotency_key,
+                        )
+                    )
+                    if race_existing is None:
+                        raise  # should not happen — unique constraint triggered but row missing
+                    if request_hash and race_existing.request_hash != request_hash:
+                        raise SubmissionLedgerError(
+                            "IDEMPOTENCY_CONFLICT",
+                            "并发冲突：同一幂等键对应不同更正请求。",
+                        ) from None
+                    return {
+                        "correction_id": race_existing.correction_id,
+                        "task_id": "",
+                        "status": race_existing.status,
+                    }
         return {"correction_id": correction_id, "task_id": task_id, "status": "RETURNED"}
 
     def attach_replacement(
@@ -347,7 +429,14 @@ class SubmissionLedgerService:
             result_status = correction.status
         return {"correction_id": correction_id, "status": result_status}
 
-    def overview(self, factory_id: str | None = None) -> dict[str, int]:
+    def get_effective(self, submission_id: str) -> dict[str, object]:
+        with Session(self._engine) as session:
+            row = session.get(FinanceEffectiveRecordRow, submission_id)
+            if row is None:
+                raise SubmissionLedgerError("SUBMISSION_NOT_FOUND", "未找到当前有效提交。")
+            return self._projection_payload(row)
+
+    def overview(self, factory_id: str | None = None, scope: str | None = None) -> dict[str, int]:
         today = self.business_date(self._clock())
         month = today[:7]
         year = today[:4]
@@ -355,6 +444,12 @@ class SubmissionLedgerService:
             filters = [FinanceEffectiveRecordRow.status == "ACTIVE"]
             if factory_id:
                 filters.append(FinanceEffectiveRecordRow.factory_id == factory_id)
+            if scope == "today":
+                filters.append(FinanceEffectiveRecordRow.business_date == today)
+            elif scope == "month":
+                filters.append(FinanceEffectiveRecordRow.business_date.like(f"{month}%"))
+            elif scope == "year":
+                filters.append(FinanceEffectiveRecordRow.business_date.like(f"{year}%"))
             def count(prefix: str) -> int:
                 return int(
                     session.scalar(
@@ -366,7 +461,9 @@ class SubmissionLedgerService:
                 )
             return {"today": count(today), "month": count(month), "year": count(year)}
 
-    def list_ledger(self, factory_id: str | None = None) -> dict[str, object]:
+    def list_ledger(
+        self, factory_id: str | None = None, scope: str | None = None
+    ) -> dict[str, object]:
         with Session(self._engine) as session:
             statement = select(FinanceEffectiveRecordRow).order_by(
                 FinanceEffectiveRecordRow.submitted_at.desc()
@@ -374,6 +471,20 @@ class SubmissionLedgerService:
             if factory_id:
                 statement = statement.where(
                     FinanceEffectiveRecordRow.factory_id == factory_id
+                )
+            if scope == "today":
+                statement = statement.where(
+                    FinanceEffectiveRecordRow.business_date == self.business_date(self._clock())
+                )
+            elif scope == "month":
+                month = self.business_date(self._clock())[:7]
+                statement = statement.where(
+                    FinanceEffectiveRecordRow.business_date.like(f"{month}%")
+                )
+            elif scope == "year":
+                year = self.business_date(self._clock())[:4]
+                statement = statement.where(
+                    FinanceEffectiveRecordRow.business_date.like(f"{year}%")
                 )
             items = session.scalars(statement).all()
             return {"items": [self._projection_payload(row) for row in items]}
@@ -431,6 +542,8 @@ class SubmissionLedgerService:
                         "reviewed_by": row.reviewed_by,
                         "review_note": row.review_note,
                         "status": row.status,
+                        "idempotency_key": row.idempotency_key or "",
+                        "request_hash": row.request_hash or "",
                         "created_at": row.created_at.isoformat(),
                     }
                     for row in rows

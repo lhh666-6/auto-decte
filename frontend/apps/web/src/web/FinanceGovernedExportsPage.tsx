@@ -4,7 +4,10 @@ import {
   createGovernedExport,
   listGovernedExports,
   listReportMappings,
+  previewGovernedExport,
+  reexportGovernedExport,
 } from "./api";
+import type { ExportPreview } from "./api";
 import type { GovernedExportBatch, ReportMappingVersion } from "./types";
 import { StatusBadge, PageHeader, EmptyState, ErrorAlert, SummaryCardGrid } from "./shared";
 import type { SummaryCard } from "./shared";
@@ -12,6 +15,7 @@ import "./finance-pages.css";
 
 type TabKey = "create" | "history" | "reexport";
 type CreateStep = 1 | 2 | 3;
+type PreviewState = "idle" | "loading" | "result" | "stale";
 
 function formatTime(iso: string): string {
   if (!iso) return "—";
@@ -38,6 +42,10 @@ export function FinanceGovernedExportsPage() {
   // Re-export state
   const [reExportBatch, setReExportBatch] = useState<GovernedExportBatch | null>(null);
   const [reExportStep, setReExportStep] = useState<"review" | "confirm">("review");
+
+  // Preview state
+  const [previewState, setPreviewState] = useState<PreviewState>("idle");
+  const [previewData, setPreviewData] = useState<ExportPreview | null>(null);
 
   function reload() {
     setError("");
@@ -74,7 +82,8 @@ export function FinanceGovernedExportsPage() {
   async function handleReExport() {
     if (!reExportBatch) return;
     try {
-      const batch = await createGovernedExport(
+      const batch = await reexportGovernedExport(
+        reExportBatch.export_batch_id,
         reExportBatch.template_version_id,
         reExportBatch.mapping_version_id,
         "",
@@ -84,6 +93,32 @@ export function FinanceGovernedExportsPage() {
       setReExportStep("review");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "重导失败");
+    }
+  }
+
+  async function handlePreview() {
+    if (!selectedMapping) return;
+    setPreviewState("loading");
+    setPreviewData(null);
+    setError("");
+    try {
+      const preview = await previewGovernedExport(
+        selectedMapping.template_version_id,
+        selectedMapping.mapping_version_id,
+        selectedFactory,
+      );
+      setPreviewData(preview);
+      setPreviewState("result");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "预览生成失败");
+      setPreviewState("idle");
+    }
+  }
+
+  // Mark preview stale when scope changes after a successful preview
+  function markPreviewStale() {
+    if (previewState === "result") {
+      setPreviewState("stale");
     }
   }
 
@@ -212,7 +247,7 @@ export function FinanceGovernedExportsPage() {
                 </select>
               </label>
               <div className="export-step-actions">
-                <button type="button" className="primary" onClick={() => setCreateStep(2)} disabled={!selectedMapping}>
+                <button type="button" className="primary" onClick={() => { setPreviewState("idle"); setPreviewData(null); setCreateStep(2); }} disabled={!selectedMapping}>
                   下一步：预览
                 </button>
               </div>
@@ -228,29 +263,90 @@ export function FinanceGovernedExportsPage() {
                 <dd style={{ fontFamily: "monospace", fontSize: 12 }}>{selectedMapping.template_version_id}</dd>
                 <dt>映射版本</dt>
                 <dd>V{selectedMapping.version} (ID: {selectedMapping.mapping_version_id.slice(0, 12)}...)</dd>
-                <dt>正式记录数</dt>
-                <dd style={{ fontWeight: 650 }}>[预估] 1,280 条</dd>
-                <dt>涉及员工数</dt>
-                <dd style={{ fontWeight: 650 }}>[预估] 156 人</dd>
-                <dt>总金额</dt>
-                <dd style={{ fontWeight: 650, fontVariantNumeric: "tabular-nums" }}>[预估] ¥ 384,200.00</dd>
-                <dt>异常数</dt>
-                <dd style={{ color: "#e07b16" }}>[预估] 3 条</dd>
-                <dt>需重导来源数</dt>
-                <dd style={{ color: "#9d2424" }}>0</dd>
                 <dt>日期范围</dt>
                 <dd>{dateRange.start || "不限"} 至 {dateRange.end || "不限"}</dd>
                 <dt>目标工厂</dt>
                 <dd>{selectedFactory || "全部"}</dd>
+                <dt>正式记录数</dt>
+                <dd style={{ fontWeight: 650 }}>
+                  {previewState === "result" || previewState === "stale"
+                    ? `${previewData?.record_count ?? "—"} 条`
+                    : previewState === "loading"
+                      ? "加载中…"
+                      : "—"}
+                  {previewState === "stale" && (
+                    <span style={{ color: "#e07b16", fontSize: 11, marginLeft: 6 }}>（范围已变更）</span>
+                  )}
+                </dd>
+                <dt>涉及员工数</dt>
+                <dd style={{ fontWeight: 650 }}>
+                  {previewState === "result" || previewState === "stale"
+                    ? `${previewData?.employee_count ?? "—"} 人`
+                    : "—"}
+                </dd>
+                <dt>总金额</dt>
+                <dd style={{ fontWeight: 650, fontVariantNumeric: "tabular-nums" }}>
+                  {previewState === "result" || previewState === "stale"
+                    ? `¥ ${previewData?.total_amount ?? "—"}`
+                    : "—"}
+                </dd>
+                <dt>异常数</dt>
+                <dd style={{ color: "#e07b16" }}>
+                  {previewState === "result" || previewState === "stale"
+                    ? `${previewData?.anomaly_count ?? "—"} 条`
+                    : "—"}
+                </dd>
+                <dt>需重导来源数</dt>
+                <dd style={{ color: "#9d2424" }}>—</dd>
               </div>
-              <div className="export-step-actions">
-                <button type="button" className="secondary" onClick={() => setCreateStep(1)}>
-                  返回修改
-                </button>
-                <button type="button" className="primary" onClick={() => setCreateStep(3)}>
-                  下一步：确认创建
-                </button>
-              </div>
+              {previewState === "idle" && (
+                <div className="export-step-actions">
+                  <button type="button" className="secondary" onClick={() => setCreateStep(1)}>
+                    返回修改
+                  </button>
+                  <button type="button" className="primary" onClick={() => void handlePreview()}>
+                    请先生成预览
+                  </button>
+                </div>
+              )}
+              {previewState === "loading" && (
+                <div className="export-step-actions">
+                  <button type="button" className="secondary" onClick={() => setCreateStep(1)}>
+                    返回修改
+                  </button>
+                  <button type="button" className="primary" disabled>
+                    预览生成中…
+                  </button>
+                </div>
+              )}
+              {(previewState === "result" || previewState === "stale") && (
+                <div className="export-step-actions">
+                  <button type="button" className="secondary" onClick={() => { setCreateStep(1); markPreviewStale(); }}>
+                    返回修改
+                  </button>
+                  <button
+                    type="button"
+                    className="primary"
+                    onClick={() => void handlePreview()}
+                    style={previewState === "stale" ? { background: "#e07b16" } : undefined}
+                  >
+                    {previewState === "stale" ? "重新生成预览" : "刷新预览"}
+                  </button>
+                  <button
+                    type="button"
+                    className="primary"
+                    onClick={() => setCreateStep(3)}
+                    disabled={previewState === "stale"}
+                  >
+                    下一步：确认创建
+                  </button>
+                </div>
+              )}
+              {previewState === "stale" && (
+                <p style={{ margin: 0, fontSize: 12, color: "#e07b16" }}>
+                  范围已变更，预览数据可能不准确。请重新生成预览后再创建。
+                </p>
+              )}
             </div>
           )}
 

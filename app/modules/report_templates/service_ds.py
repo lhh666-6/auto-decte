@@ -280,6 +280,164 @@ class ReportTemplateService:
             payload = self._batch(row)
         return payload
 
+    def reexport(
+        self,
+        *,
+        source_batch_id: str,
+        idempotency_key: str,
+        records: list[dict[str, Any]],
+        data_watermark: str,
+        actor_id: str,
+        reason: str = "",
+    ) -> dict[str, object]:
+        """Create a re-export that supersedes an existing export batch.
+
+        The source batch is marked SUPERSEDED (but remains downloadable).
+        Old file content and hash are immutable.  New lineage rows point to the
+        new batch.
+        """
+        now = self._clock()
+        with Session(self._engine) as session, session.begin():
+            source = session.get(GovernedExportBatchRow, source_batch_id)
+            if source is None:
+                raise ReportTemplateError("SOURCE_EXPORT_NOT_FOUND", "源导出批次不存在。")
+            if source.status not in ("AVAILABLE", "SUPERSEDED"):
+                raise ReportTemplateError(
+                    "EXPORT_SOURCE_INVALID", "仅可用或已被替代的导出才能重导。"
+                )
+
+            request_payload = {"source_batch_id": source_batch_id, "reason": reason}
+            request_hash = self._hash_json(request_payload)
+
+            existing = session.scalar(
+                select(GovernedExportBatchRow).where(
+                    GovernedExportBatchRow.idempotency_key == idempotency_key
+                )
+            )
+            if existing is not None:
+                if existing.request_hash != request_hash:
+                    raise ReportTemplateError(
+                        "IDEMPOTENCY_CONFLICT", "幂等键对应不同导出请求。"
+                    )
+                return self._batch(existing)
+
+            template = session.get(ReportTemplateVersionRow, source.template_version_id)
+            if template is None:
+                raise ReportTemplateError("EXPORT_BINDING_INVALID", "模板不存在。")
+            workbook = self._workbook(template)
+            mapping = session.get(ReportMappingVersionRow, source.mapping_version_id)
+            if mapping is None:
+                raise ReportTemplateError("EXPORT_BINDING_INVALID", "映射不存在。")
+            mapping_data = mapping.mapping_json
+            sheet = workbook[str(mapping_data["sheet"])]
+            start_row = int(mapping_data["start_row"])
+            export_batch_id = self._id("GEB")
+            lineage_rows: list[dict[str, object]] = []
+            for offset, record in enumerate(records):
+                row_index = start_row + offset
+                submission_id = str(record.get("submission_id", ""))
+                for column in mapping_data["columns"]:
+                    column_index = int(column["column"])
+                    field_key = str(column["source_field"])
+                    value = self._safe_cell(record.get(field_key))
+                    cell = sheet.cell(row=row_index, column=column_index)
+                    cell.value = value
+                    lineage_rows.append(
+                        {
+                            "sheet_name": sheet.title,
+                            "row_index": row_index,
+                            "column_index": column_index,
+                            "cell_address": cell.coordinate,
+                            "submission_id": submission_id,
+                            "field_key": field_key,
+                        }
+                    )
+            output = BytesIO()
+            workbook.save(output)
+            file_content = output.getvalue()
+            load_workbook(BytesIO(file_content), read_only=True, data_only=False).close()
+            new_row = GovernedExportBatchRow(
+                export_batch_id=export_batch_id,
+                idempotency_key=idempotency_key,
+                request_hash=request_hash,
+                template_version_id=source.template_version_id,
+                mapping_version_id=source.mapping_version_id,
+                filters=dict(source.filters or {}),
+                data_watermark=data_watermark,
+                status="AVAILABLE",
+                file_content=file_content,
+                file_hash=self._sha(file_content),
+                download_name=f"{Path(source.download_name).stem}-RE{now:%Y%m%d%H%M%S}.xlsx",
+                created_by=actor_id,
+                created_at=now,
+                supersedes_batch_id=source_batch_id,
+            )
+            session.add(new_row)
+            session.flush()
+            for lineage_entry in lineage_rows:
+                session.add(
+                    ExportCellLineageRow(
+                        lineage_id=self._id("ECL"),
+                        export_batch_id=export_batch_id,
+                        sheet_name=str(lineage_entry["sheet_name"]),
+                        row_index=int(str(lineage_entry["row_index"])),
+                        column_index=int(str(lineage_entry["column_index"])),
+                        cell_address=str(lineage_entry["cell_address"]),
+                        submission_id=str(lineage_entry["submission_id"]),
+                        field_key=str(lineage_entry["field_key"]),
+                    )
+                )
+            if source.status == "AVAILABLE":
+                source.status = "SUPERSEDED"
+                session.add(source)
+            payload = self._batch(new_row)
+        return payload
+
+    def preview_export(
+        self,
+        *,
+        template_version_id: str,
+        mapping_version_id: str,
+        filters: dict[str, Any],
+        records: list[dict[str, Any]],
+    ) -> dict[str, object]:
+        """Compute a read-only preview without creating a permanent export record."""
+        with Session(self._engine) as session:
+            template = session.get(ReportTemplateVersionRow, template_version_id)
+            mapping = session.get(ReportMappingVersionRow, mapping_version_id)
+            if template is None or mapping is None:
+                raise ReportTemplateError("EXPORT_BINDING_INVALID", "模板或映射不存在。")
+            if mapping.template_version_id != template_version_id:
+                raise ReportTemplateError("EXPORT_BINDING_INVALID", "映射不属于所选模板。")
+            if mapping.status != "CONFIRMED":
+                raise ReportTemplateError(
+                    "MAPPING_NOT_CONFIRMED", "未确认映射不能预览。"
+                )
+        factory_filter = str(filters.get("factory_id", "")).strip() or None
+        filtered = records
+        if factory_filter:
+            filtered = [
+                r for r in records
+                if str(r.get("factory_id", "")).strip() == factory_filter
+            ]
+        employees: set[str] = set()
+        total_amount = 0.0
+        for record in filtered:
+            employees.add(str(record.get("subject_employee_code", "")))
+            for column in mapping.mapping_json.get("columns", []):
+                field_key = str(column.get("source_field", ""))
+                value = str(record.get(field_key, "0"))
+                try:
+                    total_amount += float(value)
+                except (ValueError, TypeError):
+                    pass
+        return {
+            "record_count": len(filtered),
+            "employee_count": len(employees),
+            "total_amount": f"{total_amount:,.2f}",
+            "anomaly_count": 0,  # requires anomaly-detection engine; currently not available
+        }
+
     def list_exports(self) -> dict[str, object]:
         with Session(self._engine) as session:
             rows = session.scalars(
@@ -292,7 +450,9 @@ class ReportTemplateService:
     def download(self, export_batch_id: str) -> bytes:
         with Session(self._engine) as session:
             row = session.get(GovernedExportBatchRow, export_batch_id)
-            if row is None or row.status != "AVAILABLE":
+            if row is None:
+                raise ReportTemplateError("EXPORT_NOT_AVAILABLE", "导出文件不可下载。")
+            if row.status not in ("AVAILABLE", "SUPERSEDED"):
                 raise ReportTemplateError("EXPORT_NOT_AVAILABLE", "导出文件不可下载。")
             if self._sha(row.file_content) != row.file_hash:
                 raise ReportTemplateError("EXPORT_INTEGRITY_FAILED", "导出文件完整性校验失败。")
@@ -524,4 +684,5 @@ class ReportTemplateService:
             "file_hash": row.file_hash,
             "download_name": row.download_name,
             "created_by": row.created_by,
+            "supersedes_batch_id": row.supersedes_batch_id or "",
         }

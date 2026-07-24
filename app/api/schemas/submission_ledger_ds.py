@@ -14,6 +14,12 @@ class AttachReplacementRequest(BaseModel):
     delegate_reason: str = Field(default="", max_length=500)
 
 
+class CreateCorrectionRequest(BaseModel):
+    reason: str = Field(min_length=1, max_length=500)
+    correction_type: str = Field(min_length=1, max_length=50)
+    request_id: str | None = Field(default=None, max_length=100)
+
+
 class ReviewCorrectionRequest(BaseModel):
     approved: bool
     note: str = Field(default="", max_length=500)

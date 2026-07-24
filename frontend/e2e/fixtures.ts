@@ -383,14 +383,9 @@ export async function loginMobile(page: Page, account: TestAccount) {
 // ─── Custom Fixture (page error + console error monitoring) ──────────────────
 
 export interface E2EFixtures {
-  /** Records uncaught errors emitted on the page. */
   pageErrors: string[];
-  /**
-   * Records console.error calls, excluding browser-generated
-   * "Failed to load resource" messages (which are expected in
-   * test environments with partially-mocked APIs).
-   */
   consoleErrors: string[];
+  appPageErrors: string[];
 }
 
 export const test = base.extend<E2EFixtures>({

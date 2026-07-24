@@ -25,9 +25,11 @@ from app.api.schemas.payroll_rules_ds import (
 from app.api.schemas.report_templates_ds import (
     CreateGovernedExportRequest,
     CreateReportMappingRequest,
+    PreviewGovernedExportRequest,
 )
 from app.api.schemas.submission_ledger_ds import (
     AttachReplacementRequest,
+    CreateCorrectionRequest,
     ReviewCorrectionRequest,
 )
 from app.api.schemas.web_workspaces_ds import OverviewCard, WorkspaceOverviewResponse
@@ -123,15 +125,75 @@ def overview(
 
 
 @router.get("/ledger/overview")
-def ledger_overview(request: Request, factory_id: str = Query(default="")) -> dict[str, int]:
+def ledger_overview(
+    request: Request,
+    factory_id: str = Query(default=""),
+    scope: str = Query(default=""),
+) -> dict[str, int]:
     _finance_actor(request)
-    return _ledger(request).overview(factory_id or None)
+    return _ledger(request).overview(factory_id or None, scope or None)
 
 
 @router.get("/ledger")
-def ledger(request: Request, factory_id: str = Query(default="")) -> dict[str, object]:
+def ledger(
+    request: Request,
+    factory_id: str = Query(default=""),
+    scope: str = Query(default=""),
+) -> dict[str, object]:
     _finance_actor(request)
-    return _ledger(request).list_ledger(factory_id or None)
+    return _ledger(request).list_ledger(factory_id or None, scope or None)
+
+
+@router.post(
+    "/ledger/{submission_id}/corrections",
+    status_code=status.HTTP_201_CREATED,
+)
+def create_correction(
+    submission_id: str,
+    body: CreateCorrectionRequest,
+    request: Request,
+    x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token"),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+) -> dict[str, str]:
+    actor = _finance_actor(request)
+    require_web_csrf(request, x_csrf_token)
+    if idempotency_key is None or not idempotency_key.strip():
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "IDEMPOTENCY_KEY_REQUIRED",
+                "detail": "更正请求必须提供 Idempotency-Key。",
+            },
+        )
+    ledger_svc = _ledger(request)
+    try:
+        effective = ledger_svc.get_effective(submission_id)
+    except SubmissionLedgerError as error:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": error.code, "detail": error.detail},
+        ) from error
+    factory_id = str(effective["factory_id"])
+    assigned_to = str(effective["subject_employee_code"])
+    try:
+        return ledger_svc.return_submission(
+            submission_id=submission_id,
+            factory_id=factory_id,
+            reason=body.reason,
+            requested_by=actor.employee_code,
+            assigned_to=assigned_to,
+            idempotency_key=idempotency_key.strip(),
+        )
+    except SubmissionLedgerError as error:
+        status_code_http = (
+            409
+            if error.code != "IDEMPOTENCY_CONFLICT"
+            else status.HTTP_409_CONFLICT
+        )
+        raise HTTPException(
+            status_code=status_code_http,
+            detail={"code": error.code, "detail": error.detail},
+        ) from error
 
 
 @router.get("/corrections")
@@ -315,6 +377,43 @@ def confirm_report_mapping(
         ) from error
 
 
+@router.post("/exports/preview")
+def preview_governed_export(
+    body: PreviewGovernedExportRequest,
+    request: Request,
+    x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token"),
+) -> dict[str, object]:
+    _finance_actor(request)
+    require_web_csrf(request, x_csrf_token)
+    ledger_service = _ledger(request)
+    factory_id = str(body.filters.get("factory_id", "")).strip() or None
+    source_records = ledger_service.list_ledger(factory_id)["items"]
+    records: list[dict[str, object]] = []
+    if not isinstance(source_records, list):
+        source_records = []
+    for item in source_records:
+        if not isinstance(item, dict):
+            continue
+        record = dict(item)
+        values = record.pop("values", {})
+        if isinstance(values, dict):
+            record.update(values)
+        record["submission_id"] = record["effective_submission_id"]
+        records.append(record)
+    try:
+        return _reports(request).preview_export(
+            template_version_id=body.template_version_id,
+            mapping_version_id=body.mapping_version_id,
+            filters=body.filters,
+            records=records,
+        )
+    except ReportTemplateError as error:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": error.code, "detail": error.detail},
+        ) from error
+
+
 @router.post("/exports", status_code=201)
 def create_governed_export(
     body: CreateGovernedExportRequest,
@@ -344,6 +443,45 @@ def create_governed_export(
             mapping_version_id=body.mapping_version_id,
             idempotency_key=body.idempotency_key,
             filters=body.filters,
+            records=records,
+            data_watermark=ledger_service.watermark(),
+            actor_id=actor.employee_code,
+        )
+    except ReportTemplateError as error:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": error.code, "detail": error.detail},
+        ) from error
+
+
+@router.post("/exports/{source_batch_id}/reexport", status_code=201)
+def reexport_governed_export(
+    source_batch_id: str,
+    body: CreateGovernedExportRequest,
+    request: Request,
+    x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token"),
+) -> dict[str, object]:
+    actor = _finance_actor(request)
+    require_web_csrf(request, x_csrf_token)
+    ledger_service = _ledger(request)
+    factory_id = str(body.filters.get("factory_id", "")).strip() or None
+    source_records = ledger_service.list_ledger(factory_id)["items"]
+    records: list[dict[str, object]] = []
+    if not isinstance(source_records, list):
+        source_records = []
+    for item in source_records:
+        if not isinstance(item, dict):
+            continue
+        record = dict(item)
+        values = record.pop("values", {})
+        if isinstance(values, dict):
+            record.update(values)
+        record["submission_id"] = record["effective_submission_id"]
+        records.append(record)
+    try:
+        return _reports(request).reexport(
+            source_batch_id=source_batch_id,
+            idempotency_key=body.idempotency_key,
             records=records,
             data_watermark=ledger_service.watermark(),
             actor_id=actor.employee_code,

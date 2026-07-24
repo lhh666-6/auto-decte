@@ -30,7 +30,7 @@ it("shows real-time period projections and effective finance records", async () 
       status: "ACTIVE",
     }] }))
     .mockResolvedValueOnce(response({ items: [] })));
-  render(<FinanceLedgerPage />);
+  render(<FinanceLedgerPage scope="today" />);
   expect(await screen.findByText("SUB-2")).toBeTruthy();
   expect(screen.getByText("正式记录数")).toBeTruthy();
   expect(screen.getByText("FACTORY-A")).toBeTruthy();

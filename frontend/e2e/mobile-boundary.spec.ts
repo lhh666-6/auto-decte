@@ -1,4 +1,4 @@
-import { test, expect, loginMobile, getTestAccount, installMobileSession, installApiFallback } from "./fixtures";
+import { test, expect, loginMobile, getTestAccount, installApiFallback } from "./fixtures";
 
 test.describe("E2E-02: Mobile boundary", () => {
   test("SORT worker can access /mobile/work after login", async ({ page, pageErrors, consoleErrors }) => {

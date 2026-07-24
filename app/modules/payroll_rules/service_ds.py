@@ -137,7 +137,14 @@ class PayrollService:
         period_start: str,
         period_end: str,
         actor_id: str,
+        dry_run: bool = False,
     ) -> dict[str, object]:
+        if dry_run:
+            return self._trial_calculate(
+                rule_version_id=rule_version_id,
+                period_start=period_start,
+                period_end=period_end,
+            )
         return self._calculate(
             rule_version_id=rule_version_id,
             period_start=period_start,
@@ -248,6 +255,73 @@ class PayrollService:
             payload = self._batch(batch)
             payload["result_count"] = len(records)
         return payload
+
+    def _trial_calculate(
+        self,
+        *,
+        rule_version_id: str,
+        period_start: str,
+        period_end: str,
+    ) -> dict[str, object]:
+        """Dry-run calculation: returns results without creating any persistent records."""
+        with Session(self._engine) as session:
+            rule = self._rule_required(session, rule_version_id)
+            if rule.status != "APPROVED":
+                raise PayrollError("RULE_NOT_APPROVED", "未批准工资规则不能试算。")
+            records = session.scalars(
+                select(FinanceEffectiveRecordRow).where(
+                    FinanceEffectiveRecordRow.factory_id == rule.factory_id,
+                    FinanceEffectiveRecordRow.status == "ACTIVE",
+                    FinanceEffectiveRecordRow.business_date >= period_start,
+                    FinanceEffectiveRecordRow.business_date <= period_end,
+                )
+            ).all()
+            # Fetch existing confirmed results for comparison
+            confirmed = session.scalars(
+                select(PayrollCalculationResultRow)
+                .join(
+                    PayrollCalculationBatchRow,
+                    PayrollCalculationBatchRow.batch_id
+                    == PayrollCalculationResultRow.batch_id,
+                )
+                .where(
+                    PayrollCalculationBatchRow.status == "CONFIRMED",
+                    PayrollCalculationResultRow.rule_version_id == rule_version_id,
+                )
+            ).all()
+            confirmed_map: dict[str, str] = {
+                row.root_submission_id: row.amount for row in confirmed
+            }
+            trial_items: list[dict[str, object]] = []
+            for record in records:
+                amount = self._amount(rule.dsl, record.values)
+                original = confirmed_map.get(record.root_submission_id)
+                delta = (
+                    self._money(amount - Decimal(original))
+                    if original is not None
+                    else None
+                )
+                trial_items.append({
+                    "employee_code": record.subject_employee_code,
+                    "factory_id": record.factory_id,
+                    "business_date": record.business_date,
+                    "amount": self._money(amount),
+                    "original_amount": original,
+                    "delta_amount": delta,
+                })
+            return {
+                "items": trial_items,
+                "result_count": len(records),
+                "rule": {
+                    "rule_version_id": rule.rule_version_id,
+                    "name": rule.name,
+                    "factory_id": rule.factory_id,
+                    "version": rule.version,
+                    "dsl": rule.dsl,
+                    "status": rule.status,
+                },
+                "dry_run": True,
+            }
 
     def confirm_batch(self, batch_id: str, *, actor_id: str) -> dict[str, object]:
         now = self._clock()

@@ -28,8 +28,10 @@ import { AdminRolesPage } from "../web/AdminRolesPage";
 import { AdminVersionExceptionsPage } from "../web/AdminVersionExceptionsPage";
 import { AdminWorkflowApprovalsPage } from "../web/AdminWorkflowApprovalsPage";
 import { BusinessModelingPage } from "../web/BusinessModelingPage";
+import { FinanceExceptionsPage } from "../web/FinanceExceptionsPage";
 import { FinanceFormsPage } from "../web/FinanceFormsPage";
 import { FinanceLedgerPage } from "../web/FinanceLedgerPage";
+import { FinanceOverviewEnhancement } from "../web/FinanceOverviewEnhancement";
 import { FinanceGovernedExportsPage } from "../web/FinanceGovernedExportsPage";
 import { FinanceReportTemplatesPage } from "../web/FinanceReportTemplatesPage";
 import { PlantExceptionsPage } from "../web/PlantExceptionsPage";
@@ -109,14 +111,14 @@ export function AppRoutes() {
 
         <Route path="finance" element={<WebWorkspaceLayout workspace="FINANCE" />}>
           <Route index element={<Navigate to="/finance/overview" replace />} />
-          <Route path="overview" element={<WorkspaceOverviewPage workspace="FINANCE" />} />
+          <Route path="overview" element={<FinanceOverviewEnhancement />} />
           <Route path="forms" element={<FinanceFormsPage />} />
           <Route path="workflows" element={<WorkflowDesignerPage />} />
           <Route path="business-modeling" element={<BusinessModelingPage />} />
-          <Route path="today" element={<FinanceLedgerPage />} />
-          <Route path="month" element={<FinanceLedgerPage />} />
-          <Route path="year" element={<FinanceLedgerPage />} />
-          <Route path="exceptions" element={<FinanceLedgerPage />} />
+          <Route path="today" element={<FinanceLedgerPage scope="today" />} />
+          <Route path="month" element={<FinanceLedgerPage scope="month" />} />
+          <Route path="year" element={<FinanceLedgerPage scope="year" />} />
+          <Route path="exceptions" element={<FinanceExceptionsPage />} />
           <Route path="payroll-rules" element={<PayrollRulesPage />} />
           <Route path="report-templates" element={<FinanceReportTemplatesPage />} />
           <Route path="exports" element={<FinanceGovernedExportsPage />} />

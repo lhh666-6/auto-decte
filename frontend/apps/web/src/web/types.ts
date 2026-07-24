@@ -270,6 +270,8 @@ export interface SubmissionCorrection {
   reviewed_by?: string;
   review_note: string;
   status: string;
+  idempotency_key: string;
+  request_hash: string;
   created_at: string;
 }
 
@@ -359,4 +361,5 @@ export interface GovernedExportBatch {
   status: string;
   file_hash: string;
   download_name: string;
+  supersedes_batch_id?: string;
 }

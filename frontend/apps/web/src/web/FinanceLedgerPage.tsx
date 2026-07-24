@@ -5,6 +5,7 @@ import {
   listFinanceLedger,
   getFinanceLedgerOverview,
   reviewCorrection,
+  submitFinanceCorrection,
 } from "./api";
 import type { FinanceRecord, SubmissionCorrection } from "./types";
 import {
@@ -55,7 +56,15 @@ function formatQty(raw: unknown): string {
   return String(raw);
 }
 
-export function FinanceLedgerPage() {
+type LedgerScope = "today" | "month" | "year";
+
+const SCOPE_LABELS: Record<LedgerScope, string> = {
+  today: "今日",
+  month: "本月",
+  year: "本年",
+};
+
+export function FinanceLedgerPage({ scope }: { scope: LedgerScope }) {
   const [, setOverview] = useState({ today: 0, month: 0, year: 0 });
   const [records, setRecords] = useState<FinanceRecord[]>([]);
   const [corrections, setCorrections] = useState<SubmissionCorrection[]>([]);
@@ -72,14 +81,15 @@ export function FinanceLedgerPage() {
   const [correctionReason, setCorrectionReason] = useState("");
   const [correctionDesc, setCorrectionDesc] = useState("");
   const [correctionSubmitting, setCorrectionSubmitting] = useState(false);
+  const [correctionIdempotencyKey, setCorrectionIdempotencyKey] = useState("");
 
   // Per-record error state for revision conflicts in detail
   const [detailError, setDetailError] = useState("");
 
   function reload() {
     void Promise.all([
-      getFinanceLedgerOverview(),
-      listFinanceLedger(),
+      getFinanceLedgerOverview(scope),
+      listFinanceLedger(scope),
       listFinanceCorrections(),
     ])
       .then(([summary, ledger, cases]) => {
@@ -160,6 +170,7 @@ export function FinanceLedgerPage() {
     setCorrectionReason("");
     setCorrectionDesc("");
     setCorrectionType("other");
+    setCorrectionIdempotencyKey(crypto.randomUUID());
     setCorrectionOpen(true);
   }
 
@@ -167,7 +178,13 @@ export function FinanceLedgerPage() {
     if (!correctionReason.trim() || !detailRecord) return;
     setCorrectionSubmitting(true);
     try {
+      await submitFinanceCorrection(
+        detailRecord.root_submission_id,
+        { reason: correctionReason, correction_type: correctionType },
+        correctionIdempotencyKey,
+      );
       setCorrectionOpen(false);
+      setError("");
       reload();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "更正提交失败");
@@ -271,7 +288,7 @@ export function FinanceLedgerPage() {
     return (
       <section className="finance-ledger-page" data-testid="finance-ledger-page">
         <header>
-          <h1>实时财务账本</h1>
+          <h1>{SCOPE_LABELS[scope]}财务账本</h1>
           <p>数据口径：正式有效投影 · 按北京时间归属自然日 · 更正保留原始记录和完整替换链</p>
         </header>
         {renderEmptyState(emptyReason)}
@@ -282,14 +299,14 @@ export function FinanceLedgerPage() {
   return (
     <section className="finance-ledger-page" data-testid="finance-ledger-page">
       <header>
-        <h1 data-testid="finance-page-title">实时财务账本</h1>
+        <h1 data-testid="finance-page-title">{SCOPE_LABELS[scope]}财务账本</h1>
         <p>数据口径：正式有效投影 · 按北京时间归属自然日 · 更正保留原始记录和完整替换链</p>
       </header>
       {error && <div role="alert" className="error-banner">{error}</div>}
 
       {/* Top info bar */}
       <div className="finance-ledger-meta">
-        <span>日期范围：今日有效记录</span>
+        <span>日期范围：{SCOPE_LABELS[scope]}有效记录</span>
         <span>最后更新：{lastUpdated || "—"}</span>
         <span>筛选条件数：{appliedFilters.length}</span>
       </div>
@@ -659,7 +676,7 @@ export function FinanceLedgerPage() {
             </div>
 
             <div className="finance-correction-info">
-              <p><strong>Idempotency-Key：</strong>自动生成（{crypto.randomUUID().slice(0, 8)}...）以保障幂等。</p>
+              <p><strong>Idempotency-Key：</strong>{correctionIdempotencyKey.slice(0, 8)}...（保障幂等，重试复用）</p>
               <p><strong>预期 Revision：</strong>原记录 revision + 1</p>
             </div>
 

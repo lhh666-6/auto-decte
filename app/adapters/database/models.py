@@ -1333,6 +1333,10 @@ class FinanceEffectiveRecordRow(Base):
 class SubmissionCorrectionRow(Base):
     __tablename__ = "submission_corrections"
     __table_args__ = (
+        UniqueConstraint(
+            "requested_by", "idempotency_key",
+            name="ux_submission_correction_idempotency",
+        ),
         Index("ix_submission_correction_queue", "factory_id", "status", "created_at"),
     )
 
@@ -1349,6 +1353,8 @@ class SubmissionCorrectionRow(Base):
     reviewed_by: Mapped[str | None] = mapped_column(String)
     review_note: Mapped[str] = mapped_column(String, nullable=False, default="")
     status: Mapped[str] = mapped_column(String, nullable=False)
+    idempotency_key: Mapped[str | None] = mapped_column(String)
+    request_hash: Mapped[str | None] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     replaced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -1530,6 +1536,10 @@ class GovernedExportBatchRow(Base):
     download_name: Mapped[str] = mapped_column(String, nullable=False)
     created_by: Mapped[str] = mapped_column(String, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    supersedes_batch_id: Mapped[str | None] = mapped_column(
+        String,
+        nullable=True,
+    )
 
 
 class ExportCellLineageRow(Base):

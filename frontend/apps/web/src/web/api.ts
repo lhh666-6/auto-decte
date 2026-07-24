@@ -391,14 +391,20 @@ export function listPlantWorkflows(fetcher?: WebFetcher) {
   );
 }
 
-export function getFinanceLedgerOverview(fetcher?: WebFetcher) {
+export function getFinanceLedgerOverview(scope?: string, fetcher?: WebFetcher) {
+  const params = new URLSearchParams();
+  if (scope) params.set("scope", scope);
+  const qs = params.toString();
   return request<{ today: number; month: number; year: number }>(
-    "/api/v1/finance/ledger/overview", {}, fetcher,
+    `/api/v1/finance/ledger/overview${qs ? `?${qs}` : ""}`, {}, fetcher,
   );
 }
 
-export function listFinanceLedger(fetcher?: WebFetcher) {
-  return request<{ items: FinanceRecord[] }>("/api/v1/finance/ledger", {}, fetcher);
+export function listFinanceLedger(scope?: string, fetcher?: WebFetcher) {
+  const params = new URLSearchParams();
+  if (scope) params.set("scope", scope);
+  const qs = params.toString();
+  return request<{ items: FinanceRecord[] }>(`/api/v1/finance/ledger${qs ? `?${qs}` : ""}`, {}, fetcher);
 }
 
 export function listFinanceCorrections(fetcher?: WebFetcher) {
@@ -445,6 +451,25 @@ export function reviewCorrection(
       method: "POST",
       headers: csrfHeaders(true),
       body: JSON.stringify({ approved, note }),
+    },
+    fetcher,
+  );
+}
+
+export function submitFinanceCorrection(
+  submissionId: string,
+  body: { reason: string; correction_type: string },
+  idempotencyKey: string,
+  fetcher?: WebFetcher,
+) {
+  const headers = csrfHeaders(true);
+  headers["Idempotency-Key"] = idempotencyKey;
+  return request<{ correction_id: string; task_id: string; status: string }>(
+    `/api/v1/finance/ledger/${encodeURIComponent(submissionId)}/corrections`,
+    {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body),
     },
     fetcher,
   );
@@ -704,6 +729,49 @@ export function confirmPayrollBatch(batchId: string, fetcher?: WebFetcher) {
   );
 }
 
+export interface TrialPayrollResult {
+  items: Array<{
+    employee_code: string;
+    factory_id: string;
+    business_date: string;
+    amount: string;
+    original_amount?: string;
+    delta_amount?: string;
+  }>;
+  result_count: number;
+  rule: {
+    rule_version_id: string;
+    name: string;
+    factory_id: string;
+    version: number;
+    dsl: { metric: string; rate: string; base: string };
+    status: string;
+  };
+  dry_run: boolean;
+}
+
+export function trialCalculatePayroll(
+  ruleVersionId: string,
+  periodStart: string,
+  periodEnd: string,
+  fetcher?: WebFetcher,
+) {
+  return request<TrialPayrollResult>(
+    "/api/v1/finance/payroll-calculations",
+    {
+      method: "POST",
+      headers: csrfHeaders(true),
+      body: JSON.stringify({
+        rule_version_id: ruleVersionId,
+        period_start: periodStart,
+        period_end: periodEnd,
+        dry_run: true,
+      }),
+    },
+    fetcher,
+  );
+}
+
 export function listOfficialPayroll(
   workspace: "finance" | "admin" | "plant",
   fetcher?: WebFetcher,
@@ -789,8 +857,69 @@ export function createGovernedExport(
   );
 }
 
+export interface ExportPreview {
+  record_count: number;
+  employee_count: number;
+  total_amount: string;
+  anomaly_count: number;
+}
+
+export function previewGovernedExport(
+  templateVersionId: string,
+  mappingVersionId: string,
+  factoryId: string,
+  fetcher?: WebFetcher,
+) {
+  return request<ExportPreview>(
+    "/api/v1/finance/exports/preview",
+    {
+      method: "POST",
+      headers: csrfHeaders(true),
+      body: JSON.stringify({
+        template_version_id: templateVersionId,
+        mapping_version_id: mappingVersionId,
+        filters: factoryId ? { factory_id: factoryId } : {},
+      }),
+    },
+    fetcher,
+  );
+}
+
 export function listGovernedExports(fetcher?: WebFetcher) {
   return request<{ items: GovernedExportBatch[] }>(
     "/api/v1/finance/exports", {}, fetcher,
+  );
+}
+
+export function getGovernedExport(exportBatchId: string, fetcher?: WebFetcher) {
+  return request<GovernedExportBatch>(
+    `/api/v1/finance/exports/${encodeURIComponent(exportBatchId)}`, {}, fetcher,
+  );
+}
+
+export function downloadGovernedExportUrl(exportBatchId: string): string {
+  return `/api/v1/finance/exports/${encodeURIComponent(exportBatchId)}/download`;
+}
+
+export function reexportGovernedExport(
+  sourceBatchId: string,
+  templateVersionId: string,
+  mappingVersionId: string,
+  factoryId: string,
+  fetcher?: WebFetcher,
+) {
+  return request<GovernedExportBatch>(
+    `/api/v1/finance/exports/${encodeURIComponent(sourceBatchId)}/reexport`,
+    {
+      method: "POST",
+      headers: csrfHeaders(true),
+      body: JSON.stringify({
+        template_version_id: templateVersionId,
+        mapping_version_id: mappingVersionId,
+        filters: factoryId ? { factory_id: factoryId } : {},
+        idempotency_key: crypto.randomUUID(),
+      }),
+    },
+    fetcher,
   );
 }

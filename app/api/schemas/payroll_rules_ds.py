@@ -22,6 +22,7 @@ class CalculatePayrollRequest(BaseModel):
     rule_version_id: str
     period_start: str
     period_end: str
+    dry_run: bool = False
 
 
 class RecalculatePayrollRequest(BaseModel):

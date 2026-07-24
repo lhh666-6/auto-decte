@@ -53,7 +53,11 @@ it("routes an authenticated finance user from root to the finance overview", asy
       factory_id: "",
       factory_name: "",
       cards: [{ key: "today", label: "今日新增提交", value: 3 }],
-    }));
+    }))
+    .mockResolvedValueOnce(jsonResponse({ today: 3, month: 12, year: 50 }))
+    .mockResolvedValueOnce(jsonResponse({ items: [] }))
+    .mockResolvedValueOnce(jsonResponse({ items: [] }))
+    .mockResolvedValueOnce(jsonResponse({ items: [] }));
   vi.stubGlobal("fetch", fetchMock);
 
   render(
