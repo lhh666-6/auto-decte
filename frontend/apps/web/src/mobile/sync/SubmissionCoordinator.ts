@@ -47,11 +47,11 @@ export async function submitWithOutbox(
     payload: payload as unknown as Record<string, unknown>,
     draftRef,
   });
-  const result = await flushPendingOutbox();
+  const result = await flushPendingOutbox(draftRef?.owner);
   return result.receipts.at(-1) ?? null;
 }
 
-export function flushPendingOutbox(): Promise<FlushResult> {
+export function flushPendingOutbox(owner?: string): Promise<FlushResult> {
   if (syncPaused) {
     return Promise.resolve({
       succeeded: 0,
@@ -61,8 +61,19 @@ export function flushPendingOutbox(): Promise<FlushResult> {
       receipts: [],
     });
   }
+  // Fail-closed: no owner means we cannot safely scope the flush.
+  // The caller must always provide the current authenticated user.
+  if (!owner) {
+    return Promise.resolve({
+      succeeded: 0,
+      failedRetryable: 0,
+      failedFinal: 0,
+      pausedForAuthentication: false,
+      receipts: [],
+    });
+  }
   if (activeFlush) return activeFlush;
-  const pending = runFlush();
+  const pending = runFlush(owner);
   activeFlush = pending;
   const clear = () => {
     if (activeFlush === pending) activeFlush = null;
@@ -80,7 +91,7 @@ export function resumeOutboxSync(): void {
   syncPaused = false;
 }
 
-async function runFlush(): Promise<FlushResult> {
+async function runFlush(owner: string): Promise<FlushResult> {
   const result: FlushResult = {
     succeeded: 0,
     failedRetryable: 0,
@@ -88,8 +99,21 @@ async function runFlush(): Promise<FlushResult> {
     pausedForAuthentication: false,
     receipts: [],
   };
-  const pending = await listPending();
+  // Owner-aware query: only fetch entries that belong to the caller.
+  // Legacy ownerless entries are never returned by listPending(owner)
+  // because the filter requires exact match.
+  const pending = await listPending(owner);
   for (const entry of pending) {
+    // Defense-in-depth: skip entries whose owner does not match, even if
+    // listPending(owner) already filtered them.  This protects against
+    // a future regression in listPending's filter logic.
+    if (entry.owner !== owner) {
+      console.warn(
+        "[Outbox] OWNER_MISMATCH — skipping entry",
+        { entryId: entry.outboxId, entryOwner: entry.owner, activeOwner: owner },
+      );
+      continue;
+    }
     await markSubmitting(entry.outboxId);
     try {
       const receipt = await mobileApiClient.createSubmission(
@@ -132,6 +156,12 @@ async function runFlush(): Promise<FlushResult> {
   return result;
 }
 
+/**
+ * @deprecated Use {@link MobileSessionProvider} which installs its own
+ * online handler that passes the authenticated owner to flushPendingOutbox.
+ * This function is retained for backward compatibility but is a no-op
+ * because flushPendingOutbox without an owner returns empty results.
+ */
 export function installOnlineFlush(): () => void {
   const handler = () => { void flushPendingOutbox(); };
   window.addEventListener("online", handler);

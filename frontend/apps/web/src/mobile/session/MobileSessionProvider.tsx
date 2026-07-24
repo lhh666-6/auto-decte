@@ -67,10 +67,10 @@ export function MobileSessionProvider({
   }, [refreshSession]);
 
   useEffect(() => {
-    const handleOnline = () => { void flushPendingOutbox(); };
+    const handleOnline = () => { void flushPendingOutbox(sessionMetadata?.employee_code); };
     window.addEventListener("online", handleOnline);
     return () => window.removeEventListener("online", handleOnline);
-  }, []);
+  }, [sessionMetadata?.employee_code]);
 
   const login = useCallback(async (
     employeeCode: string,
@@ -83,7 +83,7 @@ export function MobileSessionProvider({
     setSessionMetadata(session);
     setError(null);
     setStatus("authenticated");
-    void flushPendingOutbox();
+    void flushPendingOutbox(session.employee_code);
     return session;
   }, [client]);
 

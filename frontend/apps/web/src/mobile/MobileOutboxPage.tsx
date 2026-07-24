@@ -34,7 +34,7 @@ export function MobileOutboxPage() {
   const retry = async (outboxId: string) => {
     try {
       await resetPending(outboxId);
-      await flushPendingOutbox();
+      await flushPendingOutbox(sessionMetadata?.employee_code);
       await load();
     } catch {
       setError("重试失败，记录仍保留在本机。");
