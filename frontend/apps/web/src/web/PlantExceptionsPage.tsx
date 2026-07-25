@@ -208,7 +208,7 @@ export function PlantExceptionsPage() {
         ) : items.length === 0 ? (
           <div className="ledger-empty">
             <p><strong>当前没有检测待办事项。</strong></p>
-            <p className="signature-muted">检测窗口在生产记录进入 PLANT_AUDIT 环节后自动开启。</p>
+            <p className="signature-muted">检测窗口在生产记录进入厂长确认环节后自动开启。</p>
           </div>
         ) : (
           <>

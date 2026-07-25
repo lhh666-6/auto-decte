@@ -1647,10 +1647,12 @@ class BambooOperationsService:
         actor: BambooActor,
         name: str,
         code: str | None = None,
+        activate_forms: list[str] | None = None,
     ) -> dict[str, Any]:
         """Create a new factory with auto-generated factory_code (F001, F002...).
 
         Only SYSTEM_ADMIN can create factories.
+        Optionally activate business forms (SORTING, DIPPING_DRYING) for the factory.
         """
         if actor.role is not BambooRole.SYSTEM_ADMIN:
             raise BambooOperationError(
@@ -1661,6 +1663,21 @@ class BambooOperationsService:
         factory_name = name.strip()
         if not factory_name:
             raise BambooOperationError("FACTORY_NAME_REQUIRED", "请填写工厂名称")
+
+        # Validate and normalize activate_forms
+        allowed = {"SORTING", "DIPPING_DRYING"}
+        form_keys_set: set[str] = set()
+        for k in (activate_forms or []):
+            if k not in allowed:
+                raise BambooOperationError(
+                    "INVALID_FORM_KEY",
+                    f"不支持的业务表单: {k!r}，仅支持 SORTING / DIPPING_DRYING",
+                )
+            form_keys_set.add(k)
+        # DIPPING_DRYING depends on SORTING — auto-enable
+        if "DIPPING_DRYING" in form_keys_set:
+            form_keys_set.add("SORTING")
+        form_keys = sorted(form_keys_set)
 
         now = datetime.now(UTC)
         with Session(self._engine) as session, session.begin():
@@ -1707,12 +1724,55 @@ class BambooOperationsService:
                     updated_at=now,
                 )
             )
+
+            activated: list[str] = []
+            if form_keys:
+                from app.adapters.database.models import (
+                    FormPlantActivationRow,
+                    ManagedFormDefinitionRow,
+                    ManagedFormVersionRow,
+                )
+                for fk in form_keys:
+                    v = session.scalar(
+                        select(ManagedFormVersionRow).join(
+                            ManagedFormDefinitionRow,
+                            ManagedFormDefinitionRow.definition_id == ManagedFormVersionRow.definition_id,
+                        ).where(
+                            ManagedFormDefinitionRow.form_key == fk,
+                            ManagedFormVersionRow.status == "APPROVED",
+                        ).order_by(ManagedFormVersionRow.version.desc()).limit(1)
+                    )
+                    if v is None:
+                        raise BambooOperationError(
+                            "ACTIVE_FORM_VERSION_NOT_FOUND",
+                            f"表单 {fk!r} 没有已发布(APPROVED)的版本，无法为工厂启用。",
+                        )
+                    existing_act = session.scalar(
+                        select(FormPlantActivationRow).where(
+                            FormPlantActivationRow.form_version_id == v.version_id,
+                            FormPlantActivationRow.plant_id == factory_id,
+                        ).limit(1)
+                    )
+                    if existing_act is None:
+                        session.add(FormPlantActivationRow(
+                            activation_id=f"ACT-{uuid4().hex[:12].upper()}",
+                            form_version_id=v.version_id,
+                            plant_id=factory_id,
+                            status="ACTIVE",
+                            activated_by=actor.actor_id,
+                            activated_at=now,
+                            updated_by=actor.actor_id,
+                            updated_at=now,
+                        ))
+                    activated.append(fk)
+
             return {
                 "factory_id": factory_id,
                 "code": fac_code,
                 "factory_code": fac_code,
                 "name": factory_name,
                 "active": True,
+                "activated_forms": activated,
             }
 
     def create_inspection(

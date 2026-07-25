@@ -134,8 +134,8 @@ export function AdminOrganizationPage() {
         throw new Error(`工厂列表加载失败 (${factResp.status})`);
       }
       if (rolesResp.ok) {
-        const roleData = (await rolesResp.json()) as { presets?: Array<{ label: string; bamboo_role: string; web_roles: string[] }> };
-        const presets = roleData.presets ?? [];
+        const roleData = (await rolesResp.json()) as { items?: Array<{ label: string; bamboo_role: string; web_roles: string[] }> };
+        const presets = roleData.items ?? [];
         setJobPresets(presets);
         setRoles(presets.map(p => ({ role_code: p.bamboo_role, display_name: p.label })));
       }
@@ -384,8 +384,8 @@ export function AdminOrganizationPage() {
   const summaryCards = useMemo((): SummaryCard[] => {
     const total = employees.length;
     const active = employees.filter((e) => {
-      const s = extStr(e, "status");
-      return s !== "INACTIVE" && s !== "SUSPENDED";
+      const s = extStr(e, "account_state");
+      return s !== "FROZEN" && s !== "REMOVED";
     }).length;
     const inactive = total - active;
 
@@ -434,7 +434,7 @@ export function AdminOrganizationPage() {
         if (!groupMap.has(group)) groupMap.set(group, { active: 0, inactive: 0 });
         const entry = groupMap.get(group)!;
         const empStatus = extStr(emp, "status");
-        if (empStatus === "INACTIVE" || empStatus === "SUSPENDED") {
+        if (empStatus === "FROZEN" || empStatus === "REMOVED") {
           entry.inactive++;
         } else {
           entry.active++;
@@ -475,9 +475,9 @@ export function AdminOrganizationPage() {
     }
     if (filterStatus) {
       list = list.filter((e) => {
-        const s = extStr(e, "status");
-        if (filterStatus === "ACTIVE") return s !== "INACTIVE" && s !== "SUSPENDED";
-        if (filterStatus === "INACTIVE") return s === "INACTIVE" || s === "SUSPENDED";
+        const s = extStr(e, "account_state");
+        if (filterStatus === "ACTIVE") return s !== "FROZEN" && s !== "REMOVED";
+        if (filterStatus === "FROZEN") return s === "FROZEN" || s === "REMOVED";
         return true;
       });
     }
@@ -487,7 +487,7 @@ export function AdminOrganizationPage() {
         (e) =>
           e.employee_name.toLowerCase().includes(term) ||
           e.employee_code.toLowerCase().includes(term) ||
-          e.role_name.toLowerCase().includes(term) ||
+          (e.role_name ?? "").toLowerCase().includes(term) ||
           getJobLabel(e.role_code).toLowerCase().includes(term),
       );
     }
@@ -517,7 +517,7 @@ export function AdminOrganizationPage() {
         options: [
           { value: "", label: "全部状态" },
           { value: "ACTIVE", label: "正式有效" },
-          { value: "INACTIVE", label: "已停用" },
+          { value: "FROZEN", label: "已停用" },
         ],
       },
     ];
@@ -715,7 +715,7 @@ export function AdminOrganizationPage() {
                   {displayEmployees.map((emp) => {
                     const empStatus = extStr(emp, "status");
                     const lastLogin = extStr(emp, "last_login_at");
-                    const isInactive = empStatus === "INACTIVE" || empStatus === "SUSPENDED";
+                    const isInactive = empStatus === "FROZEN" || empStatus === "REMOVED";
                     return (
                       <tr
                         key={emp.employee_code}
@@ -792,7 +792,7 @@ export function AdminOrganizationPage() {
                   <DetailField label="当前岗位" value={getJobLabel(selectedEmployee.role_code)} />
                   <DetailField label="岗位编号" value={selectedEmployee.role_code} />
                   <DetailField label="班组" value={extStr(selectedEmployee, "team_name") || "—"} />
-                  <DetailField label="状态" value={(extStr(selectedEmployee, "status") === "INACTIVE" || extStr(selectedEmployee, "status") === "SUSPENDED") ? "已停用" : "正式有效"} />
+                  <DetailField label="状态" value={(extStr(selectedEmployee, "account_state") === "FROZEN" || extStr(selectedEmployee, "account_state") === "REMOVED") ? "已停用" : "正式有效"} />
                   <DetailField label="最近登录" value={formatLastLogin(extStr(selectedEmployee, "last_login_at"))} />
                 </>
               )}
@@ -802,7 +802,7 @@ export function AdminOrganizationPage() {
                   {/* Business view */}
                   <h3 className="detail-section-title">业务视图</h3>
                   <DetailField label="生产岗位" value={getJobLabel(selectedEmployee.role_code)} />
-                  <DetailField label="移动端可用性" value={(extStr(selectedEmployee, "status") === "INACTIVE" || extStr(selectedEmployee, "status") === "SUSPENDED") ? "已停用" : "可用"} />
+                  <DetailField label="移动端可用性" value={(extStr(selectedEmployee, "account_state") === "FROZEN" || extStr(selectedEmployee, "account_state") === "REMOVED") ? "已停用" : "可用"} />
                   <DetailField
                     label="Web 角色"
                     value={

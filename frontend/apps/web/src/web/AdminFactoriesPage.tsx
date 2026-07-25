@@ -25,6 +25,7 @@ export function AdminFactoriesPage() {
   const [showCreateFactory, setShowCreateFactory] = useState(false);
   const [newFactoryName, setNewFactoryName] = useState("");
   const [newFactoryCode, setNewFactoryCode] = useState("");
+  const [activateForms, setActivateForms] = useState<string[]>([]);
   const [createFactorySubmitting, setCreateFactorySubmitting] = useState(false);
   const [createFactoryError, setCreateFactoryError] = useState("");
   const [createFactorySuccess, setCreateFactorySuccess] = useState("");
@@ -72,6 +73,7 @@ export function AdminFactoriesPage() {
         body: JSON.stringify({
           name: newFactoryName.trim(),
           code: newFactoryCode.trim() || undefined,
+          activate_forms: activateForms,
         }),
       });
       if (!resp.ok) {
@@ -284,6 +286,23 @@ export function AdminFactoriesPage() {
                   系统自动生成 F001, F002, F003… 创建后不可修改
                 </span>
               </label>
+              <fieldset style={{ marginTop: 16, border: "1px solid #e2e8f0", borderRadius: 8, padding: "12px 16px" }}>
+                <legend style={{ fontSize: "0.9rem", fontWeight: 600, color: "#334155" }}>启用业务表单</legend>
+                {(["SORTING", "DIPPING_DRYING"] as const).map((fk) => (
+                  <label key={fk} style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8, cursor: "pointer" }}>
+                    <input
+                      type="checkbox"
+                      checked={activateForms.includes(fk)}
+                      onChange={(e) => {
+                        setActivateForms(prev =>
+                          e.target.checked ? [...prev, fk] : prev.filter((k) => k !== fk)
+                        );
+                      }}
+                    />
+                    <span>{fk === "SORTING" ? "《竹丝装笼跟踪牌》" : "《竹丝浸胶干燥生产记录表》"}</span>
+                  </label>
+                ))}
+              </fieldset>
             </div>
             <footer style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
               <button type="button" className="btn secondary" disabled={createFactorySubmitting} onClick={() => setShowCreateFactory(false)}>取消</button>

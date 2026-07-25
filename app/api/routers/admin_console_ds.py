@@ -457,6 +457,7 @@ def admin_create_factory(
             actor=_admin_bamboo_actor(actor, ""),
             name=body.name,
             code=body.code,
+            activate_forms=body.activate_forms,
         )
     except BambooOperationError as error:
         raise _bamboo_error(error) from error

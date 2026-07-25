@@ -189,3 +189,4 @@ class CreateFactoryRequest(BaseModel):
 class AdminCreateFactoryRequest(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     code: str | None = Field(default=None, max_length=64)
+    activate_forms: list[str] = Field(default_factory=list)

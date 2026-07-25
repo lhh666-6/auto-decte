@@ -23,6 +23,14 @@ const STAGE_LABELS: Record<string, string> = {
   PLANT_AUDIT: "厂长确认",
 };
 
+const RECORD_STATUS_LABELS: Record<string, string> = {
+  ACTIVE: "进行中", COMPLETED: "已完成",
+};
+const CORRECTION_STATUS_LABELS: Record<string, string> = {
+  SUBMITTED: "已提交", REVIEWED: "已复核", REPLACED: "已纠正",
+  OVERRULED: "已驳回", CLOSED: "已关闭",
+};
+
 const FACT_TYPE_LABELS: Record<string, string> = {
   PIECE_RATE: "计件工资事实",
   QUALITY_BONUS: "质量奖金",
@@ -203,7 +211,7 @@ export function PlantSignaturePage() {
             <div>
               <span className="signature-kicker">厂长独立签字页</span>
               <h1>{detail.display_no}</h1>
-              <p>笼号 {detail.cage_no || "—"} · 版本 {detail.revision} · 状态 {detail.status}</p>
+              <p>笼号 {detail.cage_no || "—"} · 版本 {detail.revision} · 状态 {RECORD_STATUS_LABELS[detail.status] ?? detail.status}</p>
             </div>
             <span className="signature-stage">
               {STAGE_LABELS[detail.current_stage ?? ""] ?? detail.current_stage ?? "已完成"}
@@ -480,7 +488,7 @@ export function PlantSignaturePage() {
                 {detail.corrections.map((c) => (
                   <article key={c.case_id} className="signature-correction-item">
                     <p><strong>案件号：</strong>{c.case_id}</p>
-                    <p><strong>状态：</strong>{c.status}</p>
+                    <p><strong>状态：</strong>{CORRECTION_STATUS_LABELS[c.status] ?? c.status}</p>
                     <p><strong>原因：</strong>{c.reason}</p>
                     <p className="signature-muted">创建时间：{new Date(c.created_at).toLocaleString()}</p>
                   </article>
