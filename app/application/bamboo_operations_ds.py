@@ -33,6 +33,7 @@ from app.adapters.database.models import (
     BambooStageSubmissionRow,
     BusinessPresetVersionRow,
     EmployeeBambooAssignmentRow,
+    EmployeeCodeSequenceRow,
     MasterDataRecordRow,
     MobileAccessProfileRow,
     MobileCredentialRow,
@@ -54,6 +55,19 @@ PRODUCTION_ROLES = {
     BambooRole.DIPPING_OPERATOR.value,
     BambooRole.DRYING_RACK_OPERATOR.value,
 }
+
+# V1 Employee Code Governance: position code mapping for auto-generated employee codes.
+# SYSTEM_ADMIN intentionally excluded — admins cannot be created through the admin UI.
+_POSITION_CODE_MAP: dict[str, str] = {
+    "SORT_OPERATOR": "SORT",
+    "DIPPING_OPERATOR": "DIP",
+    "DRYING_RACK_OPERATOR": "DRY",
+    "INSPECTOR": "INS",
+    "SUPERVISOR": "SUP",
+    "PLANT_MANAGER": "PM",
+    "FINANCE_APPROVER": "FIN",
+}
+
 REWORK_DEPENDENCIES = {
     BambooStage.SORT: tuple(BambooStage),
     BambooStage.DIPPING: (
@@ -1176,9 +1190,92 @@ class BambooOperationsService:
                 .order_by(BambooFactoryRow.name)
             ).all()
             return [
-                {"factory_id": row.factory_id, "code": row.code, "name": row.name}
+                {
+                    "factory_id": row.factory_id,
+                    "code": row.code,
+                    "factory_code": row.factory_code,
+                    "name": row.name,
+                    "active": row.active,
+                }
                 for row in rows
             ]
+
+    def list_all_factories(self) -> list[dict[str, Any]]:
+        """List ALL factories including inactive (for admin factory management page)."""
+        with Session(self._engine) as session:
+            rows = session.scalars(
+                select(BambooFactoryRow).order_by(BambooFactoryRow.name)
+            ).all()
+            return [
+                {
+                    "factory_id": row.factory_id,
+                    "code": row.code,
+                    "factory_code": row.factory_code,
+                    "name": row.name,
+                    "active": row.active,
+                }
+                for row in rows
+            ]
+
+    def deactivate_factory(
+        self,
+        *,
+        actor: BambooActor,
+        factory_id: str,
+    ) -> dict[str, Any]:
+        """Deactivate a factory. Only SYSTEM_ADMIN."""
+        if actor.role is not BambooRole.SYSTEM_ADMIN:
+            raise BambooOperationError(
+                "ADMIN_REQUIRED",
+                "仅系统管理员可停用工厂。",
+            )
+
+        now = datetime.now(UTC)
+        with Session(self._engine) as session, session.begin():
+            factory = session.get(BambooFactoryRow, factory_id)
+            if factory is None:
+                raise BambooOperationError(
+                    "FACTORY_NOT_FOUND",
+                    "工厂不存在。",
+                )
+            factory.active = False
+            factory.updated_at = now
+            return {
+                "factory_id": factory.factory_id,
+                "factory_code": factory.factory_code,
+                "name": factory.name,
+                "active": False,
+            }
+
+    def activate_factory(
+        self,
+        *,
+        actor: BambooActor,
+        factory_id: str,
+    ) -> dict[str, Any]:
+        """Re-activate a deactivated factory. Only SYSTEM_ADMIN."""
+        if actor.role is not BambooRole.SYSTEM_ADMIN:
+            raise BambooOperationError(
+                "ADMIN_REQUIRED",
+                "仅系统管理员可恢复工厂。",
+            )
+
+        now = datetime.now(UTC)
+        with Session(self._engine) as session, session.begin():
+            factory = session.get(BambooFactoryRow, factory_id)
+            if factory is None:
+                raise BambooOperationError(
+                    "FACTORY_NOT_FOUND",
+                    "工厂不存在。",
+                )
+            factory.active = True
+            factory.updated_at = now
+            return {
+                "factory_id": factory.factory_id,
+                "factory_code": factory.factory_code,
+                "name": factory.name,
+                "active": True,
+            }
 
     def list_position_data(
         self,
@@ -1284,6 +1381,73 @@ class BambooOperationsService:
         BambooRole.SUPERVISOR.value,
     }
 
+    # ── Employee Code Generation (V1 Governance) ──────────────
+
+    def _resolve_factory_code(self, session: Session, factory_id: str) -> str:
+        """Resolve a stable factory code for employee code generation."""
+        factory = session.get(BambooFactoryRow, factory_id)
+        if factory is None or not factory.active:
+            raise BambooOperationError("FACTORY_NOT_FOUND", "目标工厂不存在或已停用")
+        return factory.factory_code or factory.code
+
+    def _generate_employee_code(
+        self, session: Session, factory_id: str, role_code: str
+    ) -> str:
+        """Atomically allocate the next employee code for a factory+position pair.
+
+        Uses EmployeeCodeSequenceRow with in-transaction flush for SQLite safety.
+        Sequence is per (factory_id, position_code) — numbers never reused.
+        """
+        fac_code = self._resolve_factory_code(session, factory_id)
+        pos_code = _POSITION_CODE_MAP.get(role_code)
+        if pos_code is None:
+            raise BambooOperationError(
+                "INVALID_POSITION_FOR_CODE",
+                f"岗位 {role_code!r} 不支持自动工号生成。",
+            )
+
+        seq = session.scalar(
+            select(EmployeeCodeSequenceRow).where(
+                EmployeeCodeSequenceRow.factory_id == factory_id,
+                EmployeeCodeSequenceRow.position_code == pos_code,
+            )
+        )
+        if seq is None:
+            seq = EmployeeCodeSequenceRow(
+                factory_id=factory_id,
+                position_code=pos_code,
+                last_sequence=0,
+                revision=1,
+            )
+            session.add(seq)
+            session.flush()
+
+        seq.last_sequence += 1
+        return f"{fac_code}-{pos_code}-{seq.last_sequence:03d}"
+
+    def preview_employee_code(
+        self, factory_id: str, role_code: str
+    ) -> str:
+        """Preview the next employee code without consuming a sequence number."""
+        with Session(self._engine) as session:
+            fac_code = self._resolve_factory_code(session, factory_id)
+            pos_code = _POSITION_CODE_MAP.get(role_code)
+            if pos_code is None:
+                raise BambooOperationError(
+                    "INVALID_POSITION_FOR_CODE",
+                    f"岗位 {role_code!r} 不支持自动工号生成。",
+                )
+            seq = session.scalar(
+                select(EmployeeCodeSequenceRow).where(
+                    EmployeeCodeSequenceRow.factory_id == factory_id,
+                    EmployeeCodeSequenceRow.position_code == pos_code,
+                )
+            )
+            next_num = (seq.last_sequence + 1) if seq else 1
+            return f"{fac_code}-{pos_code}-{next_num:03d}"
+
+    # ── Employee Creation (V1 Governance) ──────────────────────
+
     def create_factory_employee(
         self,
         *,
@@ -1291,11 +1455,10 @@ class BambooOperationsService:
         employee_name: str,
         initial_pin: str,
         role_code: str,
-        employee_code: str = "",
         factory_id: str = "",
         web_roles: list[str] | None = None,
     ) -> dict[str, Any]:
-        # ── Role validation: reject stage codes ──
+        # ── Role validation ──
         try:
             BambooRole(role_code)
         except ValueError as error:
@@ -1304,8 +1467,7 @@ class BambooOperationsService:
                 f"角色代码 {role_code!r} 无效，有效值: {[r.value for r in BambooRole]}",
             ) from error
 
-        # V1 Runtime Closure §5: Only SYSTEM_ADMIN can create employees.
-        # Plant Manager can only view personnel and initiate transfer requests.
+        # V1: Only SYSTEM_ADMIN can create employees.
         is_admin = actor.role is BambooRole.SYSTEM_ADMIN
         if not is_admin:
             raise BambooOperationError(
@@ -1313,12 +1475,26 @@ class BambooOperationsService:
                 "仅系统管理员可新增员工。厂长只能发起人员调动申请。",
             )
 
+        # V1: Forbid creating SYSTEM_ADMIN through admin UI
+        if role_code == BambooRole.SYSTEM_ADMIN.value:
+            raise BambooOperationError(
+                "SYSTEM_ADMIN_CREATION_FORBIDDEN",
+                "系统管理员账户不能通过员工管理功能创建。",
+            )
+
+        web_role_list = web_roles or []
+        # V1: Forbid assigning ADMIN web role through admin UI
+        if "ADMIN" in web_role_list or "SYSTEM_ADMIN" in web_role_list:
+            raise BambooOperationError(
+                "ADMIN_ROLE_ASSIGNMENT_FORBIDDEN",
+                "系统管理员权限不能通过员工管理功能分配。",
+            )
+
         name = employee_name.strip()
         if not name:
             raise BambooOperationError("EMPLOYEE_NAME_REQUIRED", "请填写员工姓名")
 
         target_factory_id = factory_id or actor.factory_id
-        web_role_list = web_roles or []
 
         now = datetime.now(UTC)
         with Session(self._engine) as session, session.begin():
@@ -1335,29 +1511,8 @@ class BambooOperationsService:
                     "该职位尚未由管理员发布或已经停用",
                 )
 
-            # ── Determine employee_code ──
-            if employee_code:
-                code = employee_code.strip()
-                existing = session.get(
-                    MasterDataRecordRow, ("employees", code),
-                )
-                if existing is not None:
-                    raise BambooOperationError(
-                        "EMPLOYEE_CODE_EXISTS",
-                        f"工号 {code!r} 已存在，请使用其他工号。",
-                    )
-            else:
-                codes = session.scalars(
-                    select(MasterDataRecordRow.code).where(
-                        MasterDataRecordRow.catalog == "employees",
-                        MasterDataRecordRow.code.like("YG%"),
-                    )
-                ).all()
-                sequence = max(
-                    (int(c[2:]) for c in codes if c[2:].isdigit()),
-                    default=0,
-                ) + 1
-                code = f"YG{sequence:04d}"
+            # ── Auto-generate employee_code ──
+            code = self._generate_employee_code(session, target_factory_id, role_code)
 
             session.add(
                 MasterDataRecordRow(
@@ -1486,24 +1641,79 @@ class BambooOperationsService:
                 reverse=True,
             )
 
-    def create_factory(self, *, actor: BambooActor, code: str, name: str) -> dict[str, Any]:
+    def create_factory(
+        self,
+        *,
+        actor: BambooActor,
+        name: str,
+        code: str | None = None,
+    ) -> dict[str, Any]:
+        """Create a new factory with auto-generated factory_code (F001, F002...).
+
+        Only SYSTEM_ADMIN can create factories.
+        """
         if actor.role is not BambooRole.SYSTEM_ADMIN:
-            raise BambooOperationError("ADMIN_REQUIRED", "只有管理员可以新增工厂")
+            raise BambooOperationError(
+                "ADMIN_REQUIRED",
+                "仅系统管理员可创建工厂。",
+            )
+
+        factory_name = name.strip()
+        if not factory_name:
+            raise BambooOperationError("FACTORY_NAME_REQUIRED", "请填写工厂名称")
+
         now = datetime.now(UTC)
         with Session(self._engine) as session, session.begin():
-            if session.scalar(select(BambooFactoryRow).where(BambooFactoryRow.code == code)):
-                raise BambooOperationError("FACTORY_EXISTS", "工厂编码已存在")
-            row = BambooFactoryRow(
-                factory_id=str(uuid4()),
-                code=code,
-                name=name,
-                active=True,
-                revision=1,
-                created_at=now,
-                updated_at=now,
+            # Generate factory_code if not provided
+            fac_code: str
+            if code and code.strip():
+                fac_code = code.strip()
+                existing = session.scalar(
+                    select(BambooFactoryRow).where(
+                        BambooFactoryRow.factory_code == fac_code
+                    )
+                )
+                if existing is not None:
+                    raise BambooOperationError(
+                        "FACTORY_CODE_EXISTS",
+                        f"工厂代码 {fac_code!r} 已存在。",
+                    )
+            else:
+                # Auto-generate: find max F### number
+                rows = session.scalars(
+                    select(BambooFactoryRow.factory_code).where(
+                        BambooFactoryRow.factory_code.like("F%")
+                    )
+                ).all()
+                max_num = 0
+                for r in rows:
+                    if r and len(r) > 1:
+                        try:
+                            max_num = max(max_num, int(r[1:]))
+                        except ValueError:
+                            pass
+                fac_code = f"F{max_num + 1:03d}"
+
+            factory_id = f"FACTORY-{uuid4().hex[:12].upper()}"
+            session.add(
+                BambooFactoryRow(
+                    factory_id=factory_id,
+                    code=fac_code,
+                    factory_code=fac_code,
+                    name=factory_name,
+                    active=True,
+                    revision=1,
+                    created_at=now,
+                    updated_at=now,
+                )
             )
-            session.add(row)
-            return {"factory_id": row.factory_id, "code": code, "name": name, "active": True}
+            return {
+                "factory_id": factory_id,
+                "code": fac_code,
+                "factory_code": fac_code,
+                "name": factory_name,
+                "active": True,
+            }
 
     def create_inspection(
         self,

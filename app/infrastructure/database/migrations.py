@@ -9,7 +9,7 @@ from sqlalchemy import Connection, Engine, inspect, text
 from alembic import command
 from app.domain.models import stable_json_sha256
 
-HEAD_REVISION = "029"
+HEAD_REVISION = "042"
 LEGACY_RETIREMENT_SOURCE_REVISION = "026"
 LEGACY_RETIREMENT_TABLES = frozenset(
     {

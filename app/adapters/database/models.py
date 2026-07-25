@@ -694,11 +694,21 @@ class BambooFactoryRow(Base):
 
     factory_id: Mapped[str] = mapped_column(String, primary_key=True)
     code: Mapped[str] = mapped_column(String, nullable=False, unique=True)
+    factory_code: Mapped[str | None] = mapped_column(String(32), unique=True, nullable=True)
     name: Mapped[str] = mapped_column(String, nullable=False)
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class EmployeeCodeSequenceRow(Base):
+    __tablename__ = "employee_code_sequences"
+
+    factory_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    position_code: Mapped[str] = mapped_column(String(16), primary_key=True)
+    last_sequence: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
 
 
 class BambooRoleDefinitionRow(Base):

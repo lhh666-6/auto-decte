@@ -173,7 +173,7 @@ class CreateFactoryEmployeeRequest(BaseModel):
 
 
 class AdminCreateEmployeeRequest(BaseModel):
-    employee_code: str = Field(min_length=1, max_length=100)
+    """V1: employee_code is auto-generated server-side; not accepted from client."""
     employee_name: str = Field(min_length=1, max_length=100)
     factory_id: str = Field(min_length=1, max_length=64)
     bamboo_role: str = Field(min_length=1, max_length=64)
@@ -182,5 +182,10 @@ class AdminCreateEmployeeRequest(BaseModel):
 
 
 class CreateFactoryRequest(BaseModel):
-    code: str = Field(min_length=1, max_length=64)
     name: str = Field(min_length=1, max_length=200)
+    code: str | None = Field(default=None, max_length=64)
+
+
+class AdminCreateFactoryRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+    code: str | None = Field(default=None, max_length=64)

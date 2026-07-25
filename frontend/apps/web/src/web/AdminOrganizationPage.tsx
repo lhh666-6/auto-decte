@@ -25,6 +25,8 @@ interface FactoryInfo {
   factory_id: string;
   code: string;
   name: string;
+  factory_code?: string | null;
+  active?: boolean;
 }
 
 type CreateStep = "identity" | "account" | "confirm";
@@ -125,9 +127,9 @@ export function AdminOrganizationPage() {
         fetch("/api/v1/admin/job-presets", { credentials: "include" }),
       ]);
       if (factResp.ok) {
-        const factData = (await factResp.json()) as { factories?: FactoryInfo[] };
-        setFactories(factData.factories ?? []);
-        setAdminFactories(factData.factories ?? []);
+        const factData = (await factResp.json()) as { items?: FactoryInfo[] };
+        setFactories(factData.items ?? []);
+        setAdminFactories(factData.items ?? []);
       } else {
         throw new Error(`工厂列表加载失败 (${factResp.status})`);
       }
@@ -145,27 +147,31 @@ export function AdminOrganizationPage() {
   // ── New Employee wizard state ──
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [createStep, setCreateStep] = useState<CreateStep>("identity");
-  const [createEmpCode, setCreateEmpCode] = useState("");
   const [createEmpName, setCreateEmpName] = useState("");
   const [createEmpFactory, setCreateEmpFactory] = useState("");
   const [createEmpJob, setCreateEmpJob] = useState("");
   const [createEmpPin, setCreateEmpPin] = useState("");
+  const [createEmpPinConfirm, setCreateEmpPinConfirm] = useState("");
   const [createEmpActive, setCreateEmpActive] = useState(true);
   const [createEmpSubmitting, setCreateEmpSubmitting] = useState(false);
   const [createEmpError, setCreateEmpError] = useState("");
   const [createEmpSuccess, setCreateEmpSuccess] = useState("");
+  const [createEmpCodePreview, setCreateEmpCodePreview] = useState("");
+  const [createEmpResult, setCreateEmpResult] = useState<{ employee_code: string; employee_name: string; factory_name: string; job_label: string; } | null>(null);
   const [jobPresets, setJobPresets] = useState<Array<{ label: string; bamboo_role: string; web_roles: string[] }>>([]);
   const [adminFactories, setAdminFactories] = useState<FactoryInfo[]>([]);
 
   async function openCreateForm() {
     setCreateEmpError("");
     setCreateEmpSuccess("");
-    setCreateEmpCode("");
     setCreateEmpName("");
     setCreateEmpFactory("");
     setCreateEmpJob("");
     setCreateEmpPin("");
+    setCreateEmpPinConfirm("");
     setCreateEmpActive(true);
+    setCreateEmpCodePreview("");
+    setCreateEmpResult(null);
     setCreateStep("identity");
     setShowCreateForm(true);
     try {
@@ -184,15 +190,28 @@ export function AdminOrganizationPage() {
     } catch { /* modal stays open; dropdowns may be empty */ }
   }
 
+  // Fetch preview employee code when factory + job are selected
+  useEffect(() => {
+    if (!createEmpFactory || !createEmpJob || !showCreateForm) { setCreateEmpCodePreview(""); return; }
+    const job = jobPresets.find((j) => j.label === createEmpJob);
+    if (!job) { setCreateEmpCodePreview(""); return; }
+    fetch(`/api/v1/admin/employees/next-code?factory_id=${encodeURIComponent(createEmpFactory)}&position=${encodeURIComponent(job.bamboo_role)}`, { credentials: "include" })
+      .then((r) => r.json())
+      .then((d: { employee_code: string }) => setCreateEmpCodePreview(d.employee_code ?? ""))
+      .catch(() => setCreateEmpCodePreview(""));
+  }, [createEmpFactory, createEmpJob, showCreateForm, jobPresets]);
+
   async function submitCreateEmployee() {
-    if (!createEmpCode.trim()) { setCreateEmpError("请输入工号"); return; }
     if (!createEmpName.trim()) { setCreateEmpError("请输入姓名"); return; }
     if (!createEmpFactory) { setCreateEmpError("请选择所属工厂"); return; }
     if (!createEmpJob) { setCreateEmpError("请选择岗位"); return; }
     if (!createEmpPin || createEmpPin.length < 4) { setCreateEmpError("PIN 至少 4 位数字"); return; }
+    if (createEmpPin !== createEmpPinConfirm) { setCreateEmpError("两次输入的 PIN 不一致"); return; }
 
     const job = jobPresets.find((j) => j.label === createEmpJob);
     if (!job) { setCreateEmpError("所选岗位无效"); return; }
+
+    if (!adminFactories.length && !factories.length) { setCreateEmpError("当前没有可用工厂"); return; }
 
     setCreateEmpSubmitting(true);
     setCreateEmpError("");
@@ -205,7 +224,6 @@ export function AdminOrganizationPage() {
           "X-CSRF-Token": getCsrfToken(),
         },
         body: JSON.stringify({
-          employee_code: createEmpCode.trim(),
           employee_name: createEmpName.trim(),
           factory_id: createEmpFactory,
           bamboo_role: job.bamboo_role,
@@ -217,11 +235,17 @@ export function AdminOrganizationPage() {
         const err = await resp.json().catch(() => ({})) as { detail?: { detail?: string } };
         throw new Error(err.detail?.detail ?? `创建失败 (${resp.status})`);
       }
-      const result = await resp.json() as { employee_code: string };
-      setCreateEmpSuccess(`员工 ${result.employee_code} 创建成功`);
+      const result = await resp.json() as { employee_code: string; employee_name: string; factory_id: string; factory_name: string; role_name: string };
+      const factoryName = (adminFactories.length > 0 ? adminFactories : factories).find((f) => f.factory_id === result.factory_id)?.name || result.factory_id;
+      setCreateEmpResult({
+        employee_code: result.employee_code,
+        employee_name: result.employee_name,
+        factory_name: factoryName,
+        job_label: createEmpJob,
+      });
+      setCreateEmpSuccess("员工创建成功");
       setCreateEmpError("");
       await loadEmployees();
-      setTimeout(() => { setShowCreateForm(false); setCreateEmpSuccess(""); }, 2000);
     } catch (cause: unknown) {
       setCreateEmpError(cause instanceof Error ? cause.message : "创建失败");
     } finally {
@@ -300,8 +324,14 @@ export function AdminOrganizationPage() {
         : "/api/v1/admin/employees";
 
       const [empResult, transferResult] = await Promise.all([
-        fetch(empUrl, { credentials: "include" }).then((r) => r.json()) as Promise<{ items: BambooEmployee[] }>,
-        fetch("/api/v1/admin/personnel-transfers", { credentials: "include" }).then((r) => r.json()) as Promise<{ items: BambooPersonnelTransfer[] }>,
+        fetch(empUrl, { credentials: "include" }).then((r) => {
+          if (!r.ok) throw new Error(`员工列表加载失败 (${r.status})`);
+          return r.json();
+        }) as Promise<{ items: BambooEmployee[] }>,
+        fetch("/api/v1/admin/personnel-transfers", { credentials: "include" }).then((r) => {
+          if (!r.ok) throw new Error(`调动记录加载失败 (${r.status})`);
+          return r.json();
+        }) as Promise<{ items: BambooPersonnelTransfer[] }>,
       ]);
 
       setEmployees(empResult.items ?? []);
@@ -523,11 +553,11 @@ export function AdminOrganizationPage() {
   // ── Wizard step helpers ────────────────────────────────────────
 
   function canAdvanceFromIdentity(): boolean {
-    return createEmpCode.trim() !== "" && createEmpName.trim() !== "" && createEmpFactory !== "" && createEmpJob !== "";
+    return createEmpName.trim() !== "" && createEmpFactory !== "" && createEmpJob !== "";
   }
 
   function canAdvanceFromAccount(): boolean {
-    return createEmpPin.length >= 4;
+    return createEmpPin.length >= 4 && createEmpPin === createEmpPinConfirm;
   }
 
   function selectedJobPreset() {
@@ -556,18 +586,6 @@ export function AdminOrganizationPage() {
 
       {/* ── Summary Cards ── */}
       <SummaryCardGrid cards={summaryCards} />
-
-      {/* ── Toolbar: New Employee ── */}
-      <div className="admin-org-toolbar" style={{ display: "flex", justifyContent: "flex-end", marginBottom: 0 }}>
-        <button
-          type="button"
-          className="btn primary"
-          onClick={() => void openCreateForm()}
-          data-testid={tid("btn-create-employee")}
-        >
-          + 新增员工
-        </button>
-      </div>
 
       <div className="admin-org-layout" data-testid={tid("layout")}>
         {/* ===== LEFT: Organization Tree (Factory → Job Groups) ===== */}
@@ -662,6 +680,15 @@ export function AdminOrganizationPage() {
                 onChange={handleFilterChange}
               />
             </div>
+            <button
+              type="button"
+              className="primary-button"
+              onClick={() => void openCreateForm()}
+              data-testid={tid("btn-create-employee")}
+              style={{ marginLeft: "auto", whiteSpace: "nowrap" }}
+            >
+              + 新增员工
+            </button>
           </div>
 
           {loading ? (
@@ -992,18 +1019,6 @@ export function AdminOrganizationPage() {
               {createStep === "identity" && (
                 <div className="wizard-step-body">
                   <label>
-                    工号 *
-                    <input
-                      type="text"
-                      value={createEmpCode}
-                      onChange={(e) => setCreateEmpCode(e.target.value)}
-                      placeholder="例如 SORT002"
-                      disabled={createEmpSubmitting}
-                      data-testid={tid("create-emp-code")}
-                    />
-                  </label>
-
-                  <label>
                     姓名 *
                     <input
                       type="text"
@@ -1024,10 +1039,15 @@ export function AdminOrganizationPage() {
                       data-testid={tid("create-emp-factory")}
                     >
                       <option value="">-- 选择工厂 --</option>
-                      {(adminFactories.length > 0 ? adminFactories : factories).map((f) => (
+                      {(adminFactories.length > 0 ? adminFactories : factories).filter(f => f.active !== false).map((f) => (
                         <option key={f.factory_id} value={f.factory_id}>{f.name || f.code || f.factory_id}</option>
                       ))}
                     </select>
+                    {(adminFactories.length > 0 ? adminFactories : factories).filter(f => f.active !== false).length === 0 && (
+                      <div className="admin-form-hint" style={{ fontSize: "0.8rem", color: "#d97706", marginTop: 4 }}>
+                        当前没有可用工厂，请先在"工厂与岗位"页面创建工厂。
+                      </div>
+                    )}
                   </label>
 
                   <label>
@@ -1051,12 +1071,26 @@ export function AdminOrganizationPage() {
                       {selectedJobPreset()?.web_roles?.length ? ` · Web 角色: ${selectedJobPreset()!.web_roles.join(", ")}` : ""}
                     </div>
                   )}
+
+                  {createEmpCodePreview && (
+                    <div className="disposition-summary" style={{ marginTop: 8, padding: "10px 12px", background: "#f0f9ff", borderRadius: 8, border: "1px solid #bae6fd" }}>
+                      <span style={{ fontSize: "0.8rem", color: "#0369a1" }}>预计工号</span>
+                      <div style={{ fontSize: "1.1rem", fontWeight: 700, color: "#0c4a6e", fontFamily: "monospace" }}>{createEmpCodePreview}</div>
+                      <span style={{ fontSize: "0.75rem", color: "#7c8da5" }}>最终工号以服务器创建返回值为准</span>
+                    </div>
+                  )}
                 </div>
               )}
 
               {/* Step 2: Account */}
               {createStep === "account" && (
                 <div className="wizard-step-body">
+                  {createEmpCodePreview && (
+                    <div className="disposition-summary" style={{ marginBottom: 12, padding: "10px 12px", background: "#f0f9ff", borderRadius: 8, border: "1px solid #bae6fd" }}>
+                      <span style={{ fontSize: "0.8rem", color: "#0369a1" }}>工号</span>
+                      <div style={{ fontSize: "1.1rem", fontWeight: 700, color: "#0c4a6e", fontFamily: "monospace" }}>{createEmpCodePreview}</div>
+                    </div>
+                  )}
                   <label>
                     初始 PIN *
                     <input
@@ -1072,6 +1106,22 @@ export function AdminOrganizationPage() {
                     <span className="admin-form-hint" style={{ fontSize: "0.8rem", color: "#8593a8" }}>
                       员工登录 Bamboo 移动端的初始密码
                     </span>
+                  </label>
+                  <label>
+                    确认 PIN *
+                    <input
+                      type="password"
+                      value={createEmpPinConfirm}
+                      onChange={(e) => setCreateEmpPinConfirm(e.target.value.replace(/\D/g, ""))}
+                      placeholder="再次输入 PIN"
+                      maxLength={12}
+                      disabled={createEmpSubmitting}
+                      inputMode="numeric"
+                      data-testid={tid("create-emp-pin-confirm")}
+                    />
+                    {createEmpPinConfirm && createEmpPin !== createEmpPinConfirm && (
+                      <span style={{ fontSize: "0.8rem", color: "#dc2626" }}>PIN 不一致</span>
+                    )}
                   </label>
 
                   <label className="admin-checkbox-label">
@@ -1099,7 +1149,9 @@ export function AdminOrganizationPage() {
                   <div className="wizard-confirm-grid">
                     <div className="wizard-confirm-row">
                       <span className="wizard-confirm-label">工号</span>
-                      <span className="wizard-confirm-value">{createEmpCode}</span>
+                      <span className="wizard-confirm-value" style={{ fontFamily: "monospace" }}>
+                        {createEmpCodePreview || "(自动生成)"}
+                      </span>
                     </div>
                     <div className="wizard-confirm-row">
                       <span className="wizard-confirm-label">姓名</span>
@@ -1128,6 +1180,44 @@ export function AdminOrganizationPage() {
                       <span className="wizard-confirm-value">{createEmpActive ? "启用" : "停用"}</span>
                     </div>
                   </div>
+                </div>
+              )}
+
+              {/* Success message after creation */}
+              {createEmpResult && (
+                <div className="wizard-step-body wizard-confirm">
+                  <div className="banner success" role="status" style={{ marginBottom: 12 }}>
+                    <strong>员工创建成功</strong>
+                  </div>
+                  <div className="wizard-confirm-grid">
+                    <div className="wizard-confirm-row">
+                      <span className="wizard-confirm-label">姓名</span>
+                      <span className="wizard-confirm-value">{createEmpResult.employee_name}</span>
+                    </div>
+                    <div className="wizard-confirm-row">
+                      <span className="wizard-confirm-label">工号</span>
+                      <span className="wizard-confirm-value" style={{ fontFamily: "monospace", fontWeight: 700, color: "#0c4a6e" }}>
+                        {createEmpResult.employee_code}
+                      </span>
+                    </div>
+                    <div className="wizard-confirm-row">
+                      <span className="wizard-confirm-label">工厂</span>
+                      <span className="wizard-confirm-value">{createEmpResult.factory_name}</span>
+                    </div>
+                    <div className="wizard-confirm-row">
+                      <span className="wizard-confirm-label">岗位</span>
+                      <span className="wizard-confirm-value">{createEmpResult.job_label}</span>
+                    </div>
+                    <div className="wizard-confirm-row">
+                      <span className="wizard-confirm-label">初始 PIN</span>
+                      <span className="wizard-confirm-value">{createEmpPin}</span>
+                    </div>
+                  </div>
+                  <button type="button" className="btn primary" style={{ marginTop: 16 }}
+                    onClick={() => { setShowCreateForm(false); setCreateEmpSuccess(""); setCreateEmpResult(null); }}
+                  >
+                    关闭
+                  </button>
                 </div>
               )}
             </div>

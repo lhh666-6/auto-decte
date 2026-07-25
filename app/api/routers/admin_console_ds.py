@@ -7,7 +7,10 @@ from fastapi import APIRouter, Header, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field
 
 from app.api.routers.web_auth_ds import require_web_actor, require_web_csrf
-from app.api.schemas.bamboo_process_ds import AdminCreateEmployeeRequest
+from app.api.schemas.bamboo_process_ds import (
+    AdminCreateEmployeeRequest,
+    AdminCreateFactoryRequest,
+)
 from app.api.schemas.business_workflows_ds import (
     WorkflowActivationRequest,
     WorkflowApprovalDecisionRequest,
@@ -89,7 +92,7 @@ _ADMIN_JOB_PRESETS: list[dict[str, object]] = [
     {"label": "主管",       "bamboo_role": "SUPERVISOR",           "web_roles": []},
     {"label": "厂长",       "bamboo_role": "PLANT_MANAGER",        "web_roles": ["PLANT_MANAGER"]},
     {"label": "财务审批",   "bamboo_role": "FINANCE_APPROVER",     "web_roles": ["FINANCE"]},
-    {"label": "系统管理员", "bamboo_role": "SYSTEM_ADMIN",          "web_roles": ["ADMIN"]},
+    # SYSTEM_ADMIN intentionally excluded from admin creation UI (§11-12)
 ]
 
 
@@ -429,6 +432,87 @@ def list_admin_factories(request: Request) -> dict[str, object]:
     return {"items": factories}
 
 
+@router.get("/factories-all")
+def list_all_factories(request: Request) -> dict[str, object]:
+    """List ALL factories including inactive (for factory management page)."""
+    _admin_actor(request)
+    try:
+        factories = _bamboo(request).list_all_factories()
+    except BambooOperationError as error:
+        raise _bamboo_error(error) from error
+    return {"items": factories}
+
+
+@router.post("/factories", status_code=status.HTTP_201_CREATED)
+def admin_create_factory(
+    body: AdminCreateFactoryRequest,
+    request: Request,
+    x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token"),
+) -> dict[str, object]:
+    """Admin creates a new factory. factory_code is auto-generated if not provided."""
+    actor = _admin_actor(request)
+    require_web_csrf(request, x_csrf_token)
+    try:
+        return _bamboo(request).create_factory(
+            actor=_admin_bamboo_actor(actor, ""),
+            name=body.name,
+            code=body.code,
+        )
+    except BambooOperationError as error:
+        raise _bamboo_error(error) from error
+
+
+@router.put("/factories/{factory_id}/deactivate")
+def admin_deactivate_factory(
+    factory_id: str,
+    request: Request,
+    x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token"),
+) -> dict[str, object]:
+    """Admin deactivates a factory."""
+    actor = _admin_actor(request)
+    require_web_csrf(request, x_csrf_token)
+    try:
+        return _bamboo(request).deactivate_factory(
+            actor=_admin_bamboo_actor(actor, factory_id),
+            factory_id=factory_id,
+        )
+    except BambooOperationError as error:
+        raise _bamboo_error(error) from error
+
+
+@router.put("/factories/{factory_id}/activate")
+def admin_activate_factory(
+    factory_id: str,
+    request: Request,
+    x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token"),
+) -> dict[str, object]:
+    """Admin re-activates a deactivated factory."""
+    actor = _admin_actor(request)
+    require_web_csrf(request, x_csrf_token)
+    try:
+        return _bamboo(request).activate_factory(
+            actor=_admin_bamboo_actor(actor, factory_id),
+            factory_id=factory_id,
+        )
+    except BambooOperationError as error:
+        raise _bamboo_error(error) from error
+
+
+@router.get("/employees/next-code")
+def preview_employee_code(
+    factory_id: str,
+    position: str,
+    request: Request,
+) -> dict[str, object]:
+    """Preview the next employee code for a factory+position pair (does not consume)."""
+    _admin_actor(request)
+    try:
+        code = _bamboo(request).preview_employee_code(factory_id, position)
+    except BambooOperationError as error:
+        raise _bamboo_error(error) from error
+    return {"employee_code": code}
+
+
 @router.get("/job-presets")
 def list_job_presets(request: Request) -> dict[str, object]:
     """Return the canonical job presets with Chinese labels and role mappings."""
@@ -527,7 +611,7 @@ def admin_create_employee(
     x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token"),
     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ) -> dict[str, object]:
-    """Admin creates a new employee with factory + job preset selection."""
+    """Admin creates a new employee. Employee code is auto-generated server-side."""
     actor = _admin_actor(request)
     require_web_csrf(request, x_csrf_token)
     try:
@@ -536,7 +620,6 @@ def admin_create_employee(
             employee_name=body.employee_name,
             initial_pin=body.initial_pin,
             role_code=body.bamboo_role,
-            employee_code=body.employee_code,
             factory_id=body.factory_id,
             web_roles=body.web_roles,
         )
