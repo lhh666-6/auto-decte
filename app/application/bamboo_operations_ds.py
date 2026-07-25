@@ -325,11 +325,12 @@ class BambooOperationsService:
                     "options_version": preset.preset_version_id,
                     **preset.options,
                 }
-            # Fallback: legacy payroll rule configuration
-            row = self._active_rule(session, "SORT", actor.factory_id)
-            options = _record_options_from_rule(row.configuration if row else {})
-            version = row.rule_version_id if row else "system-sort-v1"
-            return {"options_version": version, **options}
+            # V1 Final Truth Closure §27 §56: No PayrollRule fallback.
+            # BusinessPreset is the sole source for business field options.
+            raise BambooOperationError(
+                "BUSINESS_PRESET_NOT_CONFIGURED",
+                "业务预设尚未配置，请联系管理员在系统中发布 SORT_FIELD_OPTIONS 预设。",
+            )
 
     def validate_record_base_info(
         self,
@@ -469,10 +470,8 @@ class BambooOperationsService:
                 normalized["glue_gain"] = str(glue_gain)
             else:
                 normalized.pop("glue_gain", None)
-            if values.get("wage_amount") is not None and values.get("wage_amount") != "":
-                wage_amount = _optional_decimal(values, ("wage_amount",), "工资金额")
-                if wage_amount is not None:
-                    normalized["wage_amount"] = str(wage_amount)
+            # V1 Final Truth Closure §28: wage_amount REMOVED from production inputs.
+            # Production records facts only; payroll is sole wage authority.
             if before is not None and after is not None and after < before:
                 raise BambooOperationError(
                     "INVALID_BAMBOO_STAGE_VALUES",
@@ -1740,12 +1739,15 @@ class BambooOperationsService:
     def close_exception(
         self, exception_id: str, *, actor: BambooActor, resolution: str
     ) -> dict[str, Any]:
-        if actor.role not in {
-            BambooRole.INSPECTOR,
-            BambooRole.SUPERVISOR,
-            BambooRole.PLANT_MANAGER,
-        }:
-            raise BambooOperationError("EXCEPTION_CLOSE_FORBIDDEN", "当前职务不能关闭检测异常")
+        # V1 Final Truth Closure §11: Only SYSTEM_ADMIN can close exceptions
+        # directly. Normal closure is handled by QualityDispositionService
+        # within the create_disposition/update_disposition transaction.
+        # Inspector and Supervisor CANNOT close exceptions.
+        if actor.role is not BambooRole.SYSTEM_ADMIN:
+            raise BambooOperationError(
+                "EXCEPTION_CLOSE_FORBIDDEN",
+                "检测异常只能通过厂长质量处置自动关闭，或由系统管理员处理",
+            )
         with Session(self._engine) as session, session.begin():
             row = session.get(BambooInspectionExceptionRow, exception_id)
             if row is None:

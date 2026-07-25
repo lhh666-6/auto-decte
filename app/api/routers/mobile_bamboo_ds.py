@@ -19,7 +19,6 @@ from app.api.schemas.bamboo_process_ds import (
     BambooSubmissionResponse,
     BambooTaskListResponse,
     BambooUpstreamRecordResponse,
-    CloseInspectionExceptionRequest,
     CreateBambooRecordRequest,
     CreateFactoryEmployeeRequest,
     CreateFactoryRequest,
@@ -34,7 +33,6 @@ from app.api.schemas.bamboo_process_ds import (
     PersonnelTransferDecisionRequest,
     RoleChangeDecisionRequest,
     RoleChangeRequest,
-    SelectiveReturnRequest,
     SubmitBambooStageRequest,
     SubmitInspectionAppealRequest,
     TerminateInspectionRequest,
@@ -730,52 +728,9 @@ async def upload_inspection_evidence(
         raise _operation_error(error) from error
 
 
-@router.post("/inspection-exceptions/{exception_id}/close")
-def close_inspection_exception(
-    exception_id: str,
-    body: CloseInspectionExceptionRequest,
-    request: Request,
-    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
-    x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token"),
-) -> dict[str, object]:
-    actor = _bamboo_actor(request)
-    _require_write_headers(request, idempotency_key, x_csrf_token)
-    try:
-        return _services(request).bamboo_operations.close_exception(
-            exception_id, actor=actor, resolution=body.resolution
-        )
-    except BambooOperationError as error:
-        raise _operation_error(error) from error
-
-
-@router.post("/records/{record_id}/return")
-def selective_return(
-    record_id: str,
-    body: SelectiveReturnRequest,
-    request: Request,
-    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
-    x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token"),
-) -> dict[str, object]:
-    actor = _bamboo_actor(request)
-    key = _require_write_headers(request, idempotency_key, x_csrf_token)
-    try:
-        stages = [BambooStage(value) for value in body.target_stages]
-        return _services(request).bamboo_operations.selective_return(
-            record_id,
-            actor=actor,
-            target_stages=stages,
-            reason=body.reason,
-            source=body.source,
-            expected_revision=body.expected_revision,
-            idempotency_key=key,
-        )
-    except ValueError as error:
-        raise HTTPException(
-            status_code=422,
-            detail={"code": "INVALID_RETURN_STAGES", "detail": "无效的回退流程"},
-        ) from error
-    except BambooOperationError as error:
-        raise _operation_error(error) from error
+# V1 Final Truth Closure §11-12: close_exception and selective_return routes REMOVED.
+# Exception closure is now handled by QualityDispositionService transaction.
+# Production rewind is not a V1 capability.
 
 
 @router.post("/role-change-requests", status_code=status.HTTP_201_CREATED)

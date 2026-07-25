@@ -73,7 +73,7 @@ V1 Final Cutover executed across 5 phases + 5 business agents. All quality gates
 | A/B effective grade | ✅ | QualityDispositionRow.effective_grade |
 | Production submissions NOT invalidated | ✅ | QualityDisposition does NOT touch production data |
 | BusinessPreset decoupled from Payroll | ✅ | BusinessPresetService + V1 defaults; record_options reads preset first |
-| Business form Chinese names frozen | ✅ | SORTING=《竹丝装笼跟踪牌》, DIPPING_DRYING=《配片数计量考核表》 |
+| Business form Chinese names frozen | ✅ | SORTING=《竹丝装笼跟踪牌》, DIPPING_DRYING=《竹丝浸胶干燥生产记录表》 |
 | V1 form seeds installed | ✅ | Idempotent ManagedFormDefinition installation at startup |
 | Dipping/drying no forced cage search | ✅ | All roles see all available records directly |
 | Role-based bucket labels | ✅ | 待浸胶/待干燥/等待浸胶/我的记录 per role |

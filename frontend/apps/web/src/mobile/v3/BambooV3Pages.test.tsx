@@ -210,15 +210,10 @@ describe("independent bamboo forms", () => {
     expect(screen.getAllByText(/浸胶\+干燥联合表/).length).toBeGreaterThan(0);
   });
 
-  it("requires dipping workers to search an upstream cage before showing work", async () => {
-    const user = userEvent.setup();
+  // V1: Forced cage search removed — DIPPING/DRYING operators see work directly
+  it("shows available work for dipping operators without forced cage search", async () => {
     withSession(<BambooTaskListPage />, { ...worker, bamboo_role: "DIPPING_OPERATOR", position: "浸胶工" });
-    expect(await screen.findByRole("heading", { name: "请先搜索笼号" })).toBeTruthy();
-    expect(mocks.listBambooTasks).not.toHaveBeenCalled();
-    await user.type(screen.getByLabelText("按笼号查找上游表单"), "3-018");
-    await user.click(screen.getByRole("button", { name: "搜索" }));
-    await waitFor(() => expect(mocks.listBambooTasks).toHaveBeenCalledWith("available", "3-018"));
-    expect(await screen.findByText(jointRecord.display_no)).toBeTruthy();
+    expect(await screen.findByText(/待浸胶/)).toBeTruthy();
   });
 
   it("creates a fixed SORTING record then submits SORT with moisture", async () => {
@@ -287,9 +282,9 @@ describe("independent bamboo forms", () => {
 
   it("shows only the sorting approval flow on a SORTING record", async () => {
     withSession(<BambooRecordDetailPage recordId="SORT-18" />, { ...worker, bamboo_role: "SUPERVISOR", position: "主管" });
-    expect(await screen.findByRole("heading", { name: "分选表详情" })).toBeTruthy();
-    const flow = screen.getByRole("list", { name: "分选表表内进度" });
-    expect(within(flow).getAllByRole("listitem").map((item) => item.querySelector("span")?.textContent)).toEqual(["分选签字", "主管审核", "厂长审核", "已生效"]);
+    expect(await screen.findByRole("heading", { name: "《竹丝装笼跟踪牌》" })).toBeTruthy();
+    const flow = screen.getByRole("list", { name: "《竹丝装笼跟踪牌》表内进度" });
+    expect(within(flow).getAllByRole("listitem").map((item) => item.querySelector("span")?.textContent)).toEqual(["分选签字", "主管审核", "厂长确认", "已生效"]);
     expect(within(flow).queryByText("浸胶记录")).toBeNull();
     expect(within(flow).queryByText("干燥联合签字")).toBeNull();
   });
@@ -297,15 +292,15 @@ describe("independent bamboo forms", () => {
   it("shows source version, upstream warning and joint flow on DIPPING_DRYING", async () => {
     mocks.getBambooRecord.mockResolvedValue(jointRecord);
     withSession(<BambooRecordDetailPage recordId="JOINT-18" />, { ...worker, bamboo_role: "SUPERVISOR", position: "主管" });
-    expect(await screen.findByRole("heading", { name: "浸胶+干燥联合表详情" })).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "《竹丝浸胶干燥生产记录表》" })).toBeTruthy();
     expect(screen.getByText("上游数据已变更，待主管确认")).toBeTruthy();
-    const sourceCard = screen.getByRole("heading", { name: "来源分选表" }).closest("section")!;
+    const sourceCard = screen.getByRole("heading", { name: "来源：《竹丝装笼跟踪牌》" }).closest("section")!;
     expect(sourceCard.querySelector("p")?.textContent).toBe(`${sortingRecord.display_no} · 第 2 版`);
     expect(screen.queryByRole("link", { name: "查看上游分选表" })).toBeNull();
     expect(sourceCard.querySelector("details")).toBeTruthy();
     expect(sourceCard.textContent).toContain("12");
-    const flow = screen.getByRole("list", { name: "浸胶+干燥联合表表内进度" });
-    expect(within(flow).getAllByRole("listitem").map((item) => item.querySelector("span")?.textContent)).toEqual(["浸胶记录", "干燥联合签字", "主管审核", "厂长审核", "已生效"]);
+    const flow = screen.getByRole("list", { name: "《竹丝浸胶干燥生产记录表》表内进度" });
+    expect(within(flow).getAllByRole("listitem").map((item) => item.querySelector("span")?.textContent)).toEqual(["浸胶记录", "干燥联合签字", "主管审核", "厂长确认", "已生效"]);
   });
 
   it("limits inspector and supervisor targets by form type", async () => {

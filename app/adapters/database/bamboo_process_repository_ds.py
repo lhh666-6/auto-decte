@@ -484,18 +484,10 @@ class SqlAlchemyBambooProcessRepository:
         submission: StageSubmission,
         signature: ElectronicSignature,
     ) -> None:
-        if (
-            record.form_type is BambooFormType.SORTING
-            and submission.stage is BambooStage.SORT
-        ):
-            self._create_sort_fact(session, record, submission, signature)
-        elif (
-            record.form_type is BambooFormType.DIPPING_DRYING
-            and submission.stage is BambooStage.DRYING
-        ):
-            self._create_joint_fact(session, record, submission, signature)
-        elif submission.stage is BambooStage.PLANT_AUDIT:
-            self._activate_payroll_and_export(session, record, submission, signature)
+        # V1 Final Truth Closure §23-25: Legacy payroll side effects REMOVED.
+        # _create_sort_fact, _create_joint_fact, _activate_payroll_and_export
+        # no longer called. GovernedPayroll is the sole payroll authority.
+        # Only inspection window creation remains as a production side effect.
         # Create inspection window when the last production stage is submitted
         # (SORT for SORTING, DRYING for DIPPING_DRYING). Inspectors can then work
         # in parallel with the supervisor instead of waiting for supervisor sign-off.

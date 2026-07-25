@@ -13,7 +13,6 @@ from app.api.schemas.bamboo_process_ds import (
     InspectionAppealDecisionRequest,
     PayrollRuleRequest,
     PersonnelTransferDecisionRequest,
-    SelectiveReturnRequest,
     SubmitBambooStageRequest,
     TerminateInspectionRequest,
 )
@@ -249,63 +248,8 @@ def audit_record(
         raise _operation_error(error) from error
 
 
-@router.post("/records/{record_id}/return")
-def return_bamboo_record(
-    record_id: str,
-    body: SelectiveReturnRequest,
-    request: Request,
-    x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token"),
-    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
-) -> dict[str, object]:
-    actor, plant_id = _plant_actor(request)
-    key = _write_key(request, x_csrf_token, idempotency_key)
-    try:
-        stages = [BambooStage(value) for value in body.target_stages]
-    except ValueError as error:
-        raise HTTPException(
-            status_code=422,
-            detail={"code": "INVALID_RETURN_STAGES", "detail": "打回环节无效。"},
-        ) from error
-    try:
-        return _bamboo(request).selective_return(
-            record_id,
-            actor=_bamboo_actor(actor, plant_id),
-            target_stages=stages,
-            reason=body.reason,
-            source="PLANT_MANAGER",
-            expected_revision=body.expected_revision,
-            idempotency_key=key,
-        )
-    except BambooOperationError as error:
-        raise _operation_error(error) from error
-
-
-@router.post("/records/{record_id}/return-preview")
-def return_preview(
-    record_id: str,
-    body: SelectiveReturnRequest,
-    request: Request,
-) -> dict[str, object]:
-    """Preview which submissions would be invalidated if the given stages are returned."""
-    actor, plant_id = _plant_actor(request)
-    try:
-        stages = [BambooStage(value) for value in body.target_stages]
-    except ValueError as error:
-        raise HTTPException(
-            status_code=422,
-            detail={"code": "INVALID_RETURN_STAGES", "detail": "打回环节无效。"},
-        ) from error
-    try:
-        return cast(
-            dict[str, object],
-            _bamboo(request).preview_return(
-                record_id,
-                actor=_bamboo_actor(actor, plant_id),
-                target_stages=stages,
-            ),
-        )
-    except BambooOperationError as error:
-        raise _operation_error(error) from error
+# V1 Final Truth Closure §12: Production rewind routes REMOVED.
+# selective_return, return-preview, and return_bamboo_record are not V1 capabilities.
 
 
 @router.get("/exceptions")

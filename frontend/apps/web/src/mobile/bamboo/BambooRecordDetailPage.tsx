@@ -61,7 +61,7 @@ export function BambooRecordDetailPage({ recordId }: { recordId: string }) {
   return <div className="mobile-page bamboo-v3-page bamboo-detail-page">
     <header className="bamboo-v3-page-header bamboo-v3-detail-heading">
       <Link to="/mobile/work" aria-label="返回工作列表">‹</Link>
-      <div><p>{formTypeLabel(record)} · 查看整张电子表单</p><h2>{record.form_type === "DIPPING_DRYING" ? "《配片数计量考核表》" : "《竹丝装笼跟踪牌》"}</h2></div>
+      <div><p>{formTypeLabel(record)} · 查看整张电子表单</p><h2>{record.form_type === "DIPPING_DRYING" ? "《竹丝浸胶干燥生产记录表》" : "《竹丝装笼跟踪牌》"}</h2></div>
     </header>
     {error && <div className="error-banner" role="alert">{error}</div>}
     <section className="bamboo-record-hero">
@@ -177,7 +177,7 @@ function stageState(record: BambooRecord): string {
   if (record.current_stage === "PLANT_AUDIT") return "待厂长确认";
   return stageLabel(record.current_stage);
 }
-function formTypeLabel(record: BambooRecord): string { return record.form_type === "DIPPING_DRYING" ? "《配片数计量考核表》" : "《竹丝装笼跟踪牌》"; }
+function formTypeLabel(record: BambooRecord): string { return record.form_type === "DIPPING_DRYING" ? "《竹丝浸胶干燥生产记录表》" : "《竹丝装笼跟踪牌》"; }
 function stageLabel(stage: BambooStage | null): string { return ({ SORT: "分选", DIPPING: "浸胶", DRYING: "干燥", SUPERVISOR: "主管审核", PLANT_AUDIT: "厂长确认" } as Record<string, string>)[stage ?? ""] ?? "已生效"; }
 function roleLabel(role: string): string { return ({ SORT_OPERATOR: "分选工", DIPPING_OPERATOR: "浸胶工", DRYING_RACK_OPERATOR: "干燥工", SUPERVISOR: "主管", PLANT_MANAGER: "厂长" } as Record<string, string>)[role] ?? role; }
 function baseLabel(key: string): string { return ({ mode: "作业模式", special_classes: "特殊类", cage_no: "竹笼号", length: "长度", shade: "深浅", grade: "品级", supplier: "供应商", bundle_count: "把数", net_weight: "净重", options_version: "预设版本" } as Record<string, string>)[key] ?? key; }

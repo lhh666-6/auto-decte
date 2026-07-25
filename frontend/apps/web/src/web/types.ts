@@ -295,7 +295,7 @@ export interface PayrollRuleVersion {
   factory_id: string;
   position: string;
   version: number;
-  dsl: { metric: string; rate: string; base: string };
+  dsl: { metric: string; rate: string; base: string; "lookup.field"?: string; "lookup.values"?: string };
   content_hash: string;
   status: string;
   created_by: string;

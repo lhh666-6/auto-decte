@@ -26,6 +26,8 @@ from sqlalchemy import Engine, select
 from sqlalchemy.orm import Session
 
 from app.adapters.database.models import (
+    BambooInspectionExceptionRow,
+    BambooInspectionRow,
     BambooRecordRow,
     BambooStageSubmissionRow,
     QualityDispositionRow,
@@ -69,14 +71,18 @@ def _compute_signature_payload(disposition: QualityDispositionRow) -> str:
         {
             "disposition_id": disposition.disposition_id,
             "record_id": disposition.record_id,
+            "inspection_id": disposition.inspection_id,
             "factory_id": disposition.factory_id,
+            "cage_no": disposition.cage_no,
             "responsible_stage": disposition.responsible_stage,
+            "responsible_submission_id": disposition.responsible_submission_id,
             "responsible_employee_code": disposition.responsible_employee_code,
             "original_grade": disposition.original_grade,
             "effective_grade": disposition.effective_grade,
             "decision": disposition.decision,
             "decision_note": disposition.decision_note,
             "decided_by": disposition.decided_by,
+            "decided_at": disposition.decided_at.isoformat() if disposition.decided_at else None,
             "revision": disposition.revision,
         },
         ensure_ascii=False,
@@ -223,6 +229,16 @@ class QualityDispositionService:
             # ── P0-03: Resolve record (server-side authority) ──
             record = self._resolve_record_authority(session, record_id)
 
+            # ── 1.4: Factory isolation check ──
+            # Plant Manager can only create dispositions for their own factory.
+            # Admin (empty decided_by_factory) skips this check.
+            if decided_by_factory and decided_by_factory != record.factory_id:
+                raise QualityDispositionError(
+                    "CROSS_FACTORY_FORBIDDEN",
+                    f"厂长 {decided_by!r} 属于工厂 {decided_by_factory!r}，"
+                    f"不能为工厂 {record.factory_id!r} 的记录创建质量处置",
+                )
+
             # ── Resolve factory_id from record (NOT from client) ──
             factory_id = record.factory_id
 
@@ -231,6 +247,27 @@ class QualityDispositionService:
 
             # ── Resolve cage_no from record ──
             cage_no = self._resolve_cage_no(record)
+
+            # ── 1.5: Inspection ID validation ──
+            if inspection_id:
+                inspection = session.get(BambooInspectionRow, inspection_id)
+                if inspection is None:
+                    raise QualityDispositionError(
+                        "INSPECTION_NOT_FOUND",
+                        f"检测记录 {inspection_id!r} 不存在",
+                    )
+                if inspection.record_id != record_id:
+                    raise QualityDispositionError(
+                        "INSPECTION_MISMATCH",
+                        f"检测记录 {inspection_id!r} 不属于记录 {record_id!r}，"
+                        f"实际属于记录 {inspection.record_id!r}",
+                    )
+                if inspection.factory_id != record.factory_id:
+                    raise QualityDispositionError(
+                        "INSPECTION_MISMATCH",
+                        f"检测记录 {inspection_id!r} 的工厂 {inspection.factory_id!r} 与"
+                        f"记录 {record_id!r} 的工厂 {record.factory_id!r} 不匹配",
+                    )
 
             # ── Validate responsible_stage belongs to this form ──
             self._validate_stage_for_form(responsible_stage, record.form_type)
@@ -268,14 +305,18 @@ class QualityDispositionService:
                 decided_at=now,
                 revision=1,
             )
-            # ── P0-05: Compute signature payload hash ──
-            sig_hash = _compute_signature_payload(disposition)
+            # ── P0-05: Compute and store signature payload hash ──
+            disposition.signature_hash = _compute_signature_payload(disposition)
 
             session.add(disposition)
+            session.flush()
 
-            result = self._to_dict(disposition)
-            result["signature_hash"] = sig_hash
-            return result
+            # ── Task 2: Close open inspection exceptions for this disposition ──
+            self._close_inspection_exceptions(
+                session, record_id, decided_by, now
+            )
+
+            return self._to_dict(disposition)
 
     def get_disposition(
         self, record_id: str, *, actor_factory_id: str | None = None
@@ -370,12 +411,45 @@ class QualityDispositionService:
             row.decided_at = _now()
             row.revision += 1
 
-            # ── P0-05: Compute new signature payload hash ──
-            sig_hash = _compute_signature_payload(row)
+            # ── P0-05: Compute and store new signature payload hash ──
+            row.signature_hash = _compute_signature_payload(row)
 
-            result = self._to_dict(row)
-            result["signature_hash"] = sig_hash
-            return result
+            session.flush()
+
+            # ── Task 2: Close open inspection exceptions for this disposition ──
+            self._close_inspection_exceptions(
+                session, row.record_id, decided_by, row.decided_at
+            )
+
+            return self._to_dict(row)
+
+    # ── Task 2: Exception closure helper ──
+
+    @staticmethod
+    def _close_inspection_exceptions(
+        session: Session,
+        record_id: str,
+        closed_by: str,
+        now: datetime,
+    ) -> None:
+        """Close all OPEN inspection exceptions linked to this record.
+
+        Called within the same transaction as disposition save to ensure
+        atomicity: either both the disposition and exception closure succeed,
+        or neither does.
+        """
+        exceptions = session.scalars(
+            select(BambooInspectionExceptionRow).where(
+                BambooInspectionExceptionRow.record_id == record_id,
+                BambooInspectionExceptionRow.status == "OPEN",
+            )
+        ).all()
+        for exc in exceptions:
+            exc.status = "CLOSED"
+            exc.resolution = "DISPOSED"
+            exc.closed_by = closed_by
+            exc.closed_at = now
+            exc.revision += 1
 
     @staticmethod
     def _to_dict(row: QualityDispositionRow) -> dict[str, Any]:
@@ -397,4 +471,5 @@ class QualityDispositionService:
             "decided_by": row.decided_by,
             "decided_at": row.decided_at.isoformat() if row.decided_at else None,
             "revision": row.revision,
+            "signature_hash": row.signature_hash,
         }

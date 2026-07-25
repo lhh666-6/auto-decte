@@ -109,7 +109,7 @@ export function AppRoutes() {
         <Route path="finance" element={<WebWorkspaceLayout workspace="FINANCE" />}>
           <Route index element={<Navigate to="/finance/position-data" replace />} />
           <Route path="position-data" element={<FinancePositionDataPage />} />
-          <Route path="payroll" element={<PayrollResultsPage workspace="plant" />} />
+          <Route path="payroll" element={<PayrollResultsPage workspace="finance" />} />
           <Route path="payroll-rules" element={<PayrollRulesPage />} />
           <Route path="exports" element={<FinanceGovernedExportsPage />} />
           {/* V1 暂缓: overview, forms, workflows, business-modeling, today, month, year, exceptions, report-templates */}

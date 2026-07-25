@@ -7,7 +7,7 @@ interface FormDef {
     schema_json: Record<string, unknown>; created_at: string; };
 }
 
-const FORM_LABELS: Record<string, string> = { SORTING: "《竹丝装笼跟踪牌》", DIPPING_DRYING: "《配片数计量考核表》" };
+const FORM_LABELS: Record<string, string> = { SORTING: "《竹丝装笼跟踪牌》", DIPPING_DRYING: "《竹丝浸胶干燥生产记录表》" };
 const STATUS_LABELS: Record<string, string> = { DRAFT: "草稿", PENDING_APPROVAL: "待审批", APPROVED: "已发布", REJECTED: "已驳回", RETIRED: "已退役" };
 
 function fieldNames(schema: Record<string, unknown>): string {
@@ -53,7 +53,7 @@ export function AdminBusinessFormsPage() {
   return (
     <section className="admin-factories-page">
       <h1 className="admin-page-title">正式业务表单</h1>
-      <p className="admin-page-subtitle">管理《竹丝装笼跟踪牌》和《配片数计量考核表》的版本与发布</p>
+      <p className="admin-page-subtitle">管理《竹丝装笼跟踪牌》和《竹丝浸胶干燥生产记录表》的版本与发布</p>
 
       {loading ? (
         <div className="empty-state" role="status">正在加载…</div>

@@ -486,8 +486,7 @@ class PayrollService:
                     f"仅 INTEGER 和 DECIMAL 类型的字段可作为计薪依据。",
                 )
 
-    @staticmethod
-    def _validate_dsl(dsl: dict[str, Any]) -> dict[str, str]:
+    def _validate_dsl(self, dsl: dict[str, Any]) -> dict[str, str]:
         metric = str(dsl.get("metric", "")).strip()
         if not metric.replace("_", "").isalnum():
             raise PayrollError("DSL_INVALID", "工资指标字段无效。")
@@ -498,13 +497,84 @@ class PayrollService:
             raise PayrollError("DSL_INVALID", "工资倍率和基础金额必须是数字。") from error
         if rate < 0:
             raise PayrollError("DSL_INVALID", "工资倍率不能为负数。")
-        return {"metric": metric, "rate": str(rate), "base": str(base)}
+        normalized: dict[str, str] = {"metric": metric, "rate": str(rate), "base": str(base)}
+        # V1 Runtime Closure §9.5: optional grade/rank lookup
+        lookup = dsl.get("lookup")
+        if lookup is not None:
+            if not isinstance(lookup, dict):
+                raise PayrollError("DSL_INVALID", "lookup 必须是字典。")
+            lookup_field = str(lookup.get("field", "")).strip()
+            if not lookup_field:
+                raise PayrollError("DSL_INVALID", "lookup.field 不能为空。")
+            lookup_values = lookup.get("values")
+            if not isinstance(lookup_values, dict) or not lookup_values:
+                raise PayrollError("DSL_INVALID", "lookup.values 必须是非空字典。")
+            norm_values: dict[str, str] = {}
+            for k, v in lookup_values.items():
+                if not isinstance(k, str) or not isinstance(v, (str, int, float)):
+                    raise PayrollError(
+                        "DSL_INVALID",
+                        "lookup.values 键必须是字符串，值必须是数字。",
+                    )
+                try:
+                    dec = Decimal(str(v))
+                except InvalidOperation as error:
+                    raise PayrollError(
+                        "DSL_INVALID",
+                        f"lookup.values[{k!r}] 不是有效数字。",
+                    ) from error
+                norm_values[k] = str(dec)
+            # Validate lookup.field against PayrollFieldRegistry (must be STRING)
+            self._validate_lookup_field_for_registry(lookup_field)
+            normalized["lookup.field"] = lookup_field
+            normalized["lookup.values"] = json.dumps(
+                norm_values, sort_keys=True, ensure_ascii=False,
+            )
+        return normalized
+
+    def _validate_lookup_field_for_registry(self, field_key: str) -> None:
+        """Validate that a lookup field is registered and of STRING type."""
+        from app.adapters.database.models import PayrollFieldRegistryRow
+
+        with Session(self._engine) as session:
+            registered = session.scalar(
+                select(PayrollFieldRegistryRow).where(
+                    PayrollFieldRegistryRow.field_key == field_key,
+                    PayrollFieldRegistryRow.active.is_(True),
+                )
+            )
+            if registered is None:
+                raise PayrollError(
+                    "PAYROLL_LOOKUP_FIELD_NOT_REGISTERED",
+                    f"评级字段 {field_key!r} 未在工资字段注册表中。"
+                    f"仅注册的 STRING 类型字段可作为评级依据。",
+                )
+            if registered.data_type != "STRING":
+                raise PayrollError(
+                    "PAYROLL_LOOKUP_FIELD_NOT_STRING",
+                    f"评级字段 {field_key!r}（{registered.display_name}）"
+                    f"的数据类型为 {registered.data_type}，评级字段必须是 STRING 类型。",
+                )
 
     @classmethod
     def _amount(cls, dsl: dict[str, Any], values: dict[str, Any]) -> Decimal:
         try:
             metric = Decimal(str(values.get(str(dsl["metric"]), "0")))
-            return metric * Decimal(str(dsl["rate"])) + Decimal(str(dsl["base"]))
+            result = metric * Decimal(str(dsl["rate"])) + Decimal(str(dsl["base"]))
+            # V1 Runtime Closure §9.5: optional grade/rank lookup multiplier
+            lookup_field = dsl.get("lookup.field")
+            if lookup_field:
+                lookup_values: dict[str, str] = json.loads(str(dsl["lookup.values"]))
+                actual_grade = str(values.get(str(lookup_field), "")).strip()
+                multiplier_str = lookup_values.get(actual_grade)
+                if multiplier_str is None:
+                    raise PayrollError(
+                        "PAYROLL_LOOKUP_MISSING",
+                        f"员工评级 {actual_grade!r} 不在工资规则配置的评级表中。"
+                        f"可用评级: {sorted(lookup_values.keys())}",
+                    )
+                result *= Decimal(multiplier_str)
+            return result
         except InvalidOperation as error:
             raise PayrollError("PAYROLL_INPUT_INVALID", "工资计算输入不是数字。") from error
 

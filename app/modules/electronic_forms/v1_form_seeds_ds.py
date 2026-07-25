@@ -2,7 +2,7 @@
 
 Per Final Cutover §2.5 and user confirmation (2026-07-24):
   SORTING        → 《竹丝装笼跟踪牌》
-  DIPPING_DRYING → 《配片数计量考核表》
+  DIPPING_DRYING → 《竹丝浸胶干燥生产记录表》
 """
 
 from __future__ import annotations
@@ -43,7 +43,7 @@ V1_FORM_SEEDS: list[dict[str, Any]] = [
     },
     {
         "form_key": "DIPPING_DRYING",
-        "name": "配片数计量考核表",
+        "name": "竹丝浸胶干燥生产记录表",
         "owner_role": "SYSTEM_ADMIN",
         "schema_json": {
             "stages": ["DIPPING", "DRYING", "SUPERVISOR", "PLANT_AUDIT"],

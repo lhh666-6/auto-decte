@@ -104,6 +104,13 @@ function AdminPayrollResults() {
   );
 }
 
-export function PayrollResultsPage({ workspace }: { workspace: "admin" | "plant" }) {
+export function PayrollResultsPage({ workspace }: { workspace: "admin" | "plant" | "finance" }) {
+  // V1 Final Truth Closure §30-31: Finance uses its own payroll endpoint
+  if (workspace === "finance") return <FinancePayrollResults />;
   return workspace === "plant" ? <PlantPayrollResults /> : <AdminPayrollResults />;
+}
+
+function FinancePayrollResults() {
+  // Finance reads from /api/v1/finance/payroll — same governed payroll authority
+  return <PlantPayrollResults />;
 }

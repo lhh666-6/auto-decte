@@ -158,7 +158,7 @@ describe("Web three-role workspaces", () => {
     expect(await screen.findByText("一厂厂长")).toBeTruthy();
     expect(screen.getByText("竹丝一厂")).toBeTruthy();
     const navigation = screen.getByRole("navigation", { name: "厂长工作区导航" });
-    for (const label of ["本厂概览", "通知与知悉", "生产与员工", "工资查询"]) {
+    for (const label of ["本厂概览", "本厂生产", "质量与异常"]) {
       expect(screen.getByRole("link", { name: label })).toBeTruthy();
     }
     expect(navigation.querySelectorAll("a").length).toBeGreaterThanOrEqual(4);

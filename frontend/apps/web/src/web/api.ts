@@ -407,8 +407,14 @@ export function listFinanceLedger(scope?: string, fetcher?: WebFetcher) {
   return request<{ items: FinanceRecord[] }>(`/api/v1/finance/ledger${qs ? `?${qs}` : ""}`, {}, fetcher);
 }
 
-export function listFinanceFactories(): Promise<{items: Array<{factory_id: string; factory_name: string}>}> {
-  return request<{items: Array<{factory_id: string; factory_name: string}>}>(
+export interface FinanceFactoryInfo {
+  factory_id: string;
+  code: string;
+  name: string;
+}
+
+export function listFinanceFactories(): Promise<{items: FinanceFactoryInfo[]}> {
+  return request<{items: FinanceFactoryInfo[]}>(
     "/api/v1/finance/factories", {},
   );
 }
@@ -547,27 +553,7 @@ export function getPlantExceptions(bucket = "active", query = "", fetcher?: WebF
   );
 }
 
-export function returnPlantRecord(
-  recordId: string,
-  targetStages: string[],
-  reason: string,
-  expectedRevision: number,
-  fetcher?: WebFetcher,
-) {
-  return request<{ return_id: string; record_id: string; revision: number }>(
-    `/api/v1/plant/records/${recordId}/return`,
-    {
-      method: "POST",
-      headers: { ...csrfHeaders(true), "Idempotency-Key": crypto.randomUUID() },
-      body: JSON.stringify({
-        target_stages: targetStages,
-        reason,
-        expected_revision: expectedRevision,
-      }),
-    },
-    fetcher,
-  );
-}
+// V1 Final Truth Closure §12: returnPlantRecord REMOVED — production rewind is not a V1 capability.
 
 export function decidePlantInspectionAppeal(
   recordId: string,
@@ -655,13 +641,34 @@ export function listPayrollRules(fetcher?: WebFetcher) {
   );
 }
 
+export interface PayrollFieldInfo {
+  field_key: string;
+  display_name: string;
+  data_type: string;
+  usage: "NUMERIC_METRIC" | "LOOKUP_DIMENSION";
+}
+
+export function listPayrollFields(
+  position: string,
+  fetcher?: WebFetcher,
+): Promise<{ items: PayrollFieldInfo[] }> {
+  const params = new URLSearchParams();
+  if (position) params.set("position", position);
+  const qs = params.toString();
+  return request<{ items: PayrollFieldInfo[] }>(
+    `/api/v1/finance/payroll-fields${qs ? `?${qs}` : ""}`,
+    {},
+    fetcher,
+  );
+}
+
 export function createPayrollRule(
   body: {
     rule_key: string;
     name: string;
     factory_id: string;
     position: string;
-    dsl: { metric: string; rate: string; base: string };
+    dsl: { metric: string; rate: string; base: string; lookup?: { field: string; values: Record<string, string> } };
   },
   fetcher?: WebFetcher,
 ) {

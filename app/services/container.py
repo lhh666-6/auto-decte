@@ -15,7 +15,6 @@ from app.adapters.ai.report_assistant_ds import (
 )
 from app.adapters.database.bamboo_process_repository_ds import (
     SqlAlchemyBambooProcessRepository,
-    install_default_bamboo_payroll_rules,
 )
 from app.adapters.database.electronic_definition_repository_ds import (
     SqlAlchemyElectronicDefinitionRepository,
@@ -204,7 +203,8 @@ def build_services(settings: Settings, *, install_seed_templates: bool = False) 
         engine,
         plant_audit_wait_hours=settings.bamboo_plant_audit_wait_hours,
     )
-    install_default_bamboo_payroll_rules(engine)
+    # V1 Final Truth Closure §26: Legacy payroll rules installation REMOVED.
+    # GovernedPayroll is the sole V1 payroll authority.
     # V1 Final Verification §4: Form version resolver for record creation
     from app.modules.electronic_forms.governance_ds import ManagedFormService
 
@@ -322,7 +322,7 @@ def build_services(settings: Settings, *, install_seed_templates: bool = False) 
     )
     # Install V1 business presets (decoupled from payroll rules)
     services.business_presets.install_v1_defaults()
-    # Install V1 business form definitions (《竹丝装笼跟踪牌》+《配片数计量考核表》)
+    # Install V1 business form definitions (《竹丝装笼跟踪牌》+《竹丝浸胶干燥生产记录表》)
     install_v1_business_form_seeds(engine)
     # V1 Final Verification §6: Seed payroll field registry (fail-closed)
     install_v1_field_registry(engine)

@@ -57,7 +57,7 @@
 | 决策 | 结论 |
 |------|------|
 | `grade` 语义 | `base_info.grade` = A/B 质量/品级（非产品分类），无需新建列 |
-| 业务表中文名 | `SORTING` → 《竹丝装笼跟踪牌》，`DIPPING_DRYING` → 《配片数计量考核表》 |
+| 业务表中文名 | `SORTING` → 《竹丝装笼跟踪牌》，`DIPPING_DRYING` → 《竹丝浸胶干燥生产记录表》 |
 | 工资硬编码 | SORT=`bundle_count × length_multiplier × unit_rate`，JOINT=`glue_gain × dipping_rate + rack_count × drying_rate` |
 | Business Preset 耦合 | `_record_options_from_rule()` 从 PayrollRule 读取选项 → 必须解耦 |
 
@@ -174,7 +174,7 @@
 | form_key | 中文名称 | Stages | 字段数 | depends_on |
 |----------|---------|--------|-------|------------|
 | SORTING | 竹丝装笼跟踪牌 | SORT → SUPERVISOR → PLANT_AUDIT | 10 | — |
-| DIPPING_DRYING | 配片数计量考核表 | DIPPING → DRYING → SUPERVISOR → PLANT_AUDIT | 11 | SORTING |
+| DIPPING_DRYING | 竹丝浸胶干燥生产记录表 | DIPPING → DRYING → SUPERVISOR → PLANT_AUDIT | 11 | SORTING |
 
 ### 2.3.5 Agent M: 移动端生产修复
 
@@ -246,7 +246,7 @@
 
          ↓ 生产数据引用
 
-《配片数计量考核表》卡片 (blue left border)
+《竹丝浸胶干燥生产记录表》卡片 (blue left border)
 ├── 已发布 · V1 · 浸胶→干燥 · 主要岗位：浸胶工、干燥工
 ├── 统计: 今日记录/待主管/待检测/待厂长/异常
 ├── 流程: 浸胶 → 干燥 → 质量检测 → 主管审核 → 厂长确认
@@ -360,9 +360,9 @@
 | 旧 | 新 |
 |----|-----|
 | "分选表详情" | 《竹丝装笼跟踪牌》 |
-| "浸胶+干燥联合表详情" | 《配片数计量考核表》 |
+| "浸胶+干燥联合表详情" | 《竹丝浸胶干燥生产记录表》 |
 | "分选表" | 《竹丝装笼跟踪牌》 |
-| "浸胶+干燥联合表" | 《配片数计量考核表》 |
+| "浸胶+干燥联合表" | 《竹丝浸胶干燥生产记录表》 |
 | "来源分选表" | "来源：《竹丝装笼跟踪牌》" |
 | "分选签字" | "分选" |
 | "干燥联合签字" | "干燥" |

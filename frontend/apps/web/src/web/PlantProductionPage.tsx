@@ -1,14 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 
-import { getPlantProduction, returnPlantRecord } from "./api";
+import { getPlantProduction } from "./api";
 import type { BambooProductionRecord } from "./types";
 import "./ledger-pages.css";
-
-const STAGES: Record<BambooProductionRecord["form_type"], Array<[string, string]>> = {
-  SORTING: [["SORT", "分选"]],
-  DIPPING_DRYING: [["DIPPING", "浸胶"], ["DRYING", "干燥"]],
-};
 
 const STAGE_LABELS: Record<string, string> = {
   SORT: "分选",
@@ -27,9 +22,6 @@ export function PlantProductionPage() {
   const [records, setRecords] = useState<BambooProductionRecord[]>([]);
   const [overview, setOverview] = useState({ total: 0, active: 0, completed: 0 });
   const [loading, setLoading] = useState(true);
-  const [selected, setSelected] = useState<BambooProductionRecord | null>(null);
-  const [targetStages, setTargetStages] = useState<string[]>([]);
-  const [reason, setReason] = useState("");
   const [error, setError] = useState("");
 
   // 筛选状态
@@ -75,25 +67,6 @@ export function PlantProductionPage() {
     }
     return result;
   }, [records, cageQuery, stageFilter, statusFilter, quickFilter]);
-
-  async function submitReturn() {
-    if (!selected || !reason.trim() || !targetStages.length) return;
-    try {
-      await returnPlantRecord(selected.record_id, targetStages, reason, selected.revision);
-      setSelected(null);
-      setTargetStages([]);
-      setReason("");
-      reload();
-    } catch (cause) {
-      const msg = cause instanceof Error ? cause.message : "打回失败";
-      if (msg.includes("STALE_REVISION") || msg.includes("revision")) {
-        setError("记录已被修改，列表已刷新。请重试。");
-        reload();
-      } else {
-        setError(msg);
-      }
-    }
-  }
 
   // 构建阶段筛选选项（从所有记录中收集）
   const availableStages = useMemo(() => {
@@ -206,62 +179,11 @@ export function PlantProductionPage() {
               <Link to={`/plant/production/${record.record_id}`}>
                 {record.current_stage === "PLANT_AUDIT" ? "查看并签字" : "查看详情"}
               </Link>
-              <button type="button" className="secondary-button" onClick={() => {
-                setSelected(record);
-                setTargetStages([]);
-              }}>选择环节打回</button>
             </div>
           </article>
           );
         })}
       </div>
-
-      {/* 打回面板 */}
-      {selected && (
-        <div className="ledger-return-panel">
-          <h2>打回 {selected.display_no}（笼号 {selected.cage_no || "—"} · 版本 {selected.revision}）</h2>
-          <fieldset>
-            <legend>选择要打回的环节</legend>
-            {STAGES[selected.form_type].map(([value, label]) => (
-              <label key={value}>
-                <input
-                  type="checkbox"
-                  aria-label={label}
-                  checked={targetStages.includes(value)}
-                  onChange={(event) => setTargetStages((current) => (
-                    event.target.checked
-                      ? [...current, value]
-                      : current.filter((item) => item !== value)
-                  ))}
-                />
-                {label}
-              </label>
-            ))}
-          </fieldset>
-          <label>
-            打回原因
-            <textarea
-              aria-label="打回原因"
-              value={reason}
-              onChange={(event) => setReason(event.target.value)}
-              placeholder="必填：说明打回原因"
-            />
-          </label>
-          <p className="signature-muted">打回将撤销选中环节的有效提交，记录将回退至最早被选中环节。</p>
-          <div className="ledger-return-actions">
-            <button
-              type="button"
-              disabled={!reason.trim() || !targetStages.length}
-              onClick={() => void submitReturn()}
-            >确认打回</button>
-            <button type="button" className="secondary-button" onClick={() => {
-              setSelected(null);
-              setTargetStages([]);
-              setReason("");
-            }}>取消</button>
-          </div>
-        </div>
-      )}
     </section>
   );
 }

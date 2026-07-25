@@ -108,10 +108,10 @@ export function AdminOverviewPage() {
         <span className="bp-dep-icon">↓</span>
       </div>
 
-      {/* ═══ Business Form B: 《配片数计量考核表》 ═══ */}
+      {/* ═══ Business Form B: 《竹丝浸胶干燥生产记录表》 ═══ */}
       <div className="bp-card bp-card-dip">
         <header className="bp-card-header">
-          <h2>《配片数计量考核表》</h2>
+          <h2>《竹丝浸胶干燥生产记录表》</h2>
           <span className="bp-card-badge">已发布 · V1</span>
         </header>
         <p className="bp-card-desc">浸胶 → 干燥 · 主要岗位：浸胶工、干燥工</p>

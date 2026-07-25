@@ -58,7 +58,7 @@ Payroll uses effective_grade
 | Technical Enum | Proposed Chinese Name | Status |
 |---|---|---|
 | `BambooFormType.SORTING` | 《竹丝装笼跟踪牌》 | **NEEDS CONFIRMATION** |
-| `BambooFormType.DIPPING_DRYING` | 《配片数计量考核表》 | **NEEDS CONFIRMATION** |
+| `BambooFormType.DIPPING_DRYING` | 《竹丝浸胶干燥生产记录表》 | **NEEDS CONFIRMATION** |
 
 **Current state**:
 - `ManagedFormService` exists in `app/modules/electronic_forms/governance_ds.py` but has no seed data mapping SORTING/DIPPING_DRYING to Chinese formal names
@@ -254,6 +254,6 @@ Phase 1 can proceed after:
 ## 12. Next: Phase 1 Gate
 
 Before launching Phase 1 agents, confirm:
-- [ ] Business form Chinese names: SORTING = 《竹丝装笼跟踪牌》? DIPPING_DRYING = 《配片数计量考核表》?
+- [ ] Business form Chinese names: SORTING = 《竹丝装笼跟踪牌》? DIPPING_DRYING = 《竹丝浸胶干燥生产记录表》?
 - [ ] Agent file ownership frozen
 - [ ] All Phase 1 agents launch in parallel (A+B+C+D)

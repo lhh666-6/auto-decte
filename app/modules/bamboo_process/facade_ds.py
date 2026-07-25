@@ -99,13 +99,20 @@ class BambooProcessFacade:
             production_date,
         )
         record_id = self._id_factory()
-        # V1 Final Verification §4: Resolve active form version binding
-        form_version_id: str | None = None
-        form_definition_id: str | None = None
-        if self._form_resolver is not None:
-            resolved = self._form_resolver(actor.factory_id, form_type.value)
-            if resolved is not None:
-                form_version_id, form_definition_id = resolved
+        # V1 Final Truth Closure §16-19: Fail-closed form version resolution.
+        # If no active approved version, reject record creation.
+        if self._form_resolver is None:
+            raise BambooPermissionDenied(
+                "ACTIVE_BUSINESS_FORM_REQUIRED: "
+                "当前工厂尚未启用该正式业务表单版本，请联系管理员。"
+            )
+        resolved = self._form_resolver(actor.factory_id, form_type.value)
+        if resolved is None:
+            raise BambooPermissionDenied(
+                "ACTIVE_BUSINESS_FORM_REQUIRED: "
+                "当前工厂尚未启用该正式业务表单版本，请联系管理员。"
+            )
+        form_version_id, form_definition_id = resolved
         record = BambooRecord(
             record_id=record_id,
             display_no=f"ZS-{now:%Y%m%d}-{sequence:03d}",
@@ -475,15 +482,21 @@ class BambooProcessFacade:
             source.factory_id,
             now.date().isoformat(),
         )
-        # V1 Final Verification §4: Resolve active form version for linked record
-        form_version_id: str | None = None
-        form_definition_id: str | None = None
-        if self._form_resolver is not None:
-            resolved = self._form_resolver(
-                source.factory_id, BambooFormType.DIPPING_DRYING.value
+        # V1 Final Truth Closure §18: Fail-closed for linked DIPPING_DRYING
+        if self._form_resolver is None:
+            raise BambooPermissionDenied(
+                "ACTIVE_BUSINESS_FORM_REQUIRED: "
+                "当前工厂尚未启用该正式业务表单版本，请联系管理员。"
             )
-            if resolved is not None:
-                form_version_id, form_definition_id = resolved
+        resolved = self._form_resolver(
+            source.factory_id, BambooFormType.DIPPING_DRYING.value
+        )
+        if resolved is None:
+            raise BambooPermissionDenied(
+                "ACTIVE_BUSINESS_FORM_REQUIRED: "
+                "当前工厂尚未启用《竹丝浸胶干燥生产记录表》正式版本，请联系管理员。"
+            )
+        form_version_id, form_definition_id = resolved
         return BambooRecord(
             record_id=self._id_factory(),
             display_no=f"ZS-{now:%Y%m%d}-{sequence:03d}",

@@ -50,7 +50,7 @@ def _require_plant_manager_or_admin(request: Request):
     """Authenticate and authorize: only PLANT_MANAGER or SYSTEM_ADMIN."""
     actor = require_web_actor(request)
     if not (
-        allows_workspace(actor, WebWorkspace.PLANT)
+        allows_workspace(actor, WebWorkspace.PLANT_MANAGER)
         or allows_workspace(actor, WebWorkspace.ADMIN)
     ):
         raise HTTPException(
@@ -66,21 +66,17 @@ def _require_plant_manager_or_admin(request: Request):
 def _require_quality_read(request: Request):
     """Authenticate for read access. Returns actor for factory scoping."""
     actor = require_web_actor(request)
-    # Plant Manager → scoped to own factory
-    # Admin → global (factory_id=None means no filter)
-    # Finance → read-only access
-    # Others → 403
+    # Admin → global access
     if allows_workspace(actor, WebWorkspace.ADMIN):
-        return actor, None  # Admin: global access
-    if allows_workspace(actor, WebWorkspace.PLANT):
-        return actor, actor.factory_id  # Plant Manager: own factory only
-    if allows_workspace(actor, WebWorkspace.FINANCE):
-        return actor, actor.factory_id  # Finance: own factory only
+        return actor, None
+    # Plant Manager → own factory only
+    if allows_workspace(actor, WebWorkspace.PLANT_MANAGER):
+        return actor, actor.factory_id
     raise HTTPException(
         status_code=status.HTTP_403_FORBIDDEN,
         detail={
             "code": "QUALITY_READ_FORBIDDEN",
-            "detail": "当前角色无权查看质量处置记录",
+            "detail": "仅厂长或管理员可查看质量处置记录",
         },
     )
 

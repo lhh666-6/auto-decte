@@ -177,10 +177,14 @@ def _service(
     identifiers: list[str],
 ) -> BambooProcessFacade:
     iterator = iter(identifiers)
+    # V1 Final Truth Closure §19: Test form_resolver for fail-closed validation
+    def _test_form_resolver(factory_id: str, form_key: str) -> tuple[str, str] | None:
+        return (f"VER-{form_key}-V1", f"DEF-{form_key}")
     return BambooProcessFacade(
         repository,
         clock=lambda: datetime(2026, 7, 22, 2, 30, tzinfo=UTC),
         id_factory=lambda: next(iterator),
+        form_resolver=_test_form_resolver,
     )
 
 

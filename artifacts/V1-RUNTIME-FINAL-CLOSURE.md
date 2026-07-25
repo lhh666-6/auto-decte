@@ -16,7 +16,7 @@
 
 | # | Invariant | Status |
 |---|-----------|--------|
-| 2.1 | SORTING=《竹丝装笼跟踪牌》, DIPPING_DRYING=《配片数计量考核表》独立表单 | PRESERVED |
+| 2.1 | SORTING=《竹丝装笼跟踪牌》, DIPPING_DRYING=《竹丝浸胶干燥生产记录表》独立表单 | PRESERVED |
 | 2.2 | 一个员工最多一个 ACTIVE assignment (DB partial unique index) | PRESERVED |
 | 2.3 | Admin 新建员工 Wizard 三步流程 (身份→账户→确认) | PRESERVED |
 | 2.4 | Inspector→检测 / Supervisor→审核 / Plant Manager→最终处置 | ENFORCED |
@@ -217,7 +217,7 @@ New: `GET /api/v1/finance/factories` — Finance read-only factory list. Returns
 ## Admin Business Forms (§14)
 
 - One card per definition (grouped by `form_key`)
-- Chinese labels: `SORTING`→《竹丝装笼跟踪牌》, `DIPPING_DRYING`→《配片数计量考核表》
+- Chinese labels: `SORTING`→《竹丝装笼跟踪牌》, `DIPPING_DRYING`→《竹丝浸胶干燥生产记录表》
 - Version history in expandable drawer
 - No fake management buttons
 - 4-state rendering: LOADING / EMPTY / ERROR / DATA

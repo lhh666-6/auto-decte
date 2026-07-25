@@ -63,7 +63,7 @@
 | Git 状态记录 | `c6dbc0d`, clean working tree, 与 origin 同步 |
 | Alembic 状态 | `037_retire_legacy_archive` (head) |
 | grade 语义审计 | `base_info.grade` = **A/B 质量/品级**，非产品分类。企业已确认此字段就是最终工资/质量评级字段，无需新建 `quality_grade` 列 |
-| 业务表中文名映射 | 用户确认冻结: `SORTING` → **《竹丝装笼跟踪牌》**, `DIPPING_DRYING` → **《配片数计量考核表》** |
+| 业务表中文名映射 | 用户确认冻结: `SORTING` → **《竹丝装笼跟踪牌》**, `DIPPING_DRYING` → **《竹丝浸胶干燥生产记录表》** |
 | 工资硬编码审计 | SORT: `bundle_count × length_multiplier × unit_rate`; JOINT: `glue_gain × dipping_rate + rack_count × drying_rate`; **grade 未参与计算** |
 | Business Preset 耦合审计 | `_record_options_from_rule()` 从 PayrollRule.configuration 读取 grades/lengths/shades/special_classes/weight_factors — **必须解耦** |
 | 测试基线 | 后端起 11 个 OCR 测试导入失败；前端 build 因 workbench 页面引用已删除 API 失败；Ruff 全部通过 |
@@ -170,7 +170,7 @@ UI 系统基础（CSS primitives、可复用组件）已在之前的 V1 业务�
 | Gate | 结果 |
 |------|------|
 | DB contracts frozen | ✅ Migration 038 冻结 |
-| BusinessForm mapping frozen | ✅ SORTING=《竹丝装笼跟踪牌》, DIPPING_DRYING=《配片数计量考核表》 |
+| BusinessForm mapping frozen | ✅ SORTING=《竹丝装笼跟踪牌》, DIPPING_DRYING=《竹丝浸胶干燥生产记录表》 |
 | Grade semantics frozen | ✅ grade = A/B 质量/品级 |
 | Agent file ownership frozen | ✅ 共享热点文件由主集成代理独占 |
 | Ruff | ✅ All checks passed |
@@ -310,7 +310,7 @@ UI 系统基础（CSS primitives、可复用组件）已在之前的 V1 业务�
 
 ### 4.4.1 业务需求 (§2.5, §13)
 
-> 两张独立业务表必须作为 ManagedFormDefinition 正式安装：SORTING → 《竹丝装笼跟踪牌》，DIPPING_DRYING → 《配片数计量考核表》
+> 两张独立业务表必须作为 ManagedFormDefinition 正式安装：SORTING → 《竹丝装笼跟踪牌》，DIPPING_DRYING → 《竹丝浸胶干燥生产记录表》
 
 ### 4.4.2 实现
 
@@ -321,7 +321,7 @@ UI 系统基础（CSS primitives、可复用组件）已在之前的 V1 业务�
 | form_key | 中文名称 | Stages | 字段数 | depends_on |
 |----------|---------|--------|-------|------------|
 | SORTING | 竹丝装笼跟踪牌 | SORT → SUPERVISOR → PLANT_AUDIT | 10 | — |
-| DIPPING_DRYING | 配片数计量考核表 | DIPPING → DRYING → SUPERVISOR → PLANT_AUDIT | 11 | SORTING |
+| DIPPING_DRYING | 竹丝浸胶干燥生产记录表 | DIPPING → DRYING → SUPERVISOR → PLANT_AUDIT | 11 | SORTING |
 
 **容器集成**: `container.py` 启动时调用 `install_v1_business_form_seeds(engine)`，幂等安装。
 
@@ -331,7 +331,7 @@ UI 系统基础（CSS primitives、可复用组件）已在之前的 V1 业务�
 |--------|------|
 | 两张正式表 installed | ✅ 容器启动时自动幂等安装，状态 APPROVED |
 | SORTING = 《竹丝装笼跟踪牌》 | ✅ 含完整字段定义 (mode, cage_no, bundle_count, length, shade, grade, supplier, special_classes, moisture, note) |
-| DIPPING_DRYING = 《配片数计量考核表》 | ✅ 含完整字段定义 + depends_on SORTING |
+| DIPPING_DRYING = 《竹丝浸胶干燥生产记录表》 | ✅ 含完整字段定义 + depends_on SORTING |
 | Published immutable | ✅ APPROVED 状态，版本号不可变 |
 | 厂长只读 | ✅ owner_role = SYSTEM_ADMIN |
 | 财务 provenance | ✅ 表单版本可追溯 |
@@ -568,7 +568,7 @@ UI 系统基础（CSS primitives、可复用组件）已在之前的 V1 业务�
           │
           └────── 数据引用 ──────┐
                                  ↓
-正式业务表 B：浸胶 → 干燥（《配片数计量考核表》）
+正式业务表 B：浸胶 → 干燥（《竹丝浸胶干燥生产记录表》）
                  │
             ┌────┴────┐
             ↓         ↓

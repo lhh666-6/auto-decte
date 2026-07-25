@@ -113,7 +113,7 @@ describe("bamboo mobile workflow", () => {
     const user = userEvent.setup();
     renderRoute("/mobile/record/bamboo-process/SORT-18");
 
-    expect(await screen.findByRole("heading", { name: "分选表详情" })).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "《竹丝装笼跟踪牌》" })).toBeTruthy();
     expect(screen.getAllByLabelText(/含水率检测点/)).toHaveLength(8);
     await user.type(screen.getByLabelText("含水率检测点 1"), "12");
     await user.type(screen.getByLabelText("含水率检测点 2"), "14");
@@ -134,7 +134,7 @@ describe("bamboo mobile workflow", () => {
     sessionClient.getSession = vi.fn().mockResolvedValue({ ...session, employee_name: "李浸胶", bamboo_role: "DIPPING_OPERATOR", position: "浸胶工" });
     renderRoute("/mobile/record/bamboo-process/JOINT-18");
 
-    expect(await screen.findByRole("heading", { name: "浸胶+干燥联合表详情" })).toBeTruthy();
+    expect(await screen.findByRole("heading", { name: "《竹丝浸胶干燥生产记录表》" })).toBeTruthy();
     expect(screen.getByText("胶前重")).toBeTruthy();
     expect(screen.getByText("胶后重")).toBeTruthy();
     expect(screen.getByText("上胶量")).toBeTruthy();

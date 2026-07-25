@@ -798,6 +798,44 @@ def submit_workflow(
 
 
 # ─────────────────────────────────────────────────────────────
+# V1 Payroll Field Registry
+# ─────────────────────────────────────────────────────────────
+
+
+@router.get("/payroll-fields")
+def payroll_fields(
+    request: Request,
+    position: str = Query(default=""),
+) -> dict[str, object]:
+    """Return fields registered for a position, with usage classification."""
+    _finance_actor(request)
+    from app.adapters.database.models import PayrollFieldRegistryRow
+    from sqlalchemy import select as sa_select
+    from sqlalchemy.orm import Session as SaSession
+
+    engine = request.app.state.services.engine
+    with SaSession(engine) as session:
+        statement = sa_select(PayrollFieldRegistryRow).where(
+            PayrollFieldRegistryRow.active.is_(True),
+        )
+        if position.strip():
+            statement = statement.where(
+                PayrollFieldRegistryRow.position_role == position.strip().upper(),
+            )
+        rows = session.scalars(statement).all()
+        items: list[dict[str, str]] = []
+        for row in rows:
+            usage = "LOOKUP_DIMENSION" if row.data_type == "STRING" else "NUMERIC_METRIC"
+            items.append({
+                "field_key": row.field_key,
+                "display_name": row.display_name,
+                "data_type": row.data_type,
+                "usage": usage,
+            })
+    return {"items": items}
+
+
+# ─────────────────────────────────────────────────────────────
 # V1 Position Data (simplified finance)
 # ─────────────────────────────────────────────────────────────
 

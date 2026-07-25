@@ -1627,6 +1627,7 @@ class QualityDispositionRow(Base):
     decided_by: Mapped[str] = mapped_column(String, nullable=False)
     decided_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    signature_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
 
 # ── V1 Final: Business Field Preset (decoupled from Payroll) ────
