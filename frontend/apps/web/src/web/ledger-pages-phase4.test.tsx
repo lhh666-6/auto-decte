@@ -52,5 +52,5 @@ it("shows the shared Bamboo inspection queue", async () => {
   render(<PlantExceptionsPage />);
   expect(await screen.findByText("检测湿度不合格")).toBeTruthy();
   expect(screen.getByText(/ZS-20260723-001/)).toBeTruthy();
-  expect(screen.getByRole("button", { name: "批准并打回重检" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "批准上诉" })).toBeTruthy();
 });

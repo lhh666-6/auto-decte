@@ -19,34 +19,30 @@ import { RequireMobileSession } from "../mobile/session/RequireMobileSession";
 import { RequireWebSession } from "../web/RequireWebSession";
 import { AdminAISettingsPage } from "../web/AdminAISettingsPage";
 import { AdminAuditPage } from "../web/AdminAuditPage";
+import { AdminBusinessFormsPage } from "../web/AdminBusinessFormsPage";
 import { AdminFactoriesPage } from "../web/AdminFactoriesPage";
 import { AdminOverviewPage } from "../web/AdminOverviewPage";
 import { AdminFormApprovalsPage } from "../web/AdminFormApprovalsPage";
 import { AdminNotificationsPage } from "../web/AdminNotificationsPage";
 import { AdminOrganizationPage } from "../web/AdminOrganizationPage";
 import { AdminPayrollApprovalsPage } from "../web/AdminPayrollApprovalsPage";
-import { AdminReportTemplatesPage } from "../web/AdminReportTemplatesPage";
 import { AdminRolesPage } from "../web/AdminRolesPage";
 import { AdminVersionExceptionsPage } from "../web/AdminVersionExceptionsPage";
-import { AdminWorkflowApprovalsPage } from "../web/AdminWorkflowApprovalsPage";
-import { BusinessModelingPage } from "../web/BusinessModelingPage";
 import { FinanceExceptionsPage } from "../web/FinanceExceptionsPage";
 import { FinanceFormsPage } from "../web/FinanceFormsPage";
 import { FinancePositionDataPage } from "../web/FinancePositionDataPage";
 import { FinanceLedgerPage } from "../web/FinanceLedgerPage";
 import { FinanceOverviewEnhancement } from "../web/FinanceOverviewEnhancement";
 import { FinanceGovernedExportsPage } from "../web/FinanceGovernedExportsPage";
-import { FinanceReportTemplatesPage } from "../web/FinanceReportTemplatesPage";
+/* V1暂缓: FinanceReportTemplatesPage, BusinessModelingPage, WorkflowDesignerPage */
 import { PlantExceptionsPage } from "../web/PlantExceptionsPage";
 import { PlantEmployeesPage } from "../web/PlantEmployeesPage";
 import { PlantFormsPage } from "../web/PlantFormsPage";
 import { PlantNotificationsPage } from "../web/PlantNotificationsPage";
 import { PlantProductionPage } from "../web/PlantProductionPage";
 import { PlantSignaturePage } from "../web/PlantSignaturePage";
-import { PlantWorkflowsPage } from "../web/PlantWorkflowsPage";
 import { PayrollResultsPage } from "../web/PayrollResultsPage";
 import { PayrollRulesPage } from "../web/PayrollRulesPage";
-import { WorkflowDesignerPage } from "../web/WorkflowDesignerPage";
 import { WebLoginPage } from "../web/WebLoginPage";
 import {
   WebSessionProvider,
@@ -121,13 +117,10 @@ export function AppRoutes() {
           {/* V1 暂缓: overview, forms, workflows, business-modeling, today, month, year, exceptions, report-templates */}
           <Route path="overview" element={<FinanceOverviewEnhancement />} />
           <Route path="forms" element={<FinanceFormsPage />} />
-          <Route path="workflows" element={<WorkflowDesignerPage />} />
-          <Route path="business-modeling" element={<BusinessModelingPage />} />
           <Route path="today" element={<FinanceLedgerPage scope="today" />} />
           <Route path="month" element={<FinanceLedgerPage scope="month" />} />
           <Route path="year" element={<FinanceLedgerPage scope="year" />} />
           <Route path="exceptions" element={<FinanceExceptionsPage />} />
-          <Route path="report-templates" element={<FinanceReportTemplatesPage />} />
           <Route path="*" element={<WorkspaceComingSoon />} />
         </Route>
 
@@ -135,18 +128,17 @@ export function AppRoutes() {
           <Route index element={<Navigate to="/admin/overview" replace />} />
           <Route path="overview" element={<AdminOverviewPage />} />
           <Route path="organization" element={<AdminOrganizationPage />} />
+          <Route path="business-forms" element={<AdminBusinessFormsPage />} />
           <Route path="factories" element={<AdminFactoriesPage />} />
           <Route path="audit" element={<AdminAuditPage />} />
           {/* V1 暂缓导航入口，路由保留: roles, notifications, form-approvals, workflow-approvals, payroll-approvals, version-exceptions, ai-settings, payroll, report-templates */}
           <Route path="roles" element={<AdminRolesPage />} />
           <Route path="notifications" element={<AdminNotificationsPage />} />
           <Route path="form-approvals" element={<AdminFormApprovalsPage />} />
-          <Route path="workflow-approvals" element={<AdminWorkflowApprovalsPage />} />
           <Route path="payroll-approvals" element={<AdminPayrollApprovalsPage />} />
           <Route path="version-exceptions" element={<AdminVersionExceptionsPage />} />
           <Route path="ai-settings" element={<AdminAISettingsPage />} />
           <Route path="payroll" element={<PayrollResultsPage workspace="admin" />} />
-          <Route path="report-templates" element={<AdminReportTemplatesPage />} />
           <Route path="*" element={<WorkspaceComingSoon />} />
         </Route>
 
@@ -155,7 +147,6 @@ export function AppRoutes() {
           <Route path="overview" element={<WorkspaceOverviewPage workspace="PLANT_MANAGER" />} />
           <Route path="notifications" element={<PlantNotificationsPage />} />
           <Route path="forms" element={<PlantFormsPage />} />
-          <Route path="workflows" element={<PlantWorkflowsPage />} />
           <Route path="production" element={<PlantProductionPage />} />
           <Route path="production/:recordId" element={<PlantSignaturePage />} />
           <Route path="exceptions" element={<PlantExceptionsPage />} />

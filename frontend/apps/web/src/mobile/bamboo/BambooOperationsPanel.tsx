@@ -51,9 +51,6 @@ export function BambooOperationsPanel({
   const [inspectionSearch, setInspectionSearch] = useState("");
   const [notifications, setNotifications] = useState<BambooNotification[]>([]);
   const [clock, setClock] = useState(() => Date.now());
-  const [returnStages, setReturnStages] = useState<BambooStage[]>([]);
-  const [returnReason, setReturnReason] = useState("");
-  const [returnOpen, setReturnOpen] = useState(false);
   const [managerReply, setManagerReply] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
@@ -200,11 +197,11 @@ export function BambooOperationsPanel({
       {payrollFacts.length === 0 ? (
         <p>{record.form_type === "DIPPING_DRYING"
           ? "本联合表在浸胶记录与干燥联合签字完成后生成工资事实。"
-          : "本分选表签字后生成独立工资事实，厂长审核后生效。"}</p>
+          : "本分选表签字后生成独立工资事实，厂长确认后生效。"}</p>
       ) : payrollFacts.map((fact) => (
         <article className="bamboo-operation-card" key={fact.fact_id}>
           <strong>{fact.fact_type === "SORT" ? "分选工资" : "浸胶＋干燥联合工资"}：¥{fact.total_amount}</strong>
-          <span>{fact.status === "EFFECTIVE" ? "厂长审核后已生效" : fact.status === "INVALIDATED" ? "已因回退作废" : "待厂长审核生效"}</span>
+          <span>{fact.status === "EFFECTIVE" ? "厂长确认后已生效" : fact.status === "INVALIDATED" ? "已作废" : "待厂长确认生效"}</span>
           <ul>{fact.allocations.map((item) => <li key={`${fact.fact_id}-${item.employee_code}`}>{item.employee_code}：¥{item.amount}</li>)}</ul>
         </article>
       ))}
@@ -217,12 +214,6 @@ export function BambooOperationsPanel({
       <span>{inspection.conclusion === "CONFORMING" ? "合格" : "异常"} · {inspection.actor_name}</span>
       <p>{inspection.note}</p>
       <p>留痕：{inspection.evidence.map((item) => item.evidence_type).join("、") || "无"}</p>
-      {inspection.exception?.status === "OPEN" && ["INSPECTOR", "SUPERVISOR"].includes(role) && (
-        <button disabled={busy} onClick={() => void run(
-          () => mobileApiClient.closeBambooException(inspection.exception!.exception_id, "复测后关闭"),
-          "异常已关闭，主管可以继续审核",
-        )}>复测合格并关闭异常</button>
-      )}
     </article>
   ));
 
@@ -429,7 +420,7 @@ export function BambooOperationsPanel({
               <h3>检测窗口管理</h3>
               <p>检测窗口结束前不能直接签字。确需提前签字时，将立即停止检测权限并通知所有检测员。</p>
               <button className="btn danger" disabled={busy} onClick={() => {
-                if (window.confirm("确认提前停止检测并开放厂长签字？")) void run(
+                if (window.confirm("确认提前停止检测并开放厂长确认？")) void run(
                   () => mobileApiClient.terminateBambooInspection(record.record_id),
                   "检测已终止，已通知检测员",
                 );
@@ -445,10 +436,6 @@ export function BambooOperationsPanel({
                   () => mobileApiClient.decideBambooInspectionAppeal(record.record_id, false, note),
                   "申诉已驳回",
                 )}>驳回申诉</button>
-                <button disabled={busy} className="btn danger" onClick={() => void run(
-                  () => mobileApiClient.decideBambooInspectionAppeal(record.record_id, true, note),
-                  "申诉已通过，表单已回溯",
-                )}>通过并回溯</button>
               </div>
             </section>
           )}
@@ -458,20 +445,6 @@ export function BambooOperationsPanel({
               <h3>主管处理</h3>
               {inspections.filter((item) => item.exception?.status === "OPEN").map((item) => <div className="error-banner" role="alert" key={item.inspection_id}>存在未关闭的检测异常（{item.serial_no}），请先处理后再签字</div>)}
               {(summary?.corrections ?? []).filter((item) => item.status === "OPEN").map((item) => <div className="error-banner" key={item.case_id}>财务要求纠错：{item.reason}</div>)}
-              {!returnOpen ? (
-                <><p>核对无误请直接使用下方"通过并签字"。只有发现错误时才发起回退。</p><button type="button" className="btn secondary" onClick={() => setReturnOpen(true)}>发现问题，发起回退</button></>
-              ) : (
-                <div className="bamboo-operation-form">
-                  <p>只勾选确实需要重写的工序；旧版本仍保留用于审计。</p>
-                  <div className="bamboo-return-options">
-                    {productionStages.map((stage) => (
-                      <label key={stage}><input type="checkbox" checked={returnStages.includes(stage)} onChange={(event) => setReturnStages(event.target.checked ? [...returnStages, stage] : returnStages.filter((item) => item !== stage))} />{stageLabel(stage)}</label>
-                    ))}
-                  </div>
-                  <label>回退原因<textarea value={returnReason} onChange={(event) => setReturnReason(event.target.value)} /></label>
-                  <div className="btnrow"><button type="button" className="btn secondary" onClick={() => setReturnOpen(false)} disabled={busy}>取消回退</button><button type="button" className="btn danger" disabled={busy || returnStages.length === 0 || !returnReason} onClick={() => void run(() => mobileApiClient.returnBambooRecord(record.record_id, returnStages, returnReason, record.revision), "已按选择回退")}>确认回退</button></div>
-                </div>
-              )}
             </section>
           )}
         </>
@@ -496,7 +469,7 @@ export function BambooOperationsPanel({
 }
 
 function stageLabel(stage: BambooStage): string {
-  return ({ SORT: "分选", DIPPING: "浸胶", DRYING: "干燥", SUPERVISOR: "主管审核", PLANT_AUDIT: "厂长审核" })[stage];
+  return ({ SORT: "分选", DIPPING: "浸胶", DRYING: "干燥", SUPERVISOR: "主管审核", PLANT_AUDIT: "厂长确认" })[stage];
 }
 
 function formatDuration(seconds: number): string {

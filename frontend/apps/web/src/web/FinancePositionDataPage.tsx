@@ -1,34 +1,61 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { ErrorAlert, PageHeader } from "./shared/SummaryCardGrid";
-
 interface PositionDataItem {
-  record_id: string;
-  display_no: string;
-  form_type: string;
-  factory_id: string;
-  date: string;
-  employee_code: string;
-  employee_name: string;
-  stage: string;
-  cage_no: string;
-  values: Record<string, unknown>;
-  status: string;
-  current_stage: string;
+  record_id: string; display_no: string; form_type: string;
+  factory_id: string; date: string; employee_code: string;
+  employee_name: string; stage: string; cage_no: string;
+  values: Record<string, unknown>; status: string; current_stage: string;
 }
 
-const STAGE_OPTIONS = [
+interface FactoryInfo { factory_id: string; code: string; name: string; }
+
+const POSITIONS = [
+  { value: "", label: "全部岗位" },
   { value: "SORT", label: "分选工" },
   { value: "DIPPING", label: "浸胶工" },
   { value: "DRYING", label: "干燥工" },
 ];
 
-const STAGE_LABELS: Record<string, string> = { SORT: "分选", DIPPING: "浸胶", DRYING: "干燥" };
+/* Per-position column definitions */
+const SORT_COLUMNS = ["日期","员工","笼号","把数","长度","深浅","品级","最终评级","净重","含水率","状态"];
+const DIP_COLUMNS  = ["日期","员工","笼号","胶前重","胶后重","上胶量","胶液批次","浸胶开始","浸胶结束","含水率","最终评级"];
+const DRY_COLUMNS  = ["日期","员工","笼号","干燥架号","架数","干燥开始","干燥结束","含水率","最终评级"];
+const ALL_COLUMNS  = ["日期","工号","姓名","岗位","笼号","表号","状态"];
+
+function columnsFor(stage: string): string[] {
+  if (stage === "SORT") return SORT_COLUMNS;
+  if (stage === "DIPPING") return DIP_COLUMNS;
+  if (stage === "DRYING") return DRY_COLUMNS;
+  return ALL_COLUMNS;
+}
+
+function extractVal(v: Record<string, unknown>, key: string): string {
+  const m: Record<string, string[]> = {
+    把数: ["bundle_count"], 长度: ["length"], 深浅: ["shade"],
+    品级: ["grade"], 最终评级: ["effective_grade","grade"],
+    净重: ["net_weight"], 含水率: ["moisture_average","moisture"],
+    胶前重: ["glue_before_weight"], 胶后重: ["glue_after_weight"],
+    上胶量: ["glue_gain"], 胶液批次: ["glue_batch"],
+    浸胶开始: ["dipping_start"], 浸胶结束: ["dipping_end"],
+    干燥架号: ["rack_numbers"], 架数: ["rack_count"],
+    干燥开始: ["drying_start"], 干燥结束: ["drying_end"],
+  };
+  const keys = m[key] || [key];
+  for (const k of keys) {
+    const raw = v[k];
+    if (raw !== undefined && raw !== null && raw !== "") {
+      if (Array.isArray(raw)) return raw.join(", ");
+      return String(raw);
+    }
+  }
+  return "—";
+}
 
 export function FinancePositionDataPage() {
   const [items, setItems] = useState<PositionDataItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [factories, setFactories] = useState<FactoryInfo[]>([]);
   const [factoryId, setFactoryId] = useState("");
   const [stage, setStage] = useState("");
   const [dateFrom, setDateFrom] = useState("");
@@ -36,136 +63,123 @@ export function FinancePositionDataPage() {
   const [employeeSearch, setEmployeeSearch] = useState("");
   const [exporting, setExporting] = useState(false);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError("");
-    try {
-      const params = new URLSearchParams();
-      if (factoryId) params.set("factory_id", factoryId);
-      if (stage) params.set("stage", stage);
-      if (dateFrom) params.set("date_from", dateFrom);
-      if (dateTo) params.set("date_to", dateTo);
-      if (employeeSearch.trim()) params.set("employee_code", employeeSearch.trim());
-      const resp = await fetch(`/api/v1/finance/position-data?${params.toString()}`, { credentials: "include" });
-      if (!resp.ok) throw new Error(`请求失败 (${resp.status})`);
-      const data = (await resp.json()) as { items: PositionDataItem[]; count: number };
-      setItems(data.items ?? []);
-    } catch (cause: unknown) {
-      setError(cause instanceof Error ? cause.message : "数据加载失败");
-    } finally {
-      setLoading(false);
-    }
-  }, [factoryId, stage, dateFrom, dateTo, employeeSearch]);
+  useEffect(() => {
+    fetch("/api/v1/admin/factories", { credentials: "include" })
+      .then((r) => r.json())
+      .then((d: { factories?: FactoryInfo[] }) => setFactories(d.factories ?? []))
+      .catch(() => {});
+  }, []);
 
+  const load = useCallback(async () => {
+    setLoading(true); setError("");
+    try {
+      const p = new URLSearchParams();
+      if (factoryId) p.set("factory_id", factoryId);
+      if (stage) p.set("stage", stage);
+      if (dateFrom) p.set("date_from", dateFrom);
+      if (dateTo) p.set("date_to", dateTo);
+      if (employeeSearch.trim()) p.set("employee_code", employeeSearch.trim());
+      const r = await fetch(`/api/v1/finance/position-data?${p.toString()}`, { credentials: "include" });
+      if (!r.ok) throw new Error(`请求失败 (${r.status})`);
+      const d = (await r.json()) as { items: PositionDataItem[] };
+      setItems(d.items ?? []);
+    } catch (c: unknown) { setError(c instanceof Error ? c.message : "数据加载失败"); }
+    finally { setLoading(false); }
+  }, [factoryId, stage, dateFrom, dateTo, employeeSearch]);
   useEffect(() => { void load(); }, [load]);
 
   async function handleExport() {
     setExporting(true);
     try {
-      const params = new URLSearchParams();
-      if (factoryId) params.set("factory_id", factoryId);
-      if (stage) params.set("stage", stage);
-      if (dateFrom) params.set("date_from", dateFrom);
-      if (dateTo) params.set("date_to", dateTo);
-      if (employeeSearch.trim()) params.set("employee_code", employeeSearch.trim());
-      const resp = await fetch(`/api/v1/finance/position-data/export?${params.toString()}`, { credentials: "include" });
-      if (!resp.ok) throw new Error(`导出失败 (${resp.status})`);
-      const blob = await resp.blob();
+      const p = new URLSearchParams();
+      if (factoryId) p.set("factory_id", factoryId);
+      if (stage) p.set("stage", stage);
+      if (dateFrom) p.set("date_from", dateFrom);
+      if (dateTo) p.set("date_to", dateTo);
+      if (employeeSearch.trim()) p.set("employee_code", employeeSearch.trim());
+      const r = await fetch(`/api/v1/finance/position-data/export?${p.toString()}`, { credentials: "include" });
+      if (!r.ok) throw new Error(`导出失败 (${r.status})`);
+      const blob = await r.blob();
       const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `position-data-${stage || "all"}.xlsx`;
-      a.click();
+      const a = document.createElement("a"); a.href = url;
+      a.download = `position-data-${stage || "all"}.xlsx`; a.click();
       URL.revokeObjectURL(url);
-    } catch (cause: unknown) {
-      setError(cause instanceof Error ? cause.message : "导出失败");
-    } finally {
-      setExporting(false);
-    }
+    } catch (c: unknown) { setError(c instanceof Error ? c.message : "导出失败"); }
+    finally { setExporting(false); }
   }
 
-  const filteredItems = useMemo(() => items, [items]);
+  const cols = useMemo(() => columnsFor(stage), [stage]);
 
   return (
-    <section className="finance-position-page">
-      <PageHeader
-        title="岗位数据"
-        subtitle="按生产岗位查看正式生产记录与检测数据。"
-      />
+    <section className="ledger-page">
+      <header>
+        <h1>岗位数据</h1>
+        <p>按工厂、岗位、日期查看生产业务数据，支持按岗位导出 XLSX。</p>
+      </header>
 
-      {error && <ErrorAlert message={error} />}
+      {error && <div className="ledger-error">{error}<button type="button" onClick={() => setError("")}>✕</button></div>}
 
-      {/* ── Filter Bar ── */}
-      <div className="filter-bar" style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 16, alignItems: "flex-end" }}>
-        <label style={{ display: "flex", flexDirection: "column", gap: 2, fontSize: "0.8rem" }}>
-          开始日期
-          <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} style={{ padding: "6px 8px", borderRadius: 6, border: "1px solid #d1d5db" }} />
-        </label>
-        <label style={{ display: "flex", flexDirection: "column", gap: 2, fontSize: "0.8rem" }}>
-          结束日期
-          <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} style={{ padding: "6px 8px", borderRadius: 6, border: "1px solid #d1d5db" }} />
-        </label>
-        <label style={{ display: "flex", flexDirection: "column", gap: 2, fontSize: "0.8rem" }}>
-          工厂
-          <input type="text" value={factoryId} onChange={(e) => setFactoryId(e.target.value)} placeholder="工厂 ID" style={{ padding: "6px 8px", borderRadius: 6, border: "1px solid #d1d5db", width: 100 }} />
-        </label>
-        <label style={{ display: "flex", flexDirection: "column", gap: 2, fontSize: "0.8rem" }}>
-          岗位
-          <select value={stage} onChange={(e) => setStage(e.target.value)} style={{ padding: "6px 8px", borderRadius: 6, border: "1px solid #d1d5db" }}>
-            <option value="">全部岗位</option>
-            {STAGE_OPTIONS.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+      <div className="ledger-filters">
+        <label>工厂
+          <select value={factoryId} onChange={(e) => setFactoryId(e.target.value)}>
+            <option value="">全部工厂</option>
+            {factories.map((f) => <option key={f.factory_id} value={f.factory_id}>{f.name}</option>)}
           </select>
         </label>
-        <label style={{ display: "flex", flexDirection: "column", gap: 2, fontSize: "0.8rem" }}>
-          员工
-          <input type="text" value={employeeSearch} onChange={(e) => setEmployeeSearch(e.target.value)} placeholder="工号" style={{ padding: "6px 8px", borderRadius: 6, border: "1px solid #d1d5db", width: 80 }} />
+        <label>岗位
+          <select value={stage} onChange={(e) => setStage(e.target.value)}>
+            {POSITIONS.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
+          </select>
         </label>
-        <button type="button" className="btn secondary" onClick={() => void load()} disabled={loading} style={{ padding: "6px 16px" }}>查询</button>
-        <button type="button" className="btn primary" onClick={() => void handleExport()} disabled={exporting || items.length === 0} style={{ padding: "6px 16px", background: "#17653a", color: "#fff", border: "none", borderRadius: 6, cursor: "pointer" }}>
-          {exporting ? "导出中…" : `导出 XLSX (${items.length})`}
+        <label>开始日期
+          <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
+        </label>
+        <label>结束日期
+          <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+        </label>
+        <label>员工
+          <input type="text" value={employeeSearch} onChange={(e) => setEmployeeSearch(e.target.value)} placeholder="工号或姓名" />
+        </label>
+        <button type="button" onClick={load}>查询</button>
+        <button type="button" onClick={() => void handleExport()} disabled={exporting} className="primary-button">
+          {exporting ? "导出中…" : "↓ 导出 Excel"}
         </button>
       </div>
 
-      {/* ── Summary ── */}
-      <div className="summary-row" style={{ marginBottom: 12, fontSize: "0.85rem", color: "#6b7280" }}>
-        {loading ? "加载中…" : `共 ${items.length} 条记录${stage ? ` · ${STAGE_LABELS[stage] || stage}` : ""}`}
-      </div>
-
-      {/* ── Data Table ── */}
       {loading ? (
-        <div className="empty-state">加载中…</div>
-      ) : filteredItems.length === 0 ? (
-        <div className="empty-state">{stage || factoryId || dateFrom ? "没有匹配的数据" : "请选择筛选条件后查询"}</div>
+        <div className="page-loading">加载中…</div>
+      ) : items.length === 0 ? (
+        <div className="ledger-empty">
+          <p><strong>暂无数据</strong></p>
+          <p className="signature-muted">请选择筛选条件后点击"查询"。</p>
+        </div>
       ) : (
-        <div className="governed-table-wrap">
-          <table className="governed-table">
+        <div className="ledger-table-wrap">
+          <table className="ledger-table">
             <thead>
               <tr>
-                <th>日期</th>
-                <th>工号</th>
-                <th>姓名</th>
-                <th>工厂</th>
-                <th>记录号</th>
-                <th>笼号</th>
-                <th>工序</th>
-                <th>当前状态</th>
+                {cols.map((c) => <th key={c}>{c}</th>)}
               </tr>
             </thead>
             <tbody>
-              {filteredItems.map((item) => (
-                <tr key={`${item.record_id}-${item.stage}`}>
-                  <td>{item.date ? new Date(item.date).toLocaleDateString("zh-CN") : "—"}</td>
-                  <td>{item.employee_code}</td>
-                  <td>{item.employee_name}</td>
-                  <td>{item.factory_id}</td>
-                  <td>{item.display_no}</td>
-                  <td>{item.cage_no || "—"}</td>
-                  <td>{STAGE_LABELS[item.stage] || item.stage}</td>
-                  <td>{item.status === "COMPLETED" ? "已完成" : item.current_stage || item.status}</td>
+              {items.map((item, i) => (
+                <tr key={item.record_id || i}>
+                  {cols.map((c) => {
+                    if (c === "日期") return <td key={c}>{item.date || "—"}</td>;
+                    if (c === "员工") return <td key={c}>{item.employee_name} <span className="signature-muted">{item.employee_code}</span></td>;
+                    if (c === "工号") return <td key={c}>{item.employee_code}</td>;
+                    if (c === "姓名") return <td key={c}>{item.employee_name}</td>;
+                    if (c === "岗位") return <td key={c}>{POSITIONS.find(p=>p.value===item.stage)?.label ?? item.stage}</td>;
+                    if (c === "笼号") return <td key={c}>{item.cage_no || "—"}</td>;
+                    if (c === "表号") return <td key={c}>{item.display_no}</td>;
+                    if (c === "状态") return <td key={c}>{item.status}</td>;
+                    return <td key={c}>{extractVal(item.values, c)}</td>;
+                  })}
                 </tr>
               ))}
             </tbody>
           </table>
+          <p className="signature-muted" style={{ marginTop: 8 }}>共 {items.length} 条记录</p>
         </div>
       )}
     </section>

@@ -12,30 +12,27 @@ const NAVIGATION: Record<WorkspaceRole, {
   PLANT_MANAGER: {
     label: "厂长工作区导航",
     links: [
+      { to: "/plant/production", label: "本厂生产" },
+      { to: "/plant/forms", label: "本厂业务表单" },
+      { to: "/plant/exceptions", label: "质量与异常" },
+      { to: "/plant/employees", label: "人员调度" },
       { to: "/plant/overview", label: "本厂概览" },
-      { to: "/plant/notifications", label: "通知与知悉" },
-      { to: "/plant/forms", label: "表单查询" },
-      { to: "/plant/workflows", label: "流程查询" },
-      { to: "/plant/production", label: "生产看板" },
-      { to: "/plant/employees", label: "生产与员工" },
-      { to: "/plant/exceptions", label: "异常处理" },
-      { to: "/plant/payroll", label: "工资查询" },
     ],
   },
   FINANCE: {
     label: "财务工作区导航",
     links: [
       { to: "/finance/position-data", label: "岗位数据" },
-      { to: "/finance/payroll", label: "工资数据" },
+      { to: "/finance/payroll", label: "工资核算" },
       { to: "/finance/payroll-rules", label: "业务预设" },
       { to: "/finance/exports", label: "导出历史" },
-      // V1 暂缓: 财务概览, 今日提交, 月度统计, 年度统计, 异常记录, 表单查询, 工作流管理, 业务建模, 报表模板
     ],
   },
   ADMIN: {
     label: "管理工作区导航",
     links: [
       { to: "/admin/overview", label: "业务全景" },
+      { to: "/admin/business-forms", label: "正式业务表单" },
       { to: "/admin/organization", label: "组织与员工" },
       { to: "/admin/factories", label: "工厂与岗位" },
       { to: "/admin/audit", label: "审计记录" },

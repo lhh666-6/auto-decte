@@ -1582,3 +1582,66 @@
   gap: 8px;
   margin-bottom: 16px;
 }
+
+/* ── Business Panorama (AdminOverviewPage) ────────────────────── */
+
+.bp-card {
+  background: #fff; border: 1px solid #e5e7eb; border-radius: 14px;
+  padding: 1.5rem; margin-bottom: 1rem;
+}
+.bp-card-sort { border-left: 4px solid #16a34a; }
+.bp-card-dip  { border-left: 4px solid #2563eb; }
+.bp-card-header {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: .5rem;
+}
+.bp-card-header h2 { margin: 0; font-size: 1.1rem; font-weight: 700; }
+.bp-card-badge {
+  background: #dcfce7; color: #166534; font-size: .75rem;
+  padding: .2rem .6rem; border-radius: 99px; font-weight: 600;
+}
+.bp-card-desc { color: #6b7280; font-size: .85rem; margin-bottom: 1rem; }
+
+.bp-stats-row {
+  display: grid; grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: .6rem; margin-bottom: 1rem;
+}
+.bp-stat-badge {
+  background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 10px;
+  padding: .6rem .5rem; text-align: center;
+}
+.bp-stat-num { font-size: 1.25rem; font-weight: 700; color: #111827; display: block; }
+.bp-stat-lbl { font-size: .72rem; color: #6b7280; }
+
+.bp-stage-flow {
+  display: flex; flex-wrap: wrap; align-items: center; gap: .35rem;
+  font-size: .82rem; padding: .75rem; background: #f9fafb;
+  border-radius: 10px;
+}
+.bp-stage-node {
+  background: #fff; border: 1px solid #d1d5db; border-radius: 8px;
+  padding: .35rem .7rem; font-weight: 600; color: #374151;
+}
+.bp-stage-sub { display: block; font-size: .68rem; color: #9ca3af; margin-top: 1px; }
+.bp-stage-arrow { color: #9ca3af; margin: 0 .15rem; font-size: .85rem; }
+
+.bp-dependency-arrow {
+  text-align: center; padding: .3rem 0; color: #6b7280; font-size: .8rem;
+}
+.bp-dep-icon { display: block; font-size: 1.2rem; }
+
+.bp-downstream {
+  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: .6rem; margin: 1rem 0;
+}
+.bp-down-box {
+  background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 10px;
+  padding: .7rem .5rem; text-align: center; font-size: .82rem;
+}
+.bp-down-box strong { display: block; margin-bottom: .15rem; color: #166534; }
+.bp-down-box span { color: #86efac; font-size: .9rem; }
+
+@media (max-width: 720px) {
+  .bp-stats-row { grid-template-columns: repeat(3, 1fr); }
+  .bp-downstream { grid-template-columns: repeat(2, 1fr); }
+}

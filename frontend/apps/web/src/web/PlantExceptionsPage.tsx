@@ -26,7 +26,13 @@ const STAGE_LABELS: Record<string, string> = {
   SORT: "分选", DIPPING: "浸胶", DRYING: "干燥",
 };
 
-type Bucket = "active" | "history";
+type Bucket = "active" | "history" | "all";
+
+const BUCKET_TABS: Array<{ key: Bucket; label: string }> = [
+  { key: "active", label: "待我处理" },
+  { key: "history", label: "已处置" },
+  { key: "all", label: "全部检测记录" },
+];
 
 export function PlantExceptionsPage() {
   const [items, setItems] = useState<BambooInspectionQueueItem[]>([]);
@@ -137,6 +143,7 @@ export function PlantExceptionsPage() {
         });
         setMessage("质量处置已提交");
       }
+      setMessage(dispExisting ? "处置已更新" : "质量处置已提交并签字");
       setShowDisposition(false);
       reload();
     } catch (c) {
@@ -170,13 +177,13 @@ export function PlantExceptionsPage() {
           <input type="search" value={query}
             onChange={(e) => setQuery(e.target.value)} placeholder="输入表号或笼号…" />
         </label>
-        <label>范围
-          <select value={bucket} onChange={(e) => setBucket(e.target.value as Bucket)}>
-            <option value="active">当前处理</option>
-            <option value="history">历史记录</option>
-          </select>
-        </label>
-        <button type="button" onClick={reload}>搜索</button>
+        <nav className="tabs" aria-label="质量分类" style={{ marginBottom: 0 }}>
+          {BUCKET_TABS.map(b => (
+            <button key={b.key} type="button" className={`tab${bucket === b.key ? " on" : ""}`}
+              onClick={() => setBucket(b.key)}>{b.label}</button>
+          ))}
+        </nav>
+        <button type="button" onClick={reload} className="secondary-button">搜索</button>
       </div>
 
       <div className="ledger-case-list">
@@ -241,9 +248,8 @@ export function PlantExceptionsPage() {
                 </blockquote>
                 <textarea aria-label="上诉审批意见" value={appealNote}
                   onChange={(e) => setAppealNote(e.target.value)} placeholder="审批意见（可选）" />
-                <p className="signature-muted">批准后系统将把记录打回对应生产环节重新检测。</p>
                 <div className="ledger-inline-actions">
-                  <button type="button" onClick={() => void decide(item.record_id, true)}>批准并打回重检</button>
+                  <button type="button" onClick={() => void decide(item.record_id, true)}>批准上诉</button>
                   <button type="button" onClick={() => void decide(item.record_id, false)}>驳回上诉</button>
                 </div>
               </div>
@@ -310,8 +316,7 @@ export function PlantExceptionsPage() {
                   <select value={dispDecision}
                     onChange={(e) => setDispDecision(e.target.value)}>
                     <option value="CONFIRMED">确认原评级</option>
-                    <option value="DOWNGRADED">降级</option>
-                    <option value="UPGRADED">升级</option>
+                    <option value="DOWNGRADED">调整评级</option>
                   </select>
                 </label>
 

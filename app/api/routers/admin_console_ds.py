@@ -436,6 +436,27 @@ def list_job_presets(request: Request) -> dict[str, object]:
     return {"items": _ADMIN_JOB_PRESETS}
 
 
+@router.get("/employees")
+def admin_list_employees(
+    request: Request,
+    factory_id: str | None = None,
+) -> dict[str, object]:
+    """Admin lists employees across all factories (or filtered by factory)."""
+    _admin_actor(request)
+    actor_info = require_web_actor(request)
+    dummy_actor = _admin_bamboo_actor(actor_info, factory_id or "ADMIN")
+    return {"items": _bamboo(request).list_factory_employees(dummy_actor)}
+
+
+@router.get("/personnel-transfers")
+def admin_personnel_transfers(request: Request) -> dict[str, object]:
+    """Admin lists all personnel transfers."""
+    _admin_actor(request)
+    actor_info = require_web_actor(request)
+    dummy_actor = _admin_bamboo_actor(actor_info, "ADMIN")
+    return {"items": _bamboo(request).list_personnel_transfers(dummy_actor)}
+
+
 @router.post("/employees", status_code=status.HTTP_201_CREATED)
 def admin_create_employee(
     body: AdminCreateEmployeeRequest,
@@ -483,6 +504,13 @@ async def set_employee_account_state(
             status_code=status.HTTP_409_CONFLICT,
             detail={"code": error.code, "detail": error.detail},
         ) from error
+
+
+@router.get("/form-definitions")
+def admin_form_definitions(request: Request) -> dict[str, object]:
+    """Admin lists all managed form definitions with latest version."""
+    _admin_actor(request)
+    return {"items": _forms(request).list_definitions()}
 
 
 @router.get("/employees/{employee_code}/account-state")

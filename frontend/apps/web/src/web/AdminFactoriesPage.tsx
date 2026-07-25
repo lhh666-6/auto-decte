@@ -37,6 +37,10 @@ export function AdminFactoriesPage() {
   const WEB_ROLE_LABELS: Record<string, string> = {
     ADMIN: "系统管理员", FINANCE: "财务审批", PLANT_MANAGER: "厂长",
   };
+  function payrollModeFor(role: string): string {
+    return ["PLANT_MANAGER", "SUPERVISOR", "SYSTEM_ADMIN", "FINANCE_APPROVER"].includes(role)
+      ? "固定管理工资" : "生产计量工资";
+  }
 
   return (
     <section className="admin-factories-page">
@@ -100,9 +104,9 @@ export function AdminFactoriesPage() {
               <thead>
                 <tr>
                   <th>岗位名称</th>
-                  <th>Bamboo Role</th>
-                  <th>Web 角色</th>
-                  <th>操作</th>
+                  <th>系统角色</th>
+                  <th>工资模式</th>
+                  <th>Web 权限</th>
                 </tr>
               </thead>
               <tbody>
@@ -110,8 +114,8 @@ export function AdminFactoriesPage() {
                   <tr key={j.label}>
                     <td>{j.label}</td>
                     <td><code>{j.bamboo_role}</code></td>
+                    <td>{payrollModeFor(j.bamboo_role)}</td>
                     <td>{j.web_roles.map((r) => WEB_ROLE_LABELS[r] ?? r).join(", ") || "—"}</td>
-                    <td><button type="button" className="btn secondary" disabled title="暂未开放">编辑</button></td>
                   </tr>
                 ))}
               </tbody>

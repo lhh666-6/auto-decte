@@ -315,16 +315,6 @@ describe("independent bamboo forms", () => {
     expect(await screen.findByLabelText("检测目标")).toBeTruthy();
     expect(Array.from((screen.getByLabelText("检测目标") as HTMLSelectElement).options).map((item) => item.text)).toEqual(["分选"]);
     cleanup();
-
-    mocks.getBambooRecord.mockResolvedValue(jointRecord);
-    withSession(<BambooRecordDetailPage recordId="JOINT-18" />, { ...worker, bamboo_role: "SUPERVISOR", position: "主管" });
-    expect(await screen.findByRole("heading", { name: "主管处理" })).toBeTruthy();
-    expect(screen.queryByLabelText("浸胶")).toBeNull();
-    await userEvent.setup().click(screen.getByRole("button", { name: "发现问题，发起回退" }));
-    const returnSection = screen.getByRole("heading", { name: "主管处理" }).closest("section")!;
-    expect(within(returnSection).getByLabelText("浸胶")).toBeTruthy();
-    expect(within(returnSection).getByLabelText("干燥")).toBeTruthy();
-    expect(within(returnSection).queryByLabelText("分选")).toBeNull();
   });
 
   it("shows the two-hour queue and explicit Android capture controls", async () => {

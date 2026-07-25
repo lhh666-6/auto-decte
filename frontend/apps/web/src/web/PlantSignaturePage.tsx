@@ -1,11 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
 import {
   auditPlantRecord,
   decidePlantInspectionAppeal,
   getPlantProductionDetail,
-  returnPlantRecord,
   terminatePlantInspection,
 } from "./api";
 import type {
@@ -20,7 +19,7 @@ const STAGE_LABELS: Record<string, string> = {
   DIPPING: "浸胶",
   DRYING: "干燥",
   SUPERVISOR: "主管审核",
-  PLANT_AUDIT: "厂长签字",
+  PLANT_AUDIT: "厂长确认",
 };
 
 const FACT_TYPE_LABELS: Record<string, string> = {
@@ -31,7 +30,7 @@ const FACT_TYPE_LABELS: Record<string, string> = {
 };
 
 const SIGNATURE_GATE_REASONS: Record<string, string> = {
-  NOT_AT_PLANT_AUDIT: "尚未进入厂长签字环节",
+  NOT_AT_PLANT_AUDIT: "尚未进入厂长确认环节",
   INSPECTION_IN_PROGRESS: "检测仍在进行，暂不能签字",
   APPEAL_PENDING: "检测申诉待处理，暂不能签字",
   SIGNATURE_NOT_AVAILABLE: "当前条件尚未满足",
@@ -81,44 +80,6 @@ function SubmissionCard({ item }: { item: BambooStageSubmission }) {
   );
 }
 
-/* ---- 可打回环节选项 ---- */
-function stageOptions(detail: BambooProductionDetail): Array<[string, string]> {
-  return detail.form_type === "SORTING"
-    ? [["SORT", "分选"]]
-    : [["DIPPING", "浸胶"], ["DRYING", "干燥"]];
-}
-
-/* ---- 根据当前选中环节，预览失效的提交 ----
- * NOTE: This is a client-side approximation. It only counts directly
- * selected stages and does NOT account for downstream invalidation of
- * stages that depend on the returned stages. The server may invalidate
- * additional submissions beyond what is shown here.
- * ---- */
-function returnImpactPreview(
-  detail: BambooProductionDetail,
-  selectedStages: string[],
-) {
-  if (!selectedStages.length) return null;
-  const affected = detail.submissions.filter(
-    (item) => selectedStages.includes(item.stage) && !item.invalidated,
-  );
-  if (!affected.length) return <p className="signature-muted">所选环节当前没有有效提交，打回不会使提交失效。</p>;
-  return (
-    <div className="signature-return-impact">
-      <h4>将失效的提交（{affected.length} 条）</h4>
-      <ul>
-        {affected.map((item) => (
-          <li key={item.submission_id}>
-            {STAGE_LABELS[item.stage] ?? item.stage} — {item.actor_name || item.actor_id}
-            {" · "}
-            {item.submitted_at ? new Date(item.submitted_at).toLocaleString() : "未记录时间"}
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-}
-
 /* ===================================================================
  * PlantSignaturePage
  * =================================================================== */
@@ -133,10 +94,6 @@ export function PlantSignaturePage() {
   const [signatureKey, setSignatureKey] = useState("");
   const [appealNote, setAppealNote] = useState("");
   const [appealIdempotencyKey, setAppealIdempotencyKey] = useState("");
-  const [returnOpen, setReturnOpen] = useState(false);
-  const [returnConfirmOpen, setReturnConfirmOpen] = useState(false);
-  const [returnStages, setReturnStages] = useState<string[]>([]);
-  const [returnReason, setReturnReason] = useState("");
   const [terminateReason, setTerminateReason] = useState("");
   const [terminateIdempotencyKey, setTerminateIdempotencyKey] = useState("");
   const [terminateConfirmOpen, setTerminateConfirmOpen] = useState(false);
@@ -154,11 +111,6 @@ export function PlantSignaturePage() {
   useEffect(() => {
     void reload();
   }, [reload]);
-
-  const activeStages = useMemo(
-    () => detail ? stageOptions(detail) : [],
-    [detail],
-  );
 
   /* ---- 通用操作包裹器 ---- */
   async function run(action: () => Promise<unknown>): Promise<boolean> {
@@ -230,28 +182,6 @@ export function PlantSignaturePage() {
       appealIdempotencyKey || crypto.randomUUID(),
     ));
     setAppealNote("");
-  }
-
-  /* ---- 打回 ---- */
-  function openReturnConfirm() {
-    if (!detail || !returnStages.length || !returnReason.trim()) return;
-    setReturnConfirmOpen(true);
-  }
-
-  async function confirmReturn() {
-    if (!detail || !returnStages.length || !returnReason.trim()) return;
-    const succeeded = await run(() => returnPlantRecord(
-      detail.record_id,
-      returnStages,
-      returnReason,
-      detail.revision,
-    ));
-    if (succeeded) {
-      setReturnOpen(false);
-      setReturnConfirmOpen(false);
-      setReturnStages([]);
-      setReturnReason("");
-    }
   }
 
   /* ---- 渲染 ---- */
@@ -539,50 +469,6 @@ export function PlantSignaturePage() {
               </p>
             )}
 
-            {/* 打回区 */}
-            <button type="button" className="secondary-button" onClick={() => setReturnOpen((value) => !value)}>
-              选择环节打回
-            </button>
-            {returnOpen && (
-              <div className="signature-return">
-                <p className="signature-muted">打回会撤销所选环节及依赖于这些环节的后续有效提交。历史版本仍保留用于追溯。</p>
-                <fieldset className="signature-return-stages">
-                  <legend>选择要打回的环节</legend>
-                  {activeStages.map(([value, label]) => (
-                    <label key={value}>
-                      <input
-                        type="checkbox"
-                        checked={returnStages.includes(value)}
-                        onChange={(event) => setReturnStages((current) => event.target.checked
-                          ? [...current, value]
-                          : current.filter((item) => item !== value))}
-                      />
-                      {label}
-                      {(() => {
-                        const hasValid = detail.submissions.some(
-                          (s) => s.stage === value && !s.invalidated,
-                        );
-                        return hasValid ? null : <span className="signature-muted">（无有效提交）</span>;
-                      })()}
-                    </label>
-                  ))}
-                </fieldset>
-                {returnImpactPreview(detail, returnStages)}
-                <textarea
-                  aria-label="打回原因"
-                  value={returnReason}
-                  onChange={(event) => setReturnReason(event.target.value)}
-                  placeholder="请填写打回原因（必填）"
-                />
-                <button
-                  type="button"
-                  disabled={busy || !returnStages.length || !returnReason.trim()}
-                  onClick={openReturnConfirm}
-                >
-                  预览并确认打回
-                </button>
-              </div>
-            )}
           </section>
 
           {/* 纠错案件 */}
@@ -660,29 +546,6 @@ export function PlantSignaturePage() {
             </div>
           )}
 
-          {/* ---- 打回二次确认弹窗 ---- */}
-          {returnConfirmOpen && (
-            <div className="signature-dialog-backdrop" role="presentation">
-              <div className="signature-dialog" role="dialog" aria-modal="true" aria-labelledby="return-dialog-title">
-                <h2 id="return-dialog-title">确认打回生产记录</h2>
-                <p>将打回 <strong>{detail.display_no}</strong> 的以下环节：</p>
-                <ul>
-                  {returnStages.map((stage) => (
-                    <li key={stage}>{STAGE_LABELS[stage] ?? stage}</li>
-                  ))}
-                </ul>
-                {returnImpactPreview(detail, returnStages)}
-                <p><strong>打回原因：</strong>{returnReason}</p>
-                <p className="signature-warning">⚠ 打回后工人需重新提交选中环节。此操作不可自动撤销。</p>
-                <div>
-                  <button type="button" disabled={busy} onClick={() => void confirmReturn()}>
-                    确认打回
-                  </button>
-                  <button type="button" disabled={busy} onClick={() => setReturnConfirmOpen(false)}>取消</button>
-                </div>
-              </div>
-            </div>
-          )}
         </>
       )}
     </section>

@@ -1,46 +1,73 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 
-function StatCard({ label, value, loading }: { label: string; value: string; loading: boolean }) {
+/* ── Types ───────────────────────────────────────────────────── */
+
+interface OverviewStats {
+  sort_today: number;
+  sort_pending_supervisor: number;
+  sort_pending_inspection: number;
+  sort_pending_plant: number;
+  sort_anomalies: number;
+  dip_today: number;
+  dip_pending_supervisor: number;
+  dip_pending_inspection: number;
+  dip_pending_plant: number;
+  dip_anomalies: number;
+}
+
+/* ── Helpers ─────────────────────────────────────────────────── */
+
+function StatBadge({ label, value, loading }: {
+  label: string; value: number | string; loading: boolean;
+}) {
   return (
-    <div className="admin-stat-card">
-      <span className="admin-stat-value">{loading ? "—" : value}</span>
-      <span className="admin-stat-label">{label}</span>
+    <div className="bp-stat-badge">
+      <span className="bp-stat-num">{loading ? "—" : value}</span>
+      <span className="bp-stat-lbl">{label}</span>
     </div>
   );
 }
 
-interface FlowNode {
-  title: string;
-  actor: string;
-  detail: string;
+function StageFlow({ stages }: { stages: Array<{ label: string; sub?: string }> }) {
+  return (
+    <div className="bp-stage-flow">
+      {stages.map((s, i) => (
+        <span key={s.label}>
+          <span className="bp-stage-node">{s.label}</span>
+          {s.sub && <small className="bp-stage-sub">{s.sub}</small>}
+          {i < stages.length - 1 && <span className="bp-stage-arrow">→</span>}
+        </span>
+      ))}
+    </div>
+  );
 }
 
-const FLOW: FlowNode[] = [
-  { title: "员工登录", actor: "全员", detail: "工号 + PIN 登录移动端" },
-  { title: "生产记录", actor: "分选/浸胶/干燥工", detail: "填写工序数据：笼号、品级、含水率等" },
-  { title: "主管审核", actor: "主管", detail: "审核工序数据，可打回重填" },
-  { title: "质量检测", actor: "检测员", detail: "含水率 1-100 整数、品级检测、合格/不合格" },
-  { title: "厂长审核", actor: "厂长", detail: "最终签字确认，可提前终止检测" },
-  { title: "工资数据", actor: "系统", detail: "正式生产事实 → 工资计算" },
-  { title: "岗位报表", actor: "财务", detail: "按岗位/工厂/日期筛选查看" },
-  { title: "XLSX 导出", actor: "财务", detail: "固定格式一键导出" },
-];
+/* ── Page ────────────────────────────────────────────────────── */
 
 export function AdminOverviewPage() {
   const [loading, setLoading] = useState(true);
-  const [stats, setStats] = useState<Record<string, number>>({});
+  const [stats, setStats] = useState<OverviewStats>({
+    sort_today: 0, sort_pending_supervisor: 0, sort_pending_inspection: 0,
+    sort_pending_plant: 0, sort_anomalies: 0,
+    dip_today: 0, dip_pending_supervisor: 0, dip_pending_inspection: 0,
+    dip_pending_plant: 0, dip_anomalies: 0,
+  });
 
   useEffect(() => {
     setLoading(true);
     fetch("/api/v1/admin/overview", { credentials: "include" })
       .then((r) => r.json())
       .then((data: Record<string, unknown>) => {
-        const s: Record<string, number> = {};
-        for (const card of (data.cards as Array<{ key: string; value: number }>) ?? []) {
-          s[card.key] = card.value;
-        }
-        setStats(s);
+        const raw = data.stats as Record<string, number> | undefined;
+        if (raw) setStats({
+          sort_today: raw.sort_today ?? 0, sort_pending_supervisor: raw.sort_pending_supervisor ?? 0,
+          sort_pending_inspection: raw.sort_pending_inspection ?? 0,
+          sort_pending_plant: raw.sort_pending_plant ?? 0, sort_anomalies: raw.sort_anomalies ?? 0,
+          dip_today: raw.dip_today ?? 0, dip_pending_supervisor: raw.dip_pending_supervisor ?? 0,
+          dip_pending_inspection: raw.dip_pending_inspection ?? 0,
+          dip_pending_plant: raw.dip_pending_plant ?? 0, dip_anomalies: raw.dip_anomalies ?? 0,
+        });
       })
       .catch(() => { /* use empty state */ })
       .finally(() => setLoading(false));
@@ -49,48 +76,104 @@ export function AdminOverviewPage() {
   return (
     <section className="admin-overview-page">
       <h1 className="admin-page-title">业务全景</h1>
-      <p className="admin-page-subtitle">竹丝工序生产管理 V1 主链路</p>
+      <p className="admin-page-subtitle">两张正式业务表 · 独立记录 · 数据引用</p>
 
-      {/* A: Stat cards */}
-      <div className="admin-stat-grid">
-        <StatCard label="待审批表单" value={String(stats.form_approvals ?? "—")} loading={loading} />
-        <StatCard label="待审批流程" value={String(stats.workflow_approvals ?? "—")} loading={loading} />
-        <StatCard label="待审批工资规则" value={String(stats.payroll_approvals ?? "—")} loading={loading} />
+      {/* ═══ Business Form A: 《竹丝装笼跟踪牌》 ═══ */}
+      <div className="bp-card bp-card-sort">
+        <header className="bp-card-header">
+          <h2>《竹丝装笼跟踪牌》</h2>
+          <span className="bp-card-badge">已发布 · V1</span>
+        </header>
+        <p className="bp-card-desc">独立分选记录 · 主要岗位：分选工</p>
+
+        <div className="bp-stats-row">
+          <StatBadge label="今日记录" value={stats.sort_today} loading={loading} />
+          <StatBadge label="待主管" value={stats.sort_pending_supervisor} loading={loading} />
+          <StatBadge label="待检测" value={stats.sort_pending_inspection} loading={loading} />
+          <StatBadge label="待厂长" value={stats.sort_pending_plant} loading={loading} />
+          <StatBadge label="异常" value={stats.sort_anomalies} loading={loading} />
+        </div>
+
+        <StageFlow stages={[
+          { label: "分选" },
+          { label: "质量检测", sub: "检测员" },
+          { label: "主管审核", sub: "主管" },
+          { label: "厂长确认", sub: "厂长" },
+        ]} />
       </div>
 
-      {/* B: V1 Business Flow */}
-      <div className="admin-flow-section">
-        <h2>V1 业务主链</h2>
-        <div className="v1-flow">
-          {FLOW.map((node, i) => (
-            <div key={node.title} className="v1-flow-item">
-              <div className="v1-flow-node">
-                <strong>{node.title}</strong>
-                <small>{node.actor}</small>
-                <span>{node.detail}</span>
-              </div>
-              {i < FLOW.length - 1 && <div className="v1-flow-arrow">↓</div>}
-            </div>
-          ))}
+      {/* Data dependency arrow */}
+      <div className="bp-dependency-arrow">
+        <span>生产数据引用</span>
+        <span className="bp-dep-icon">↓</span>
+      </div>
+
+      {/* ═══ Business Form B: 《配片数计量考核表》 ═══ */}
+      <div className="bp-card bp-card-dip">
+        <header className="bp-card-header">
+          <h2>《配片数计量考核表》</h2>
+          <span className="bp-card-badge">已发布 · V1</span>
+        </header>
+        <p className="bp-card-desc">浸胶 → 干燥 · 主要岗位：浸胶工、干燥工</p>
+
+        <div className="bp-stats-row">
+          <StatBadge label="今日记录" value={stats.dip_today} loading={loading} />
+          <StatBadge label="待主管" value={stats.dip_pending_supervisor} loading={loading} />
+          <StatBadge label="待检测" value={stats.dip_pending_inspection} loading={loading} />
+          <StatBadge label="待厂长" value={stats.dip_pending_plant} loading={loading} />
+          <StatBadge label="异常" value={stats.dip_anomalies} loading={loading} />
+        </div>
+
+        <StageFlow stages={[
+          { label: "浸胶" },
+          { label: "干燥" },
+          { label: "质量检测", sub: "检测员" },
+          { label: "主管审核", sub: "主管" },
+          { label: "厂长确认", sub: "厂长" },
+        ]} />
+      </div>
+
+      {/* Downstream summary */}
+      <div className="bp-downstream">
+        <div className="bp-down-box">
+          <strong>正式生产事实</strong>
+          <span>↓</span>
+        </div>
+        <div className="bp-down-box">
+          <strong>岗位工资计算</strong>
+          <span>↓</span>
+        </div>
+        <div className="bp-down-box">
+          <strong>财务核算</strong>
+          <span>↓</span>
+        </div>
+        <div className="bp-down-box">
+          <strong>按岗位导出 XLSX</strong>
         </div>
       </div>
 
-      {/* C: Quick Entry */}
+      {/* Quick links */}
       <div className="admin-quick-section">
         <h2>快速入口</h2>
         <div className="admin-quick-grid">
           <Link to="/admin/organization" className="admin-quick-card">
-            <span className="admin-quick-icon">👥</span>
+            <span className="admin-quick-icon">
+              <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M10 2a4 4 0 100 8 4 4 0 000-8zM3 18s-1 0-1-1 3-5 8-5 8 4 8 5-1 1-1 1H3z" stroke="currentColor" strokeWidth="1.5"/></svg>
+            </span>
             <strong>组织与员工</strong>
             <small>管理员工档案、岗位分配、人员调动</small>
           </Link>
           <Link to="/admin/factories" className="admin-quick-card">
-            <span className="admin-quick-icon">🏭</span>
+            <span className="admin-quick-icon">
+              <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M3 8V17h5V12h4v5h5V8L10 3 3 8z" stroke="currentColor" strokeWidth="1.5"/></svg>
+            </span>
             <strong>工厂与岗位</strong>
             <small>查看工厂列表与岗位预设</small>
           </Link>
           <Link to="/admin/audit" className="admin-quick-card">
-            <span className="admin-quick-icon">📋</span>
+            <span className="admin-quick-icon">
+              <svg width="20" height="20" viewBox="0 0 20 20" fill="none"><rect x="3" y="2" width="14" height="16" rx="2" stroke="currentColor" strokeWidth="1.5"/><path d="M7 8h6M7 12h4" stroke="currentColor" strokeWidth="1.5"/></svg>
+            </span>
             <strong>审计记录</strong>
             <small>查看操作审计日志</small>
           </Link>

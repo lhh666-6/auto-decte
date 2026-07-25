@@ -59,12 +59,12 @@ export function BambooV3SubmissionsPage() {
 }
 
 function actionLabel(action: string): string {
-  return ({ SORT: "分选签字", DIPPING: "浸胶签字", DRYING: "干燥签字", SUPERVISOR: "主管签字", PLANT_AUDIT: "厂长签字", INSPECTION: "检测留痕" } as Record<string, string>)[action] ?? action;
+  return ({ SORT: "分选签字", DIPPING: "浸胶签字", DRYING: "干燥签字", SUPERVISOR: "主管签字", PLANT_AUDIT: "厂长确认", INSPECTION: "检测留痕" } as Record<string, string>)[action] ?? action;
 }
 
 function stateLabel(item: BambooHistoryItem): string {
   if (item.status === "COMPLETED") return "流程完成";
-  return ({ SORT: "待分选", DIPPING: "待浸胶", DRYING: "待干燥", SUPERVISOR: "待主管", PLANT_AUDIT: "待厂长" } as Record<string, string>)[item.current_stage ?? ""] ?? "已流转";
+  return ({ SORT: "待分选", DIPPING: "待浸胶", DRYING: "待干燥", SUPERVISOR: "待主管", PLANT_AUDIT: "待厂长确认" } as Record<string, string>)[item.current_stage ?? ""] ?? "已流转";
 }
 
 function formatTime(value: string): string {

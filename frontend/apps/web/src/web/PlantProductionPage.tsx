@@ -15,7 +15,7 @@ const STAGE_LABELS: Record<string, string> = {
   DIPPING: "浸胶",
   DRYING: "干燥",
   SUPERVISOR: "主管审核",
-  PLANT_AUDIT: "厂长签字",
+  PLANT_AUDIT: "厂长确认",
 };
 
 const STATUS_LABELS: Record<string, string> = {

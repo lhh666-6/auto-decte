@@ -216,7 +216,7 @@ export function BambooStageForm({
 type StageField = { key: string; label: string; kind: "text" | "datetime-local" | "textarea"; numeric?: boolean; optional?: boolean };
 
 function stageTitle(stage: BambooStage): string {
-  return ({ SORT: "重填分选记录", DIPPING: "填写浸胶记录", DRYING: "填写干燥并联合签字", SUPERVISOR: "主管审核", PLANT_AUDIT: "厂长审核" })[stage];
+  return ({ SORT: "重填分选记录", DIPPING: "填写浸胶记录", DRYING: "填写干燥并联合签字", SUPERVISOR: "主管审核", PLANT_AUDIT: "厂长确认" })[stage];
 }
 function stageFields(stage: BambooStage): StageField[] {
   switch (stage) {
@@ -236,7 +236,7 @@ function stageFields(stage: BambooStage): StageField[] {
       { key: "note", label: "干燥备注", kind: "textarea", optional: true },
     ];
     case "SUPERVISOR": return [{ key: "note", label: "主管评价", kind: "textarea", optional: true }];
-    case "PLANT_AUDIT": return [{ key: "note", label: "厂长审核说明", kind: "textarea", optional: true }];
+    case "PLANT_AUDIT": return [{ key: "note", label: "厂长确认说明", kind: "textarea", optional: true }];
   }
 }
 function validate(stage: BambooStage, moisture: string[], racks: string[], fields: Record<string, string>): string {

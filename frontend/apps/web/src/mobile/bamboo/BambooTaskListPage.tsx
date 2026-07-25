@@ -795,7 +795,7 @@ function bucketLabel(bucket: BambooTaskBucket, role = ""): string {
 }
 
 function stageLabel(stage: BambooRecord["current_stage"]): string {
-  return ({ SORT: "待分选", DIPPING: "待浸胶", DRYING: "待干燥", SUPERVISOR: "待主管审核", PLANT_AUDIT: "待厂长签字" } as Record<string, string>)[stage ?? ""] ?? "流程完成";
+  return ({ SORT: "待分选", DIPPING: "待浸胶", DRYING: "待干燥", SUPERVISOR: "待主管审核", PLANT_AUDIT: "待厂长确认" } as Record<string, string>)[stage ?? ""] ?? "流程完成";
 }
 
 function formTypeLabel(formType: BambooRecord["form_type"]): string {

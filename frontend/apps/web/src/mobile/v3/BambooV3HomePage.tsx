@@ -50,7 +50,7 @@ const ROLE_ACTIONS: Record<string, { primaryTitle: string; primaryDesc: string; 
   },
   PLANT_MANAGER: {
     primaryTitle: "查看待签字记录",
-    primaryDesc: "上游主管完成后才会开放厂长签字",
+    primaryDesc: "上游主管完成后才会开放厂长确认",
     secondaryTitle: "人员与职务配置",
     secondaryDesc: "处理换岗申请，并为新人或未来岗位预留职务",
   },

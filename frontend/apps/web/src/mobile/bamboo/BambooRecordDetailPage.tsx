@@ -11,14 +11,14 @@ type FlowStep = { key: string; stage: BambooStage | null; label: string };
 const SORTING_FLOW: FlowStep[] = [
   { key: "sort", stage: "SORT", label: "分选签字" },
   { key: "supervisor", stage: "SUPERVISOR", label: "主管审核" },
-  { key: "plant", stage: "PLANT_AUDIT", label: "厂长审核" },
+  { key: "plant", stage: "PLANT_AUDIT", label: "厂长确认" },
   { key: "effective", stage: null, label: "已生效" },
 ];
 const JOINT_FLOW: FlowStep[] = [
   { key: "dipping", stage: "DIPPING", label: "浸胶记录" },
   { key: "drying", stage: "DRYING", label: "干燥联合签字" },
   { key: "supervisor", stage: "SUPERVISOR", label: "主管审核" },
-  { key: "plant", stage: "PLANT_AUDIT", label: "厂长审核" },
+  { key: "plant", stage: "PLANT_AUDIT", label: "厂长确认" },
   { key: "effective", stage: null, label: "已生效" },
 ];
 const ROLE_STAGE: Record<string, BambooStage> = { SORT_OPERATOR: "SORT", DIPPING_OPERATOR: "DIPPING", DRYING_RACK_OPERATOR: "DRYING", SUPERVISOR: "SUPERVISOR", PLANT_MANAGER: "PLANT_AUDIT" };
@@ -61,7 +61,7 @@ export function BambooRecordDetailPage({ recordId }: { recordId: string }) {
   return <div className="mobile-page bamboo-v3-page bamboo-detail-page">
     <header className="bamboo-v3-page-header bamboo-v3-detail-heading">
       <Link to="/mobile/work" aria-label="返回工作列表">‹</Link>
-      <div><p>{formTypeLabel(record)} · 查看整张电子表单</p><h2>{record.form_type === "DIPPING_DRYING" ? "浸胶+干燥联合表详情" : "分选表详情"}</h2></div>
+      <div><p>{formTypeLabel(record)} · 查看整张电子表单</p><h2>{record.form_type === "DIPPING_DRYING" ? "《配片数计量考核表》" : "《竹丝装笼跟踪牌》"}</h2></div>
     </header>
     {error && <div className="error-banner" role="alert">{error}</div>}
     <section className="bamboo-record-hero">
@@ -138,7 +138,7 @@ function SourceCard({ record }: { record: BambooRecord }) {
   const sourceBase = upstream?.base_info ?? (isObject(snapshot.base_info) ? snapshot.base_info : {});
   const changed = snapshot.source_status === "UPSTREAM_CHANGED";
   return <section className={`bamboo-source-card${changed ? " changed" : ""}`}>
-    <div className="bamboo-section-title"><h3>来源分选表</h3><span>只读上游记录</span></div>
+    <div className="bamboo-section-title"><h3>来源：《竹丝装笼跟踪牌》</h3><span>只读上游记录</span></div>
     {changed && <div className="banner danger" role="alert">上游数据已变更，待主管确认</div>}
     <p><strong>{String(upstream?.display_no ?? snapshot.display_no ?? record.source_ref ?? "—")}</strong> · 第 {String(upstream?.revision ?? snapshot.revision ?? "—")} 版</p>
     <details open>
@@ -174,11 +174,11 @@ function effectiveSubmissions(record: BambooRecord, flow: FlowStep[]): Set<strin
 function stageState(record: BambooRecord): string {
   if (record.form_type === "DIPPING_DRYING" && record.current_stage === "SUPERVISOR") return "联合作业已完成 · 待主管审核";
   if (record.current_stage === "SUPERVISOR") return "分选已完成 · 待主管审核";
-  if (record.current_stage === "PLANT_AUDIT") return "待厂长审核";
+  if (record.current_stage === "PLANT_AUDIT") return "待厂长确认";
   return stageLabel(record.current_stage);
 }
-function formTypeLabel(record: BambooRecord): string { return record.form_type === "DIPPING_DRYING" ? "浸胶+干燥联合表" : "分选表"; }
-function stageLabel(stage: BambooStage | null): string { return ({ SORT: "分选签字", DIPPING: "浸胶记录", DRYING: "干燥联合签字", SUPERVISOR: "主管审核", PLANT_AUDIT: "厂长审核" } as Record<string, string>)[stage ?? ""] ?? "已生效"; }
+function formTypeLabel(record: BambooRecord): string { return record.form_type === "DIPPING_DRYING" ? "《配片数计量考核表》" : "《竹丝装笼跟踪牌》"; }
+function stageLabel(stage: BambooStage | null): string { return ({ SORT: "分选", DIPPING: "浸胶", DRYING: "干燥", SUPERVISOR: "主管审核", PLANT_AUDIT: "厂长确认" } as Record<string, string>)[stage ?? ""] ?? "已生效"; }
 function roleLabel(role: string): string { return ({ SORT_OPERATOR: "分选工", DIPPING_OPERATOR: "浸胶工", DRYING_RACK_OPERATOR: "干燥工", SUPERVISOR: "主管", PLANT_MANAGER: "厂长" } as Record<string, string>)[role] ?? role; }
 function baseLabel(key: string): string { return ({ mode: "作业模式", special_classes: "特殊类", cage_no: "竹笼号", length: "长度", shade: "深浅", grade: "品级", supplier: "供应商", bundle_count: "把数", net_weight: "净重", options_version: "预设版本" } as Record<string, string>)[key] ?? key; }
 function valueLabel(key: string): string { return ({ moisture: "含水率检测点", sort_quantity: "分选数量", wage_amount: "工资金额", note: "备注/评价", glue_batch: "胶液批次", glue_before_weight: "胶前重", glue_after_weight: "胶后重", glue_gain: "上胶量", rack_numbers: "干燥架号", rack_count: "架数", conclusion: "审核结论", started_at: "开始时间", ended_at: "结束时间" } as Record<string, string>)[key] ?? key; }

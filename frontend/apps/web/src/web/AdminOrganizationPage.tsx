@@ -29,7 +29,7 @@ interface FactoryInfo {
 
 type CreateStep = "identity" | "account" | "confirm";
 
-type DetailTab = "overview" | "permissions" | "account" | "transfers" | "access";
+type DetailTab = "overview" | "permissions" | "account" | "transfers" | "access" | "salary";
 
 // ── Helpers ──────────────────────────────────────────────────────
 
@@ -96,6 +96,12 @@ export function AdminOrganizationPage() {
   const [accountState, setAccountState] = useState<EmployeeAccountState | null>(null);
   const [accountStateLoading, setAccountStateLoading] = useState(false);
   const [accountStateMsg, setAccountStateMsg] = useState("");
+  const [salaryData, setSalaryData] = useState<{ amount: string; effective_from: string; version: number } | null>(null);
+  const [salaryLoading, setSalaryLoading] = useState(false);
+  const [newSalaryAmount, setNewSalaryAmount] = useState("");
+  const [newSalaryFrom, setNewSalaryFrom] = useState("");
+  const [salarySubmitting, setSalarySubmitting] = useState(false);
+  const [salaryMsg, setSalaryMsg] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [initError, setInitError] = useState("");
@@ -115,18 +121,21 @@ export function AdminOrganizationPage() {
   async function loadInitial() {
     try {
       const [factResp, rolesResp] = await Promise.all([
-        fetch("/api/v1/plant/factories", { credentials: "include" }),
-        fetch("/api/v1/plant/roles", { credentials: "include" }),
+        fetch("/api/v1/admin/factories", { credentials: "include" }),
+        fetch("/api/v1/admin/job-presets", { credentials: "include" }),
       ]);
       if (factResp.ok) {
-        const factData = (await factResp.json()) as { items: FactoryInfo[] };
-        setFactories(factData.items ?? []);
+        const factData = (await factResp.json()) as { factories?: FactoryInfo[] };
+        setFactories(factData.factories ?? []);
+        setAdminFactories(factData.factories ?? []);
       } else {
         throw new Error(`工厂列表加载失败 (${factResp.status})`);
       }
       if (rolesResp.ok) {
-        const roleData = (await rolesResp.json()) as { items: Array<{ role_code: string; display_name: string }> };
-        setRoles(roleData.items ?? []);
+        const roleData = (await rolesResp.json()) as { presets?: Array<{ label: string; bamboo_role: string; web_roles: string[] }> };
+        const presets = roleData.presets ?? [];
+        setJobPresets(presets);
+        setRoles(presets.map(p => ({ role_code: p.bamboo_role, display_name: p.label })));
       }
     } catch (cause: unknown) {
       setInitError(cause instanceof Error ? cause.message : "基础数据加载失败");
@@ -220,24 +229,55 @@ export function AdminOrganizationPage() {
     }
   }
 
-  /* ---- CSRF token helper ---- */
+  /* ---- CSRF token helper (uses web_csrf cookie, same as rest of app) ---- */
   function getCsrfToken(): string {
-    const meta = document.querySelector<HTMLMetaElement>('meta[name="csrf-token"]');
-    return meta?.content ?? "";
+    if (typeof document === "undefined") return "";
+    const prefix = "web_csrf=";
+    const item = document.cookie.split(";").map(p => p.trim()).find(p => p.startsWith(prefix));
+    return item ? decodeURIComponent(item.slice(prefix.length)) : "";
   }
 
   useEffect(() => {
     void loadEmployees();
   }, [selectedFactoryId]);
 
-  // Load account state when selecting an employee
+  // Load account state + salary when selecting an employee
   useEffect(() => {
-    if (!selectedEmployee) { setAccountState(null); return; }
-    setAccountStateLoading(true);
+    if (!selectedEmployee) { setAccountState(null); setSalaryData(null); return; }
+    setAccountStateLoading(true); setSalaryLoading(true);
     void getEmployeeAccountState(selectedEmployee.employee_code).then((s) => {
       setAccountState(s); setAccountStateLoading(false);
     }).catch(() => { setAccountState(null); setAccountStateLoading(false); });
+    void fetch(`/api/v1/admin/management-salaries?factory_id=${encodeURIComponent(selectedEmployee.factory_id || "")}`, { credentials: "include" })
+      .then(r => r.json()).then((d: Array<{ employee_code: string; amount: string; effective_from: string; version: number }>) => {
+        const s = d.find(s => s.employee_code === selectedEmployee.employee_code);
+        setSalaryData(s || null);
+      }).catch(() => setSalaryData(null)).finally(() => setSalaryLoading(false));
   }, [selectedEmployee]);
+
+  async function handleCreateSalary() {
+    if (!selectedEmployee || !newSalaryAmount || !newSalaryFrom) return;
+    setSalarySubmitting(true); setSalaryMsg("");
+    try {
+      const csrf = getCsrfToken();
+      const r = await fetch("/api/v1/admin/management-salaries", {
+        method: "POST", credentials: "include",
+        headers: { "Content-Type": "application/json", "X-CSRF-Token": csrf },
+        body: JSON.stringify({
+          employee_code: selectedEmployee.employee_code,
+          factory_id: accountState?.factory_id || selectedEmployee.factory_id || "",
+          position_snapshot: accountState?.position || extStr(selectedEmployee, "position") || "",
+          role_code_snapshot: extStr(selectedEmployee, "role_code") || "",
+          salary_type: "FIXED_MANAGEMENT", amount: newSalaryAmount, effective_from: newSalaryFrom,
+        }),
+      });
+      if (!r.ok) throw new Error(`创建失败 (${r.status})`);
+      const d = await r.json() as { amount: string; effective_from: string; version: number };
+      setSalaryData(d); setNewSalaryAmount(""); setNewSalaryFrom("");
+      setSalaryMsg("工资已更新");
+    } catch (c) { setSalaryMsg(c instanceof Error ? c.message : "创建失败"); }
+    finally { setSalarySubmitting(false); }
+  }
 
   async function handleAccountState(state: string) {
     if (!selectedEmployee) return;
@@ -255,13 +295,13 @@ export function AdminOrganizationPage() {
     setLoading(true);
     setError("");
     try {
-      const fetchUrl = selectedFactoryId
-        ? `/api/v1/plant/employees?factory_id=${encodeURIComponent(selectedFactoryId)}`
-        : "/api/v1/plant/employees";
+      const empUrl = selectedFactoryId
+        ? `/api/v1/admin/employees?factory_id=${encodeURIComponent(selectedFactoryId)}`
+        : "/api/v1/admin/employees";
 
       const [empResult, transferResult] = await Promise.all([
-        fetch(fetchUrl, { credentials: "include" }).then((r) => r.json()) as Promise<{ items: BambooEmployee[] }>,
-        fetch("/api/v1/plant/personnel-transfers", { credentials: "include" }).then((r) => r.json()) as Promise<{ items: BambooPersonnelTransfer[] }>,
+        fetch(empUrl, { credentials: "include" }).then((r) => r.json()) as Promise<{ items: BambooEmployee[] }>,
+        fetch("/api/v1/admin/personnel-transfers", { credentials: "include" }).then((r) => r.json()) as Promise<{ items: BambooPersonnelTransfer[] }>,
       ]);
 
       setEmployees(empResult.items ?? []);
@@ -701,6 +741,7 @@ export function AdminOrganizationPage() {
                 ["permissions", "权限与岗位"],
                 ["account", "账号"],
                 ["transfers", "调动"],
+                ["salary", "薪资"],
                 ["access", "访问范围"],
               ] as const).map(([tab, label]) => (
                 <button
@@ -859,6 +900,47 @@ export function AdminOrganizationPage() {
                 <>
                   <h3 className="detail-section-title">可访问工作区</h3>
                   <p>{extStr(selectedEmployee, "accessible_workspaces") || "—"}</p>
+                </>
+              )}
+
+              {detailTab === "salary" && (
+                <>
+                  <h3 className="detail-section-title">薪资设置</h3>
+                  {salaryLoading ? (
+                    <p className="signature-muted">加载中…</p>
+                  ) : salaryData ? (
+                    <div className="disposition-summary">
+                      <DetailField label="当前工资" value={`¥ ${Number(salaryData.amount).toLocaleString()} / 月`} />
+                      <DetailField label="生效时间" value={salaryData.effective_from} />
+                      <DetailField label="版本" value={`V${salaryData.version}`} />
+                      <DetailField label="类型" value="固定管理工资" />
+                    </div>
+                  ) : (
+                    <p className="signature-muted">该员工暂无薪资设置。</p>
+                  )}
+                  {salaryMsg && (
+                    <div className={salaryMsg.includes("失败") ? "ledger-error" : "ledger-success"}>
+                      {salaryMsg}<button type="button" onClick={() => setSalaryMsg("")}>✕</button>
+                    </div>
+                  )}
+                  <div style={{ marginTop: 12, display: "flex", gap: 8, flexDirection: "column" }}>
+                    <label className="detail-field">
+                      <span>金额</span>
+                      <input type="number" value={newSalaryAmount} onChange={e => setNewSalaryAmount(e.target.value)}
+                        placeholder="8500" style={{ maxWidth: 200 }} />
+                    </label>
+                    <label className="detail-field">
+                      <span>生效日期</span>
+                      <input type="date" value={newSalaryFrom} onChange={e => setNewSalaryFrom(e.target.value)}
+                        style={{ maxWidth: 200 }} />
+                    </label>
+                    <button type="button" className="primary-button"
+                      disabled={salarySubmitting || !newSalaryAmount || !newSalaryFrom}
+                      onClick={() => void handleCreateSalary()}
+                      style={{ alignSelf: "flex-start" }}>
+                      {salarySubmitting ? "保存中…" : "新增工资版本"}
+                    </button>
+                  </div>
                 </>
               )}
             </div>
