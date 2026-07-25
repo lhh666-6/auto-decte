@@ -6,6 +6,7 @@ import {
   listReportMappings,
   previewGovernedExport,
   reexportGovernedExport,
+  safeRandomUUID,
 } from "./api";
 import type { ExportPreview } from "./api";
 import type { GovernedExportBatch, ReportMappingVersion } from "./types";
@@ -355,7 +356,7 @@ export function FinanceGovernedExportsPage() {
                   <button
                     type="button"
                     className="primary"
-                    onClick={() => { setCreateIdempotencyKey(crypto.randomUUID()); setCreateStep(3); }}
+                    onClick={() => { setCreateIdempotencyKey(safeRandomUUID()); setCreateStep(3); }}
                     disabled={previewState === "stale"}
                   >
                     下一步：确认创建
@@ -549,7 +550,7 @@ export function FinanceGovernedExportsPage() {
                     <button type="button" className="secondary" onClick={() => { setReExportBatch(null); setReExportStep("review"); }}>
                       取消
                     </button>
-                    <button type="button" className="primary" onClick={() => { setReExportIdempotencyKey(crypto.randomUUID()); setReExportStep("confirm"); }}>
+                    <button type="button" className="primary" onClick={() => { setReExportIdempotencyKey(safeRandomUUID()); setReExportStep("confirm"); }}>
                       预览新导出
                     </button>
                   </div>

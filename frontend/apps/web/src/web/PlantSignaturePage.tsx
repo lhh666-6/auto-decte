@@ -5,6 +5,7 @@ import {
   auditPlantRecord,
   decidePlantInspectionAppeal,
   getPlantProductionDetail,
+  safeRandomUUID,
   terminatePlantInspection,
 } from "./api";
 import type {
@@ -138,7 +139,7 @@ export function PlantSignaturePage() {
   /* ---- 签字 ---- */
   function openSignatureConfirmation() {
     // 保持同一个 idempotency key，重复点击返回原结果
-    if (!signatureKey) setSignatureKey(crypto.randomUUID());
+    if (!signatureKey) setSignatureKey(safeRandomUUID());
     setConfirming(true);
   }
 
@@ -159,7 +160,7 @@ export function PlantSignaturePage() {
   /* ---- 检测终止 ---- */
   function openTerminateConfirm() {
     setTerminateReason("");
-    setTerminateIdempotencyKey(crypto.randomUUID());
+    setTerminateIdempotencyKey(safeRandomUUID());
     setTerminateConfirmOpen(true);
   }
 
@@ -174,12 +175,12 @@ export function PlantSignaturePage() {
   /* ---- 上诉决定 ---- */
   async function decideAppeal(approve: boolean) {
     if (!detail) return;
-    if (!appealIdempotencyKey) setAppealIdempotencyKey(crypto.randomUUID());
+    if (!appealIdempotencyKey) setAppealIdempotencyKey(safeRandomUUID());
     await run(() => decidePlantInspectionAppeal(
       detail.record_id,
       approve,
       appealNote,
-      appealIdempotencyKey || crypto.randomUUID(),
+      appealIdempotencyKey || safeRandomUUID(),
     ));
     setAppealNote("");
   }

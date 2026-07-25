@@ -5,6 +5,7 @@ import {
   decidePlantInspectionAppeal,
   getPlantExceptions,
   getPlantProductionDetail,
+  safeRandomUUID,
   terminatePlantInspection,
   updateQualityDisposition,
 } from "./api";
@@ -92,7 +93,7 @@ export function PlantExceptionsPage() {
   async function handleTerminate(recordId: string) {
     if (!terminateReason.trim()) return;
     try {
-      await terminatePlantInspection(recordId, crypto.randomUUID(), terminateReason);
+      await terminatePlantInspection(recordId, safeRandomUUID(), terminateReason);
       setTerminateRecordId(""); setTerminateReason(""); reload();
     } catch (c) { setError(c instanceof Error ? c.message : "终止检测失败"); }
   }

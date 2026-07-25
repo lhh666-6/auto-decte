@@ -6,6 +6,7 @@ import {
   listFinanceLedger,
   getFinanceLedgerOverview,
   reviewCorrection,
+  safeRandomUUID,
   submitFinanceCorrection,
 } from "./api";
 import type { FinanceRecord, SubmissionCorrection } from "./types";
@@ -191,7 +192,7 @@ export function FinanceLedgerPage({ scope }: { scope: LedgerScope }) {
     setCorrectionReason("");
     setCorrectionDesc("");
     setCorrectionType("other");
-    setCorrectionIdempotencyKey(crypto.randomUUID());
+    setCorrectionIdempotencyKey(safeRandomUUID());
     setCorrectionOpen(true);
   }
 

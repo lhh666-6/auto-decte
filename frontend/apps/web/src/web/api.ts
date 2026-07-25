@@ -51,6 +51,22 @@ export type WebFetcher = (
 
 const WEB_BASE = "/api/v1/web";
 
+/** Generate a random UUID v4 that works without secure context (HTTP). */
+export function safeRandomUUID(): string {
+  try {
+    return (crypto as { randomUUID?: () => string }).randomUUID?.() ?? fallbackUUID();
+  } catch {
+    return fallbackUUID();
+  }
+}
+function fallbackUUID(): string {
+  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === "x" ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
 function readCookie(name: string): string | null {
   if (typeof document === "undefined") return null;
   const prefix = `${name}=`;
@@ -566,7 +582,7 @@ export function decidePlantInspectionAppeal(
     `/api/v1/plant/inspection-queue/${recordId}/appeal/decision`,
     {
       method: "POST",
-      headers: { ...csrfHeaders(true), "Idempotency-Key": idempotencyKey || crypto.randomUUID() },
+      headers: { ...csrfHeaders(true), "Idempotency-Key": idempotencyKey || safeRandomUUID() },
       body: JSON.stringify({ approve, note }),
     },
     fetcher,
@@ -602,7 +618,7 @@ export function createPlantPersonnelTransfer(
     "/api/v1/plant/personnel-transfers",
     {
       method: "POST",
-      headers: { ...csrfHeaders(true), "Idempotency-Key": crypto.randomUUID() },
+      headers: { ...csrfHeaders(true), "Idempotency-Key": safeRandomUUID() },
       body: JSON.stringify(body),
     },
     fetcher,
@@ -619,7 +635,7 @@ export function decidePlantPersonnelTransfer(
     `/api/v1/plant/personnel-transfers/${transferId}/manager-decision`,
     {
       method: "POST",
-      headers: { ...csrfHeaders(true), "Idempotency-Key": crypto.randomUUID() },
+      headers: { ...csrfHeaders(true), "Idempotency-Key": safeRandomUUID() },
       body: JSON.stringify({ approve, note }),
     },
     fetcher,
@@ -892,7 +908,7 @@ export function createGovernedExport(
         template_version_id: templateVersionId,
         mapping_version_id: mappingVersionId,
         filters,
-        idempotency_key: crypto.randomUUID(),
+        idempotency_key: safeRandomUUID(),
       }),
     },
     fetcher,
@@ -965,7 +981,7 @@ export function reexportGovernedExport(
         template_version_id: templateVersionId,
         mapping_version_id: mappingVersionId,
         filters: factoryId ? { factory_id: factoryId } : {},
-        idempotency_key: crypto.randomUUID(),
+        idempotency_key: safeRandomUUID(),
       }),
     },
     fetcher,
