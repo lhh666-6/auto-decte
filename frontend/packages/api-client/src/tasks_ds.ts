@@ -1,4 +1,4 @@
-import { ApiRequestError } from "./review-workbench.js";
+import { ApiRequestError } from "./api-error_ds.js";
 
 export interface TaskStatusDetail {
   task_id: string;

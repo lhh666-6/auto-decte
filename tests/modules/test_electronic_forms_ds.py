@@ -163,10 +163,12 @@ class TestDefinitionLifecycle:
         assert v1.version == 1
         assert v2.version == 2
 
-    def test_cannot_publish_without_template(self, def_svc: ElectronicDefinitionService) -> None:
+    def test_can_publish_without_template(self, def_svc: ElectronicDefinitionService) -> None:
+        # OCR retired: template_version_id is optional. Electronic forms
+        # can be published standalone without a paper template reference.
         d = def_svc.create_draft("NO_TPL", "无模板", created_by="u1")
-        with pytest.raises(ValueError, match="template version"):
-            def_svc.publish(d.definition_version_id)
+        published = def_svc.publish(d.definition_version_id)
+        assert published.status == DefinitionStatus.PUBLISHED
 
     def test_publish_sets_status_and_timestamp(self, def_svc: ElectronicDefinitionService) -> None:
         d = def_svc.create_draft(

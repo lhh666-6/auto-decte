@@ -13,25 +13,8 @@ export {
 } from "./master-data_ds.js";
 // TemplateApi — retired (Paper OCR system removed)
 // ImportApi — retired (Paper OCR system removed)
-export {
-  ApiRequestError,
-  ReviewWorkbenchApi,
-  type AuditEvent,
-  type ClassificationOption,
-  type ConfirmAndClaimNextResult,
-  type EvidenceItem,
-  type FormSummary,
-  type RecognitionCandidate,
-  type RecordVersion,
-  type ReviewField,
-  type ReviewGroup,
-  type ReviewFieldRules,
-  type ReviewRuleFailure,
-  type ReviewDraft,
-  type ReviewHistory,
-  type ReviewLease,
-  type WorkbenchDetail,
-} from "./review-workbench.js";
+// ReviewWorkbenchApi — retired (Paper OCR system removed)
+export { ApiRequestError } from "./api-error_ds.js";
 export {
   ExportApi,
   type CreateExportInput,

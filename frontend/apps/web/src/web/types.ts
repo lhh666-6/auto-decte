@@ -369,3 +369,47 @@ export interface GovernedExportBatch {
   record_count?: number | null;
   supersedes_batch_id?: string;
 }
+
+// ── V1 Quality Disposition ─────────────────────────────────────
+
+export interface QualityDisposition {
+  disposition_id: string;
+  record_id: string;
+  inspection_id: string | null;
+  factory_id: string;
+  cage_no: string;
+  responsible_stage: string;
+  responsible_submission_id: string | null;
+  responsible_employee_code: string;
+  responsible_employee_name_snapshot: string;
+  responsible_position_snapshot: string;
+  original_grade: string;
+  effective_grade: string;
+  decision: string;
+  decision_note: string;
+  decided_by: string;
+  decided_at: string | null;
+  revision: number;
+}
+
+export interface CreateDispositionInput {
+  record_id: string;
+  inspection_id?: string | null;
+  factory_id: string;
+  responsible_stage: string;
+  original_grade: string;
+  effective_grade: string;
+  decision: string;
+  decision_note?: string;
+}
+
+// ── V1 Employee Account State ──────────────────────────────────
+
+export interface EmployeeAccountState {
+  employee_code: string;
+  account_state: string;
+  active: boolean;
+  factory_id: string;
+  factory_name: string;
+  position: string;
+}

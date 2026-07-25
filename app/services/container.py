@@ -42,11 +42,19 @@ from app.adapters.storage.local import LocalEvidenceStorage
 from app.adapters.vector.local import LocalVectorIndex
 from app.application.ai_review_forms import AIReviewForms
 from app.application.bamboo_operations_ds import BambooOperationsService
+from app.application.business_preset_ds import BusinessPresetService
 from app.application.electronic_submissions_ds import ElectronicFormIntegration
 from app.application.export_forms import ExportForms
 from app.application.import_forms import ImportForms
 from app.application.job_profiles_ds import JobProfiles
+from app.application.management_salary_ds import ManagementSalaryService
 from app.application.mobile_identity_ds import MobileIdentityService
+from app.application.personnel_governance_ds import (
+    PersonnelGovernanceService,
+)
+from app.application.quality_disposition_ds import (
+    QualityDispositionService,
+)
 from app.application.query_forms import QueryForms
 
 # OCR retired: RecognizeForms
@@ -71,6 +79,9 @@ from app.infrastructure.database.uow_ds import SqlAlchemyUnitOfWork
 from app.infrastructure.tasks.sqlite_store_ds import SqliteTaskStore
 from app.modules.bamboo_process.facade_ds import BambooProcessFacade
 from app.modules.electronic_forms.facade_ds import ElectronicDefinitionService
+from app.modules.electronic_forms.v1_form_seeds_ds import (
+    install_v1_business_form_seeds,
+)
 from app.modules.fact_records.facade_ds import FactRecordFacade
 from app.modules.master_data.facade_ds import MasterDataFacade
 from app.modules.master_data.repository_ds import SqlAlchemyMasterDataRepository
@@ -80,9 +91,8 @@ from app.modules.review.facade_ds import ReviewFacade
 from app.modules.review.lease_service_ds import ReviewLeaseService
 from app.modules.review.repository_ds import SqlAlchemyReviewLeaseRepository
 from app.modules.tasks.service_ds import TaskService
-from app.modules.templates.core_payroll_layouts_ds import (
-    install_reviewed_job_profile_seeds,
-)
+
+# OCR retired: install_reviewed_job_profile_seeds
 from app.modules.templates.seed_templates_ds import (
     SeedTemplateConflict,
     # OCR retired: install_legacy_payroll_seed_templates
@@ -131,6 +141,10 @@ class Services:
     bamboo_repository: SqlAlchemyBambooProcessRepository
     bamboo_process: BambooProcessFacade
     bamboo_operations: BambooOperationsService
+    quality_disposition: QualityDispositionService
+    personnel: PersonnelGovernanceService
+    business_presets: BusinessPresetService
+    management_salary: ManagementSalaryService
 
 
 def build_services(settings: Settings, *, install_seed_templates: bool = False) -> Services:
@@ -277,14 +291,25 @@ def build_services(settings: Settings, *, install_seed_templates: bool = False) 
         bamboo_repository=bamboo_repository,
         bamboo_process=bamboo_process,
         bamboo_operations=BambooOperationsService(engine, storage),
+        quality_disposition=QualityDispositionService(engine),
+        personnel=PersonnelGovernanceService(engine),
+        business_presets=BusinessPresetService(engine),
+        management_salary=ManagementSalaryService(engine),
     )
+    # Install V1 business presets (decoupled from payroll rules)
+    services.business_presets.install_v1_defaults()
+    # Install V1 business form definitions (《竹丝装笼跟踪牌》+《配片数计量考核表》)
+    install_v1_business_form_seeds(engine)
     # Legacy recognition/export tasks are no longer started by the Web mainline.
     if install_seed_templates and settings.environment == "development":
         install_demo_web_accounts(master_data, mobile_identity_repository)
     if install_seed_templates:
         try:
-            # OCR retired: install_legacy_payroll_seed_templates (required print_renderer)
-            install_reviewed_job_profile_seeds(template_repository)
+            # OCR retired: install_legacy_payroll_seed_templates +
+            # install_reviewed_job_profile_seeds. Both depend on paper template
+            # versions no longer seeded in V1. V1 uses ManagedFormDefinition
+            # + BusinessPresetVersion instead.
+            pass
         except SeedTemplateConflict as error:
             logger.warning("Built-in template installation skipped: %s", error)
     return services

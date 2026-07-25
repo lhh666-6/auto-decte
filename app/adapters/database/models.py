@@ -661,6 +661,9 @@ class MobileAccessProfileRow(Base):
     factory_id: Mapped[str] = mapped_column(String, nullable=False, default="")
     factory_name: Mapped[str] = mapped_column(String, nullable=False, default="")
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    account_state: Mapped[str] = mapped_column(
+        String, nullable=False, default="ACTIVE"
+    )  # ACTIVE | FROZEN | REMOVED
 
 
 class MobileSessionRow(Base):
@@ -722,6 +725,14 @@ class EmployeeBambooAssignmentRow(Base):
             "employee_code",
             "status",
             "effective_at",
+        ),
+        Index(
+            "ux_employee_one_active_assignment",
+            "employee_catalog",
+            "employee_code",
+            unique=True,
+            sqlite_where=text("status = 'ACTIVE'"),
+            postgresql_where=text("status = 'ACTIVE'"),
         ),
     )
 
@@ -1568,3 +1579,135 @@ class ExportCellLineageRow(Base):
     cell_address: Mapped[str] = mapped_column(String, nullable=False)
     submission_id: Mapped[str] = mapped_column(String, nullable=False)
     field_key: Mapped[str] = mapped_column(String, nullable=False)
+
+
+# ── V1 Final: Quality Disposition ───────────────────────────────
+
+
+class QualityDispositionRow(Base):
+    """Plant Manager final quality decision after inspection exception.
+
+    Does NOT invalidate production submissions or rewind current_stage.
+    Only produces an effective grade decision and audit trail.
+    """
+
+    __tablename__ = "quality_dispositions"
+    __table_args__ = (
+        UniqueConstraint("record_id", name="ux_quality_disposition_record"),
+        Index("ix_quality_disposition_factory", "factory_id", "decided_at"),
+    )
+
+    disposition_id: Mapped[str] = mapped_column(String, primary_key=True)
+    record_id: Mapped[str] = mapped_column(
+        ForeignKey("bamboo_records.record_id", ondelete="CASCADE"), nullable=False
+    )
+    inspection_id: Mapped[str | None] = mapped_column(
+        ForeignKey("bamboo_inspections.inspection_id")
+    )
+    factory_id: Mapped[str] = mapped_column(
+        ForeignKey("bamboo_factories.factory_id"), nullable=False
+    )
+    cage_no: Mapped[str] = mapped_column(String, nullable=False)
+    responsible_stage: Mapped[str] = mapped_column(String, nullable=False)
+    responsible_submission_id: Mapped[str | None] = mapped_column(
+        ForeignKey("bamboo_stage_submissions.submission_id")
+    )
+    responsible_employee_code: Mapped[str] = mapped_column(String, nullable=False)
+    responsible_employee_name_snapshot: Mapped[str] = mapped_column(String, nullable=False)
+    responsible_position_snapshot: Mapped[str] = mapped_column(String, nullable=False)
+    original_grade: Mapped[str] = mapped_column(String, nullable=False)
+    effective_grade: Mapped[str] = mapped_column(String, nullable=False)
+    decision: Mapped[str] = mapped_column(String, nullable=False)
+    decision_note: Mapped[str] = mapped_column(String, nullable=False, default="")
+    decided_by: Mapped[str] = mapped_column(String, nullable=False)
+    decided_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+
+
+# ── V1 Final: Business Field Preset (decoupled from Payroll) ────
+
+
+class BusinessPresetVersionRow(Base):
+    """Versioned business field presets — independent of payroll rules.
+
+    Finance creates drafts; Admin approves/publishes. Records bind to
+    a specific preset_version_id at creation time so history is stable.
+    """
+
+    __tablename__ = "business_preset_versions"
+    __table_args__ = (
+        UniqueConstraint("preset_key", "version", name="ux_business_preset_version"),
+        Index("ix_business_preset_status", "status", "preset_key"),
+    )
+
+    preset_version_id: Mapped[str] = mapped_column(String, primary_key=True)
+    preset_key: Mapped[str] = mapped_column(String, nullable=False)
+    display_name: Mapped[str] = mapped_column(String, nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    options: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String, nullable=False)
+    created_by: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    reviewed_by: Mapped[str | None] = mapped_column(String)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    review_note: Mapped[str] = mapped_column(String, nullable=False, default="")
+
+
+# ── V1 Final: Management Salary ────────────────────────────────
+
+
+class ManagementSalaryVersionRow(Base):
+    """Admin-managed fixed salaries for management positions.
+
+    Finance has READ-ONLY access. Admin creates/edits versions.
+    History is preserved — new version supersedes, never overwrites.
+    """
+
+    __tablename__ = "management_salary_versions"
+    __table_args__ = (
+        UniqueConstraint("employee_code", "version", name="ux_management_salary_version"),
+        Index("ix_management_salary_employee", "employee_code", "status"),
+    )
+
+    salary_version_id: Mapped[str] = mapped_column(String, primary_key=True)
+    employee_code: Mapped[str] = mapped_column(String, nullable=False)
+    factory_id: Mapped[str] = mapped_column(
+        ForeignKey("bamboo_factories.factory_id"), nullable=False
+    )
+    position_snapshot: Mapped[str] = mapped_column(String, nullable=False)
+    role_code_snapshot: Mapped[str] = mapped_column(String, nullable=False)
+    salary_type: Mapped[str] = mapped_column(String, nullable=False)
+    amount: Mapped[str] = mapped_column(String, nullable=False)
+    effective_from: Mapped[str] = mapped_column(String, nullable=False)
+    effective_until: Mapped[str | None] = mapped_column(String)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String, nullable=False)
+    created_by: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    supersedes_version_id: Mapped[str | None] = mapped_column(
+        ForeignKey("management_salary_versions.salary_version_id")
+    )
+
+
+# ── V1 Final: Payroll Field Registry ────────────────────────────
+
+
+class PayrollFieldRegistryRow(Base):
+    """Server-side allowlist of fields available per position for payroll formulas.
+
+    Finance can only reference fields registered here. No arbitrary DB access.
+    """
+
+    __tablename__ = "payroll_field_registry"
+    __table_args__ = (
+        UniqueConstraint("position_role", "field_key", name="ux_payroll_field_registry"),
+    )
+
+    registry_id: Mapped[str] = mapped_column(String, primary_key=True)
+    position_role: Mapped[str] = mapped_column(String, nullable=False)
+    field_key: Mapped[str] = mapped_column(String, nullable=False)
+    display_name: Mapped[str] = mapped_column(String, nullable=False)
+    data_type: Mapped[str] = mapped_column(String, nullable=False)
+    source_table: Mapped[str] = mapped_column(String, nullable=False)
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)

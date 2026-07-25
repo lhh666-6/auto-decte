@@ -958,3 +958,54 @@ export function reexportGovernedExport(
     fetcher,
   );
 }
+
+/* ── V1 Quality Disposition ─────────────────────────────────── */
+
+export async function createQualityDisposition(
+  d: import("./types").CreateDispositionInput, f: WebFetcher = fetch,
+): Promise<import("./types").QualityDisposition> {
+  return request<import("./types").QualityDisposition>(
+    "/api/v1/quality/dispositions",
+    { method: "POST", headers: csrfHeaders(true), body: JSON.stringify(d) }, f,
+  );
+}
+
+export async function getQualityDisposition(
+  rid: string, f: WebFetcher = fetch,
+): Promise<import("./types").QualityDisposition> {
+  return request<import("./types").QualityDisposition>(
+    `/api/v1/quality/dispositions/${encodeURIComponent(rid)}`,
+    { method: "GET" }, f,
+  );
+}
+
+export async function updateQualityDisposition(
+  rid: string,
+  u: { effective_grade?: string; decision?: string; decision_note?: string },
+  f: WebFetcher = fetch,
+): Promise<import("./types").QualityDisposition> {
+  return request<import("./types").QualityDisposition>(
+    `/api/v1/quality/dispositions/${encodeURIComponent(rid)}`,
+    { method: "PATCH", headers: csrfHeaders(true), body: JSON.stringify(u) }, f,
+  );
+}
+
+/* ── V1 Employee Account State ───────────────────────────────── */
+
+export async function setEmployeeAccountState(
+  ec: string, s: string, f: WebFetcher = fetch,
+): Promise<import("./types").EmployeeAccountState> {
+  return request<import("./types").EmployeeAccountState>(
+    `/api/v1/admin/employees/${encodeURIComponent(ec)}/account-state`,
+    { method: "PUT", headers: csrfHeaders(true), body: JSON.stringify({ state: s }) }, f,
+  );
+}
+
+export async function getEmployeeAccountState(
+  ec: string, f: WebFetcher = fetch,
+): Promise<import("./types").EmployeeAccountState> {
+  return request<import("./types").EmployeeAccountState>(
+    `/api/v1/admin/employees/${encodeURIComponent(ec)}/account-state`,
+    { method: "GET" }, f,
+  );
+}

@@ -23,10 +23,25 @@ function getBuckets(role: string): Array<{ key: BambooTaskBucket; label: string 
       { key: "completed", label: "我的检测记录" },
     ];
   }
+  // DIPPING_OPERATOR: dipping is the first stage, no "waiting" concept
+  if (role === "DIPPING_OPERATOR") {
+    return [
+      { key: "available", label: "待浸胶" },
+      { key: "completed", label: "我的记录" },
+    ];
+  }
+  // DRYING_RACK_OPERATOR: waits for DIPPING to complete
+  if (role === "DRYING_RACK_OPERATOR") {
+    return [
+      { key: "available", label: "待干燥" },
+      { key: "waiting", label: "等待浸胶" },
+      { key: "completed", label: "我的记录" },
+    ];
+  }
   return [
     { key: "available", label: "可记录" },
     { key: "waiting", label: "等待上游" },
-    { key: "completed", label: "已完成" },
+    { key: "completed", label: "我的记录" },
   ];
 }
 
@@ -95,9 +110,9 @@ export function BambooTaskListPage() {
   const [createIdempotencyKey, setCreateIdempotencyKey] = useState("");
   const [stageIdempotencyKey, setStageIdempotencyKey] = useState("");
   const [pendingSubmission, setPendingSubmission] = useState<PendingSortingSubmission | null>(null);
-  const roleRequiresCageSearch = ["DIPPING_OPERATOR", "DRYING_RACK_OPERATOR"].includes(session?.bamboo_role ?? "") && bucket === "available";
+  // V1: ALL roles see available records directly. Cage search is optional filtering.
   const isInspector = session?.bamboo_role === "INSPECTOR";
-  const roleSupportsCageSearch = roleRequiresCageSearch || (isInspector && bucket === "available");
+  const roleSupportsCageSearch = ["DIPPING_OPERATOR", "DRYING_RACK_OPERATOR", "INSPECTOR"].includes(session?.bamboo_role ?? "") && bucket === "available";
   const buckets = getBuckets(session?.bamboo_role ?? "");
   const sortingDraftScope = useMemo<BambooDraftScope | null>(() => session ? ({
     employeeCode: session.employee_code,
@@ -161,11 +176,9 @@ export function BambooTaskListPage() {
       } else {
         const [summary, result] = await Promise.all([
           mobileApiClient.getBambooDashboard(),
-          roleRequiresCageSearch && !searchedCage
-            ? Promise.resolve({ tasks: [] as BambooRecord[] })
-            : roleRequiresCageSearch
-              ? mobileApiClient.listBambooTasks(bucket, searchedCage)
-              : mobileApiClient.listBambooTasks(bucket),
+          roleSupportsCageSearch && searchedCage
+            ? mobileApiClient.listBambooTasks(bucket, searchedCage)
+            : mobileApiClient.listBambooTasks(bucket),
         ]);
         if (generation !== loadGeneration.current) return;
         setDashboard(summary);
@@ -183,7 +196,7 @@ export function BambooTaskListPage() {
     } finally {
       if (generation === loadGeneration.current) setLoading(false);
     }
-  }, [bucket, isInspector, roleRequiresCageSearch, searchedCage, session?.bamboo_role, navigate]);
+  }, [bucket, isInspector, roleSupportsCageSearch, searchedCage, session?.bamboo_role, navigate]);
 
   const loadPresets = useCallback(async () => {
     setPresetsLoading(true);
@@ -397,7 +410,7 @@ export function BambooTaskListPage() {
         <form className="bamboo-cage-search card" onSubmit={(event) => { event.preventDefault(); const value = cageQuery.trim(); if (!value) { setError("请先输入笼号。"); return; } setError(""); setSearchedCage(value); }}>
           <label htmlFor="bamboo-cage-query">{isInspector ? "按笼号查找可检测记录（可选）" : `按笼号查找${session?.bamboo_role === "DIPPING_OPERATOR" ? "上游表单" : "上游表单"}`}</label>
           <div className="btnrow"><input id="bamboo-cage-query" value={cageQuery} onChange={(event) => setCageQuery(event.target.value)} placeholder="输入完整或部分笼号" autoComplete="off" /><button type="submit" className="btn primary">搜索</button></div>
-          <p>{session?.bamboo_role === "DIPPING_OPERATOR" ? "查到分选来源后才能填写浸胶。" : session?.bamboo_role === "DRYING_RACK_OPERATOR" ? "查到已完成浸胶的联合表后才能填写干燥。" : "不搜索时显示全部可检测记录；输入笼号可精确查找。"}</p>
+          <p>输入笼号或表号可精确查找；不搜索时显示全部可处理记录。</p>
           {searchedCage && <button type="button" className="btn secondary small" onClick={() => { setSearchedCage(""); setCageQuery(""); }}>清除"{searchedCage}"</button>}
         </form>
       )}
@@ -417,8 +430,6 @@ export function BambooTaskListPage() {
 
       {loading ? (
         <div className="mobile-loading">加载工作中…</div>
-      ) : roleRequiresCageSearch && !searchedCage ? (
-        <div className="card empty"><h3>请先搜索笼号</h3><p>系统只显示与该笼号匹配、当前可处理的表单，避免逐张翻找。</p></div>
       ) : isInspector && inspectionWindows.length === 0 && tasks.length === 0 ? (
         <div className="card empty">
           <h3>{searchedCage ? (() => { const msg = cageSearchEmptyMessage(searchedCage, bucket); if (msg) return msg.title; return "未找到匹配笼号的记录。"; })() : "当前分类暂无记录"}</h3>
@@ -426,8 +437,8 @@ export function BambooTaskListPage() {
         </div>
       ) : tasks.length === 0 && inspectionWindows.length === 0 ? (
         <div className="card empty">
-          <h3>当前分类暂无记录</h3>
-          <p>前面流程完成后，后续岗位才会看到对应记录。</p>
+          <h3>{searchedCage ? `未找到笼号"${searchedCage}"的匹配记录` : "当前分类暂无记录"}</h3>
+          <p>{searchedCage ? "请确认笼号是否正确，或清除搜索查看全部。" : "当前没有需要你处理的记录。上一工序完成后会自动出现在这里。"}</p>
         </div>
       ) : (
         <div className="list" aria-label="竹丝记录列表">
@@ -879,12 +890,12 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 function cageSearchEmptyMessage(cageNo: string, bucket: BambooTaskBucket): { title: string; detail: string } | null {
   if (!cageNo.trim()) return null;
   if (bucket === "waiting") {
-    return { title: "该笼号尚未满足检测条件。", detail: "生产工序尚未全部完成，检测窗口暂未开放。请等待生产完成后刷新。" };
+    return { title: "该笼号尚未满足条件。", detail: "该笼号的上一工序尚未完成，请等待完成后刷新。" };
   }
   if (bucket === "available") {
-    return { title: "未找到可检测的匹配记录。", detail: `未找到笼号"${cageNo}"的可检测记录。该笼号可能尚未满足检测条件，或正由另一检测员检测中。` };
+    return { title: "未找到匹配的可用记录。", detail: `未找到笼号"${cageNo}"的可用记录。该笼号可能已完成或不存在。` };
   }
-  return { title: "未找到匹配笼号的记录。", detail: `未找到笼号"${cageNo}"的相关检测记录。` };
+  return { title: "未找到匹配笼号的记录。", detail: `未找到笼号"${cageNo}"的相关记录。` };
 }
 
 function inspectionWindowStatusLabel(window: BambooInspectionWindow): string {

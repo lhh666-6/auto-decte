@@ -4,6 +4,7 @@ from typing import Any, cast
 from urllib.parse import unquote
 
 from fastapi import APIRouter, Header, HTTPException, Query, Request, status
+from pydantic import BaseModel, Field
 
 from app.api.routers.web_auth_ds import require_web_actor, require_web_csrf
 from app.api.schemas.bamboo_process_ds import AdminCreateEmployeeRequest
@@ -28,6 +29,9 @@ from app.application.bamboo_operations_ds import (
     BambooOperationError,
     BambooOperationsService,
 )
+from app.application.personnel_governance_ds import (
+    PersonnelGovernanceError,
+)
 from app.modules.bamboo_process.models_ds import BambooRole
 from app.modules.electronic_forms.governance_ds import ManagedFormError, ManagedFormService
 from app.modules.identity_access.web_policy_ds import WebWorkspace, allows_workspace
@@ -39,6 +43,10 @@ from app.modules.report_templates.service_ds import (
 from app.modules.workflow_engine.service_ds import WorkflowError, WorkflowService
 
 router = APIRouter(prefix="/api/v1/admin", tags=["admin"])
+
+
+class SetAccountStateRequest(BaseModel):
+    state: str = Field(..., pattern="^(ACTIVE|FROZEN|REMOVED)$")
 
 
 def _admin_actor(request: Request):  # type: ignore[no-untyped-def]
@@ -450,6 +458,86 @@ def admin_create_employee(
         )
     except BambooOperationError as error:
         raise _bamboo_error(error) from error
+
+
+# ── Employee Account State (Freeze / Restore / Remove) ──────────
+
+
+@router.put("/employees/{employee_code}/account-state")
+async def set_employee_account_state(
+    employee_code: str,
+    body: SetAccountStateRequest,
+    request: Request,
+) -> dict:
+    actor = _admin_actor(request)
+    require_web_csrf(str(employee_code), request)
+    services: Any = request.app.state.services
+    try:
+        return services.personnel.set_account_state(
+            employee_code,
+            body.state,
+            actor_id=actor.employee_code,
+        )
+    except PersonnelGovernanceError as error:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": error.code, "detail": error.detail},
+        ) from error
+
+
+@router.get("/employees/{employee_code}/account-state")
+async def get_employee_account_state(
+    employee_code: str,
+    request: Request,
+) -> dict | None:
+    _admin_actor(request)
+    services: Any = request.app.state.services
+    result = services.personnel.get_account_state(employee_code)
+    if result is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Employee not found")
+    return result
+
+
+# ── Management Salary ──────────────────────────────────────────
+
+
+class CreateManagementSalaryRequest(BaseModel):
+    employee_code: str = Field(...)
+    factory_id: str = Field(...)
+    position_snapshot: str = Field(...)
+    role_code_snapshot: str = Field(...)
+    salary_type: str = Field(default="FIXED_MANAGEMENT")
+    amount: str = Field(...)
+    effective_from: str = Field(...)
+
+
+@router.post("/management-salaries", status_code=201)
+async def create_management_salary(
+    body: CreateManagementSalaryRequest,
+    request: Request,
+) -> dict:
+    _admin_actor(request)
+    services: Any = request.app.state.services
+    return services.management_salary.create_salary(
+        employee_code=body.employee_code,
+        factory_id=body.factory_id,
+        position_snapshot=body.position_snapshot,
+        role_code_snapshot=body.role_code_snapshot,
+        salary_type=body.salary_type,
+        amount=body.amount,
+        effective_from=body.effective_from,
+        created_by=body.employee_code or "ADMIN",
+    )
+
+
+@router.get("/management-salaries")
+async def list_management_salaries(
+    request: Request,
+    factory_id: str | None = None,
+) -> list[dict]:
+    _admin_actor(request)
+    services: Any = request.app.state.services
+    return services.management_salary.list_salaries(factory_id)
 
 
 def _admin_bamboo_actor(web_actor: Any, factory_id: str) -> Any:

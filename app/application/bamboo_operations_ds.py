@@ -31,6 +31,7 @@ from app.adapters.database.models import (
     BambooRoleChangeRequestRow,
     BambooRoleDefinitionRow,
     BambooStageSubmissionRow,
+    BusinessPresetVersionRow,
     EmployeeBambooAssignmentRow,
     MasterDataRecordRow,
     MobileAccessProfileRow,
@@ -308,6 +309,22 @@ class BambooOperationsService:
 
     def record_options(self, actor: BambooActor) -> dict[str, Any]:
         with Session(self._engine) as session:
+            # V1: Try BusinessPreset first (decoupled from payroll rules)
+            preset = session.scalar(
+                select(BusinessPresetVersionRow)
+                .where(
+                    BusinessPresetVersionRow.preset_key == "SORT_FIELD_OPTIONS",
+                    BusinessPresetVersionRow.status == "PUBLISHED",
+                )
+                .order_by(BusinessPresetVersionRow.version.desc())
+                .limit(1)
+            )
+            if preset is not None:
+                return {
+                    "options_version": preset.preset_version_id,
+                    **preset.options,
+                }
+            # Fallback: legacy payroll rule configuration
             row = self._active_rule(session, "SORT", actor.factory_id)
             options = _record_options_from_rule(row.configuration if row else {})
             version = row.rule_version_id if row else "system-sort-v1"

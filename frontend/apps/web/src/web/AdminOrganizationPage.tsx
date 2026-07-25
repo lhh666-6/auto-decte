@@ -1,6 +1,10 @@
 import { useEffect, useState, useMemo } from "react";
 
-import type { BambooEmployee, BambooPersonnelTransfer } from "./types";
+import type { BambooEmployee, BambooPersonnelTransfer, EmployeeAccountState } from "./types";
+import {
+  getEmployeeAccountState,
+  setEmployeeAccountState,
+} from "./api";
 import {
   DetailDrawer,
   DetailField,
@@ -89,6 +93,9 @@ export function AdminOrganizationPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedEmployee, setSelectedEmployee] = useState<BambooEmployee | null>(null);
   const [detailTab, setDetailTab] = useState<DetailTab>("overview");
+  const [accountState, setAccountState] = useState<EmployeeAccountState | null>(null);
+  const [accountStateLoading, setAccountStateLoading] = useState(false);
+  const [accountStateMsg, setAccountStateMsg] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [initError, setInitError] = useState("");
@@ -222,6 +229,27 @@ export function AdminOrganizationPage() {
   useEffect(() => {
     void loadEmployees();
   }, [selectedFactoryId]);
+
+  // Load account state when selecting an employee
+  useEffect(() => {
+    if (!selectedEmployee) { setAccountState(null); return; }
+    setAccountStateLoading(true);
+    void getEmployeeAccountState(selectedEmployee.employee_code).then((s) => {
+      setAccountState(s); setAccountStateLoading(false);
+    }).catch(() => { setAccountState(null); setAccountStateLoading(false); });
+  }, [selectedEmployee]);
+
+  async function handleAccountState(state: string) {
+    if (!selectedEmployee) return;
+    setAccountStateMsg(""); setAccountStateLoading(true);
+    try {
+      const r = await setEmployeeAccountState(selectedEmployee.employee_code, state);
+      setAccountState(r);
+      setAccountStateMsg(state === "ACTIVE" ? "已恢复" : state === "FROZEN" ? "已冻结" : "已移除");
+    } catch (c) {
+      setAccountStateMsg(c instanceof Error ? c.message : "操作失败");
+    } finally { setAccountStateLoading(false); }
+  }
 
   async function loadEmployees() {
     setLoading(true);
@@ -748,28 +776,52 @@ export function AdminOrganizationPage() {
                 <>
                   <DetailField label="工号" value={selectedEmployee.employee_code} />
                   <DetailField label="姓名" value={selectedEmployee.employee_name} />
-                  <DetailField label="账号状态" value={(extStr(selectedEmployee, "status") === "INACTIVE" || extStr(selectedEmployee, "status") === "SUSPENDED") ? "已停用" : "正式有效"} />
+                  <DetailField label="账号状态" value={
+                    accountStateLoading ? "加载中…" :
+                    accountState?.account_state === "FROZEN" ? "已冻结" :
+                    accountState?.account_state === "REMOVED" ? "已移除" :
+                    accountState?.active ? "正常" : "已停用"
+                  } />
+                  <DetailField label="工厂" value={accountState?.factory_name || extStr(selectedEmployee, "factory_name") || "—"} />
                   <DetailField label="最近登录" value={formatLastLogin(extStr(selectedEmployee, "last_login_at"))} />
 
+                  {accountStateMsg && (
+                    <div className={accountStateMsg.includes("失败") ? "ledger-error" : "ledger-success"}>
+                      {accountStateMsg}
+                      <button type="button" onClick={() => setAccountStateMsg("")}>✕</button>
+                    </div>
+                  )}
+
                   <div style={{ marginTop: 16, display: "flex", gap: 8, flexWrap: "wrap" }}>
-                    <button
-                      type="button"
-                      className="org-action-btn org-action-suspend"
-                      disabled
-                      title="员工状态调整暂未开放"
-                      data-testid={tid("detail-suspend")}
-                    >
-                      {(extStr(selectedEmployee, "status") === "INACTIVE" || extStr(selectedEmployee, "status") === "SUSPENDED") ? "恢复员工（暂未开放）" : "停用员工（暂未开放）"}
-                    </button>
-                    <button
-                      type="button"
-                      className="org-action-btn org-action-reset-pin"
-                      disabled
-                      title="PIN 重置功能暂未开放"
-                      data-testid={tid("detail-reset-pin")}
-                    >
-                      重置 PIN（暂未开放）
-                    </button>
+                    {accountState?.account_state !== "REMOVED" && (
+                      <button
+                        type="button"
+                        className="org-action-btn org-action-suspend"
+                        disabled={accountStateLoading}
+                        onClick={() => void handleAccountState(
+                          accountState?.account_state === "FROZEN" ? "ACTIVE" : "FROZEN"
+                        )}
+                      >
+                        {accountStateLoading ? "处理中…" :
+                          accountState?.account_state === "FROZEN" ? "恢复员工" : "冻结员工"}
+                      </button>
+                    )}
+                    {accountState?.account_state !== "REMOVED" && (
+                      <button
+                        type="button"
+                        className="org-action-btn org-action-remove"
+                        disabled={accountStateLoading}
+                        onClick={() => {
+                          if (confirm(`确定要移除员工 ${selectedEmployee.employee_name} (${selectedEmployee.employee_code})？此操作不可恢复。`)) {
+                            void handleAccountState("REMOVED");
+                          }
+                        }}
+                        style={{ background: "#dc2626", color: "#fff", border: "none",
+                          borderRadius: 8, padding: ".45rem 1rem", cursor: "pointer" }}
+                      >
+                        {accountStateLoading ? "处理中…" : "移除员工"}
+                      </button>
+                    )}
                   </div>
                 </>
               )}

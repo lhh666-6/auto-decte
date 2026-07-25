@@ -11,6 +11,7 @@ from app.api.routers import finance_workspace_ds as finance_workspace
 from app.api.routers import health_ds as health
 from app.api.routers import mobile_ds as mobile
 from app.api.routers import plant_workspace_ds as plant_workspace
+from app.api.routers import quality_disposition_ds as quality_disposition
 from app.api.routers import web_auth_ds as web_auth
 from app.services.container import Services
 
@@ -26,6 +27,7 @@ def create_app(services: Services) -> FastAPI:
     app.include_router(admin_audit.audit_router)
     app.include_router(finance_workspace.router)
     app.include_router(plant_workspace.router)
+    app.include_router(quality_disposition.router)
 
     @app.exception_handler(HTTPException)
     async def http_error(request: Request, error: HTTPException) -> JSONResponse:
