@@ -90,12 +90,32 @@ class PersonnelGovernanceService:
             profile.account_state = state
             profile.active = (state == "ACTIVE")
 
-            # When frozen/removed, also lock credentials
+            # When frozen/removed, lock credentials
             if state in {"FROZEN", "REMOVED"}:
                 session.execute(
                     update(MobileCredentialRow)
                     .where(MobileCredentialRow.employee_code == employee_code)
                     .values(locked_until=datetime(9999, 12, 31, tzinfo=UTC))
+                )
+
+            # V1 Runtime Closure §6.3: RESTORE clears lock + resets failed attempts
+            if state == "ACTIVE":
+                session.execute(
+                    update(MobileCredentialRow)
+                    .where(MobileCredentialRow.employee_code == employee_code)
+                    .values(locked_until=None, failed_attempts=0)
+                )
+
+            # V1 Runtime Closure §6.4: REMOVED closes active assignment
+            if state == "REMOVED":
+                now = _now()
+                session.execute(
+                    update(EmployeeBambooAssignmentRow)
+                    .where(
+                        EmployeeBambooAssignmentRow.employee_code == employee_code,
+                        EmployeeBambooAssignmentRow.status == "ACTIVE",
+                    )
+                    .values(status="INACTIVE", ended_at=now)
                 )
 
             return {

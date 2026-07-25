@@ -49,23 +49,30 @@ class PayrollService:
         dsl: dict[str, Any],
         actor_id: str,
     ) -> dict[str, object]:
+        # V1 Runtime Closure §9.1: factory_id must be real
+        if not factory_id or not factory_id.strip():
+            raise PayrollError("FACTORY_REQUIRED", "工资规则必须指定工厂。")
+        # V1 Runtime Closure §9.2: validate metric against field registry
+        self._validate_metric_for_position(dsl.get("metric", ""), position)
         normalized = self._validate_dsl(dsl)
+        # V1 Runtime Closure §9.4: stable logical rule_key = factory + position
+        stable_key = f"PAYROLL_{factory_id.strip().upper()}_{position.strip().upper()}"
         now = self._clock()
         with Session(self._engine) as session, session.begin():
             version = int(
                 session.scalar(
                     select(func.max(GovernedPayrollRuleVersionRow.version)).where(
-                        GovernedPayrollRuleVersionRow.rule_key == rule_key,
-                        GovernedPayrollRuleVersionRow.factory_id == factory_id,
+                        GovernedPayrollRuleVersionRow.rule_key == stable_key,
+                        GovernedPayrollRuleVersionRow.factory_id == factory_id.strip(),
                     )
                 )
                 or 0
             ) + 1
             row = GovernedPayrollRuleVersionRow(
                 rule_version_id=self._id("PRV"),
-                rule_key=rule_key.strip().upper(),
+                rule_key=stable_key,
                 name=name.strip(),
-                factory_id=factory_id,
+                factory_id=factory_id.strip(),
                 position=position.strip().upper(),
                 version=version,
                 dsl=normalized,
@@ -263,11 +270,19 @@ class PayrollService:
         period_start: str,
         period_end: str,
     ) -> dict[str, object]:
-        """Dry-run calculation: returns results without creating any persistent records."""
+        """Dry-run calculation: returns results without creating any persistent records.
+
+        V1 Runtime Closure §9.3: DRAFT and PENDING_APPROVAL rules can be trialed.
+        Only APPROVED rules can execute official (non-dry-run) calculations.
+        """
         with Session(self._engine) as session:
             rule = self._rule_required(session, rule_version_id)
-            if rule.status != "APPROVED":
-                raise PayrollError("RULE_NOT_APPROVED", "未批准工资规则不能试算。")
+            # V1 §9.3: Allow dry_run for DRAFT and PENDING_APPROVAL (not just APPROVED)
+            if rule.status not in {"DRAFT", "PENDING_APPROVAL", "APPROVED"}:
+                raise PayrollError(
+                    "RULE_NOT_TRIALABLE",
+                    f"状态为 {rule.status} 的规则不能试算。仅草稿、待审批和已生效规则可试算。",
+                )
             records = session.scalars(
                 select(FinanceEffectiveRecordRow).where(
                     FinanceEffectiveRecordRow.factory_id == rule.factory_id,
@@ -407,6 +422,69 @@ class PayrollService:
                     for row in rows
                 ]
             }
+
+    # ── V1 Runtime Closure §9.2: Field Registry backend authority ──
+
+    def _validate_metric_for_position(
+        self, metric: str, position: str
+    ) -> None:
+        """Validate that the metric is registered and numeric for this position.
+
+        V1 Final Verification §6.2: FAIL CLOSED.
+        - Registry not seeded for position → reject
+        - Field not in registry → reject
+        - Field is non-numeric (STRING/JSON) → reject
+        - Only INTEGER/DECIMAL fields are allowed in payroll formulas
+        """
+        from app.adapters.database.models import PayrollFieldRegistryRow
+
+        metric_key = str(metric).strip()
+        position_key = str(position).strip().upper()
+        if not metric_key:
+            raise PayrollError("DSL_INVALID", "工资指标字段不能为空。")
+
+        with Session(self._engine) as session:
+            registered = session.scalar(
+                select(PayrollFieldRegistryRow).where(
+                    PayrollFieldRegistryRow.position_role == position_key,
+                    PayrollFieldRegistryRow.field_key == metric_key,
+                    PayrollFieldRegistryRow.active.is_(True),
+                )
+            )
+            if registered is None:
+                # Check if any fields exist for this position at all
+                any_fields = session.scalar(
+                    select(PayrollFieldRegistryRow).where(
+                        PayrollFieldRegistryRow.position_role == position_key,
+                        PayrollFieldRegistryRow.active.is_(True),
+                    ).limit(1)
+                )
+                if any_fields is None:
+                    raise PayrollError(
+                        "PAYROLL_FIELD_REGISTRY_NOT_CONFIGURED",
+                        f"职位 {position_key} 的工资字段注册表尚未配置。"
+                        f"请联系管理员完成系统初始化。",
+                    )
+                allowed = session.scalars(
+                    select(PayrollFieldRegistryRow.field_key).where(
+                        PayrollFieldRegistryRow.position_role == position_key,
+                        PayrollFieldRegistryRow.active.is_(True),
+                    )
+                ).all()
+                raise PayrollError(
+                    "PAYROLL_FIELD_NOT_ALLOWED",
+                    f"字段 {metric_key!r} 未在 {position_key} 的工资字段注册表中。"
+                    f"允许的字段: {sorted(allowed)}",
+                )
+
+            # §6.2: Only numeric fields can be used in formulas
+            if registered.data_type not in {"INTEGER", "DECIMAL"}:
+                raise PayrollError(
+                    "PAYROLL_FIELD_NOT_NUMERIC",
+                    f"字段 {metric_key!r}（{registered.display_name}）"
+                    f"的数据类型为 {registered.data_type}，不能用于工资公式计算。"
+                    f"仅 INTEGER 和 DECIMAL 类型的字段可作为计薪依据。",
+                )
 
     @staticmethod
     def _validate_dsl(dsl: dict[str, Any]) -> dict[str, str]:

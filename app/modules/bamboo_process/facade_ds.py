@@ -62,10 +62,14 @@ class BambooProcessFacade:
         *,
         clock: Callable[[], datetime],
         id_factory: Callable[[], str],
+        form_resolver: Callable[[str, str], tuple[str, str] | None] | None = None,
     ) -> None:
         self._repository = repository
         self._clock = clock
         self._id_factory = id_factory
+        # V1 Final Verification §4: resolves (form_version_id, form_definition_id)
+        # for the active approved form version in a given factory.
+        self._form_resolver = form_resolver
 
     def create_record(
         self,
@@ -95,6 +99,13 @@ class BambooProcessFacade:
             production_date,
         )
         record_id = self._id_factory()
+        # V1 Final Verification §4: Resolve active form version binding
+        form_version_id: str | None = None
+        form_definition_id: str | None = None
+        if self._form_resolver is not None:
+            resolved = self._form_resolver(actor.factory_id, form_type.value)
+            if resolved is not None:
+                form_version_id, form_definition_id = resolved
         record = BambooRecord(
             record_id=record_id,
             display_no=f"ZS-{now:%Y%m%d}-{sequence:03d}",
@@ -111,6 +122,8 @@ class BambooProcessFacade:
             form_type=form_type,
             production_object_id=record_id,
             create_payload_hash=create_payload_hash,
+            form_version_id=form_version_id,
+            form_definition_id=form_definition_id,
         )
         cage_no = str(base_info.get("cage_no") or "").strip()
         if cage_no:
@@ -462,6 +475,15 @@ class BambooProcessFacade:
             source.factory_id,
             now.date().isoformat(),
         )
+        # V1 Final Verification §4: Resolve active form version for linked record
+        form_version_id: str | None = None
+        form_definition_id: str | None = None
+        if self._form_resolver is not None:
+            resolved = self._form_resolver(
+                source.factory_id, BambooFormType.DIPPING_DRYING.value
+            )
+            if resolved is not None:
+                form_version_id, form_definition_id = resolved
         return BambooRecord(
             record_id=self._id_factory(),
             display_no=f"ZS-{now:%Y%m%d}-{sequence:03d}",
@@ -484,6 +506,8 @@ class BambooProcessFacade:
                 "revision": source.revision,
                 "base_info": deepcopy(source.base_info),
             },
+            form_version_id=form_version_id,
+            form_definition_id=form_definition_id,
         )
 
 

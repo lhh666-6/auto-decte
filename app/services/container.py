@@ -83,6 +83,9 @@ from app.modules.electronic_forms.v1_form_seeds_ds import (
     install_v1_business_form_seeds,
 )
 from app.modules.fact_records.facade_ds import FactRecordFacade
+from app.modules.payroll_rules.field_registry_seed import (
+    install_v1_field_registry,
+)
 from app.modules.master_data.facade_ds import MasterDataFacade
 from app.modules.master_data.repository_ds import SqlAlchemyMasterDataRepository
 from app.modules.reporting.facade_ds import ReportingFacade
@@ -202,10 +205,31 @@ def build_services(settings: Settings, *, install_seed_templates: bool = False) 
         plant_audit_wait_hours=settings.bamboo_plant_audit_wait_hours,
     )
     install_default_bamboo_payroll_rules(engine)
+    # V1 Final Verification §4: Form version resolver for record creation
+    from app.modules.electronic_forms.governance_ds import ManagedFormService
+
+    _form_service = ManagedFormService(engine)
+
+    def _resolve_active_form_version(
+        factory_id: str, form_key: str
+    ) -> tuple[str, str] | None:
+        """Resolve the active approved form version for a factory+form_key."""
+        result = _form_service.resolve_active_form(
+            plant_id=factory_id,
+            form_key=form_key,
+            roles=["PLANT_MANAGER", "SUPERVISOR", "SORT_OPERATOR",
+                   "DIPPING_OPERATOR", "DRYING_RACK_OPERATOR",
+                   "INSPECTOR", "SYSTEM_ADMIN"],
+        )
+        if result is None:
+            return None
+        return (str(result["version_id"]), str(result["definition_id"]))
+
     bamboo_process = BambooProcessFacade(
         bamboo_repository,
         clock=lambda: datetime.now(UTC),
         id_factory=lambda: str(uuid4()),
+        form_resolver=_resolve_active_form_version,
     )
     review_leases = ReviewLeaseService(
         review_repository,
@@ -300,6 +324,8 @@ def build_services(settings: Settings, *, install_seed_templates: bool = False) 
     services.business_presets.install_v1_defaults()
     # Install V1 business form definitions (《竹丝装笼跟踪牌》+《配片数计量考核表》)
     install_v1_business_form_seeds(engine)
+    # V1 Final Verification §6: Seed payroll field registry (fail-closed)
+    install_v1_field_registry(engine)
     # Legacy recognition/export tasks are no longer started by the Web mainline.
     if install_seed_templates and settings.environment == "development":
         install_demo_web_accounts(master_data, mobile_identity_repository)

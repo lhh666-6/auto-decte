@@ -24,7 +24,7 @@ const NAVIGATION: Record<WorkspaceRole, {
     links: [
       { to: "/finance/position-data", label: "岗位数据" },
       { to: "/finance/payroll", label: "工资核算" },
-      { to: "/finance/payroll-rules", label: "业务预设" },
+      { to: "/finance/payroll-rules", label: "工资规则" },
       { to: "/finance/exports", label: "导出历史" },
     ],
   },

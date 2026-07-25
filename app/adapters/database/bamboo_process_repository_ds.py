@@ -829,6 +829,8 @@ def _record_row(record: BambooRecord) -> BambooRecordRow:
         created_at=record.created_at,
         updated_at=record.updated_at,
         create_payload_hash=record.create_payload_hash,
+        form_version_id=record.form_version_id,
+        form_definition_id=record.form_definition_id,
     )
 
 
@@ -890,6 +892,8 @@ def _record(
         updated_at=_utc(row.updated_at),
         submissions=tuple(_submission(item) for item in submissions),
         create_payload_hash=row.create_payload_hash,
+        form_version_id=row.form_version_id,
+        form_definition_id=row.form_definition_id,
     )
 
 

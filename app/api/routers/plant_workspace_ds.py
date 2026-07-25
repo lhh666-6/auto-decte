@@ -7,7 +7,6 @@ from fastapi import APIRouter, Header, HTTPException, Query, Request, status
 
 from app.api.routers.web_auth_ds import require_web_actor, require_web_csrf
 from app.api.schemas.bamboo_process_ds import (
-    CreateFactoryEmployeeRequest,
     CreatePersonnelTransferRequest,
     EmployeeRoleAssignmentRequest,
     FinanceInquiryReplyRequest,
@@ -379,24 +378,9 @@ def employees(request: Request) -> dict[str, object]:
     }
 
 
-@router.post("/employees", status_code=status.HTTP_201_CREATED)
-def create_employee(
-    body: CreateFactoryEmployeeRequest,
-    request: Request,
-    x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token"),
-    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
-) -> dict[str, object]:
-    actor, plant_id = _plant_actor(request)
-    _write_key(request, x_csrf_token, idempotency_key)
-    try:
-        return _bamboo(request).create_factory_employee(
-            actor=_bamboo_actor(actor, plant_id),
-            employee_name=body.employee_name,
-            initial_pin=body.initial_pin,
-            role_code=body.role_code,
-        )
-    except BambooOperationError as error:
-        raise _operation_error(error) from error
+# V1 Runtime Closure §5: Plant Manager can NO LONGER create employees.
+# Only SYSTEM_ADMIN via /api/v1/admin/employees can create employees.
+# Plant Manager retains: view personnel, initiate transfer requests.
 
 
 @router.post("/employee-assignments", status_code=status.HTTP_201_CREATED)

@@ -407,6 +407,12 @@ export function listFinanceLedger(scope?: string, fetcher?: WebFetcher) {
   return request<{ items: FinanceRecord[] }>(`/api/v1/finance/ledger${qs ? `?${qs}` : ""}`, {}, fetcher);
 }
 
+export function listFinanceFactories(): Promise<{items: Array<{factory_id: string; factory_name: string}>}> {
+  return request<{items: Array<{factory_id: string; factory_name: string}>}>(
+    "/api/v1/finance/factories", {},
+  );
+}
+
 export function listFinanceCorrections(fetcher?: WebFetcher) {
   return request<{ items: SubmissionCorrection[] }>(
     "/api/v1/finance/corrections", {}, fetcher,

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import {
   listPayrollRules, createPayrollRule, submitPayrollRule, trialCalculatePayroll,
+  listFinanceFactories,
 } from "./api";
 import type { PayrollRuleVersion } from "./types";
 import "./finance-pages.css";
@@ -28,8 +29,8 @@ const POSITION_FIELDS: Record<string, Array<{ key: string; label: string }>> = {
 };
 
 const STATUS_CN: Record<string, string> = {
-  DRAFT: "草稿", PENDING_APPROVAL: "待审批", PUBLISHED: "已发布",
-  REJECTED: "已驳回", SUPERSEDED: "历史版本",
+  DRAFT: "草稿", PENDING_APPROVAL: "待审批", APPROVED: "已生效",
+  REJECTED: "已驳回", RETIRED: "历史版本",
 };
 
 export function PayrollRulesPage() {
@@ -38,6 +39,8 @@ export function PayrollRulesPage() {
   const [error, setError] = useState("");
   const [msg, setMsg] = useState("");
 
+  const [factories, setFactories] = useState<Array<{ factory_id: string; factory_name: string }>>([]);
+  const [factoryId, setFactoryId] = useState("");
   const [position, setPosition] = useState("");
   const [field, setField] = useState("");
   const [rate, setRate] = useState("");
@@ -54,16 +57,22 @@ export function PayrollRulesPage() {
   }
   useEffect(reload, []);
 
+  useEffect(() => {
+    listFinanceFactories()
+      .then(d => setFactories(d.items))
+      .catch(() => {});
+  }, []);
+
   async function handleCreate() {
-    if (!position || !field || !rate || !ruleName) return;
+    if (!factoryId || !position || !field || !rate || !ruleName) return;
     setSubmitting(true); setError(""); setMsg("");
     try {
       await createPayrollRule({
-        rule_key: `PAYROLL_${position}_${Date.now()}`,
-        factory_id: "", name: ruleName, position,
+        rule_key: `PAYROLL_${factoryId}_${position}`,
+        factory_id: factoryId, name: ruleName, position,
         dsl: { metric: field, rate, base: "0" },
       });
-      setMsg("规则已创建"); setPosition(""); setField(""); setRate(""); setRuleName("");
+      setMsg("规则已创建"); setFactoryId(""); setPosition(""); setField(""); setRate(""); setRuleName("");
       reload();
     } catch (c) { setError(c instanceof Error ? c.message : "创建失败"); }
     finally { setSubmitting(false); }
@@ -98,6 +107,9 @@ export function PayrollRulesPage() {
       <div className="bp-card">
         <h3 style={{ margin: "0 0 .8rem", fontSize: "1rem" }}>新建工资规则</h3>
         <div className="ledger-filters">
+          <label>工厂<select value={factoryId} onChange={e => setFactoryId(e.target.value)}>
+            <option value="">选择工厂</option>
+            {factories.map(f => <option key={f.factory_id} value={f.factory_id}>{f.factory_name}</option>)}</select></label>
           <label>职位<select value={position} onChange={e => { setPosition(e.target.value); setField(""); }}>
             {POSITIONS.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}</select></label>
           {fields.length > 0 && <label>计薪依据<select value={field} onChange={e => setField(e.target.value)}>
@@ -106,7 +118,7 @@ export function PayrollRulesPage() {
           <label>名称<input type="text" value={ruleName} onChange={e => setRuleName(e.target.value)} placeholder="分选标准计件" style={{ maxWidth: 160 }} /></label>
         </div>
         {formulaPreview && <p className="bp-card" style={{ margin: ".6rem 0", padding: ".5rem .8rem", fontSize: ".9rem", background: "#f0fdf4" }}><strong>预览:</strong> {formulaPreview}</p>}
-        <button type="button" className="primary-button" disabled={submitting || !position || !field || !rate} onClick={() => void handleCreate()}>
+        <button type="button" className="primary-button" disabled={submitting || !factoryId || !position || !field || !rate} onClick={() => void handleCreate()}>
           {submitting ? "创建中…" : "创建规则"}</button>
       </div>
 
@@ -120,7 +132,7 @@ export function PayrollRulesPage() {
             <td>{r.name || r.rule_key}</td>
             <td>{POSITIONS.find(p => p.value === r.position)?.label || r.position || "—"}</td>
             <td>{fl} × {r.dsl.rate} 元</td>
-            <td><span className={`ledger-tag ${r.status === "PUBLISHED" ? "" : "ledger-tag-alert"}`}>{STATUS_CN[r.status] || r.status}</span></td>
+            <td><span className={`ledger-tag ${r.status === "APPROVED" ? "" : "ledger-tag-alert"}`}>{STATUS_CN[r.status] || r.status}</span></td>
             <td>{r.status === "DRAFT" && <button type="button" className="primary-button" style={{ marginRight: 6 }} onClick={() => void handleSubmit(r)}>提交审批</button>}
               <button type="button" className="secondary-button" onClick={() => void handleTrial(r)}>试算</button></td>
           </tr>;

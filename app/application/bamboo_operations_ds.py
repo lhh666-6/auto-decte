@@ -37,6 +37,7 @@ from app.adapters.database.models import (
     MobileAccessProfileRow,
     MobileCredentialRow,
     MobileNotificationRow,
+    QualityDispositionRow,
 )
 from app.adapters.storage.local import LocalEvidenceStorage
 from app.application.mobile_identity_ds import hash_pin
@@ -626,7 +627,7 @@ class BambooOperationsService:
             BambooRole.PLANT_MANAGER,
         }:
             raise BambooOperationError("INSPECTION_QUEUE_FORBIDDEN", "当前职务不能查看检测队列")
-        if bucket not in {"active", "history"}:
+        if bucket not in {"active", "history", "all"}:
             raise BambooOperationError("INVALID_INSPECTION_BUCKET", "检测队列分组无效")
         now = datetime.now(UTC)
         with Session(self._engine) as session, session.begin():
@@ -646,8 +647,12 @@ class BambooOperationsService:
                     window.appeal_deadline_at = _utc(window.deadline_at) + timedelta(hours=24)
                     window.revision += 1
                 is_active = window.status in {"OPEN", "CLAIMED", "APPEAL_SUBMITTED"}
-                if (bucket == "active") != is_active:
+                # V1 Runtime Closure §16: "all" bucket includes both active and history
+                if bucket == "active" and not is_active:
                     continue
+                if bucket == "history" and is_active:
+                    continue
+                # bucket == "all": include everything
                 search = query.strip().casefold()
                 cage_no = str((record.base_info or {}).get("cage_no", ""))
                 if (
@@ -1019,10 +1024,7 @@ class BambooOperationsService:
             raise BambooOperationError("MANAGER_REQUIRED", "仅厂长可以审批检测申诉")
         now = datetime.now(UTC)
         target_stage: BambooStage | None = None
-        appeal_text = ""
         recipient = ""
-        record_revision = 0
-        appeal_revision = 0
         with Session(self._engine) as session, session.begin():
             window = session.get(BambooInspectionWindowRow, record_id)
             if window is None or window.factory_id != actor.factory_id:
@@ -1040,7 +1042,7 @@ class BambooOperationsService:
             window.revision += 1
             recipient = str(window.appeal_claimed_by or "")
             target_stage = BambooStage(str(window.appeal_payload["target_stage"]))
-            appeal_text = str(window.appeal_payload["text_evidence"])
+            _appeal_text = str(window.appeal_payload["text_evidence"])
             if recipient:
                 self._notify(
                     session,
@@ -1054,19 +1056,15 @@ class BambooOperationsService:
                 )
             result = self._inspection_window(window, record, now)
             result["appeal_decision"] = window.appeal_decision
-            record_revision = record.revision
-            appeal_revision = window.revision
+        # V1 Runtime Closure §4: appeal approval does NOT trigger selective_return.
+        # The appeal decision is recorded as evidence for Plant Manager quality disposition.
+        # Production current_stage is NOT rewound; submissions are NOT invalidated.
+        # The appeal outcome is preserved in result for audit trail.
         if approve and target_stage is not None:
-            return_result = self.selective_return(
-                record_id,
-                actor=actor,
-                target_stages=[target_stage],
-                reason=appeal_text,
-                source="INSPECTION_APPEAL",
-                expected_revision=record_revision,
-                idempotency_key=f"appeal:{record_id}:{appeal_revision}",
+            result["appeal_note"] = (
+                f"申诉已批准。目标环节 {target_stage.value} 的质量问题"
+                f"将交由厂长最终处置，不触发生产回退。"
             )
-            result["return"] = return_result
         return result
 
     def list_notifications(self, actor: BambooActor) -> dict[str, Any]:
@@ -1192,8 +1190,13 @@ class BambooOperationsService:
         date_to: str | None = None,
         employee_code: str | None = None,
     ) -> list[dict[str, Any]]:
-        """V1: Query production records with submissions for finance position view."""
-        from datetime import UTC, datetime
+        """V1: Query production records with submissions for finance position view.
+
+        V1 Runtime Closure §11: Returns structured projection per stage with
+        effective_grade resolved from QualityDisposition (not guessed by frontend).
+        §11.5: date_to is inclusive (uses < next_day).
+        """
+        from datetime import UTC, datetime, timedelta
 
         with Session(self._engine) as session:
             query = (
@@ -1220,27 +1223,53 @@ class BambooOperationsService:
                 dt_from = datetime.fromisoformat(date_from).replace(tzinfo=UTC)
                 query = query.where(BambooStageSubmissionRow.submitted_at >= dt_from)
             if date_to:
+                # V1 §11.5: inclusive date_to — use < next_day
                 dt_to = datetime.fromisoformat(date_to).replace(tzinfo=UTC)
-                query = query.where(BambooStageSubmissionRow.submitted_at <= dt_to)
+                next_day = dt_to + timedelta(days=1)
+                query = query.where(BambooStageSubmissionRow.submitted_at < next_day)
             if employee_code:
                 query = query.where(
                     BambooStageSubmissionRow.actor_id == employee_code,
                 )
 
             rows = session.execute(query).all()
+
+            # Pre-load all quality dispositions for effective_grade resolution
+            record_ids = {r.record_id for r, _ in rows}
+            dispositions: dict[str, QualityDispositionRow] = {}
+            if record_ids:
+                disp_rows = session.scalars(
+                    select(QualityDispositionRow).where(
+                        QualityDispositionRow.record_id.in_(record_ids)
+                    )
+                ).all()
+                dispositions = {d.record_id: d for d in disp_rows}
+
             items: list[dict[str, Any]] = []
             for record, submission in rows:
                 base = record.base_info or {}
+                original_grade = str(base.get("grade", ""))
+
+                # V1 §11.4: effective_grade from QualityDisposition, else original
+                disposition = dispositions.get(record.record_id)
+                effective_grade = (
+                    disposition.effective_grade
+                    if disposition is not None
+                    else original_grade
+                )
+
                 items.append({
                     "record_id": record.record_id,
                     "display_no": record.display_no,
                     "form_type": record.form_type,
                     "factory_id": record.factory_id,
                     "date": submission.submitted_at.isoformat() if submission.submitted_at else "",
-                    "employee_code": submission.actor_id,
-                    "employee_name": submission.actor_name,
+                    "employee_code": submission.actor_id or "",
+                    "employee_name": submission.actor_name or "",
                     "stage": submission.stage_key,
                     "cage_no": str(base.get("cage_no", "")),
+                    "original_grade": original_grade,
+                    "effective_grade": effective_grade,
                     "values": submission.values,
                     "status": record.status,
                     "current_stage": record.current_stage or "",
@@ -1276,20 +1305,21 @@ class BambooOperationsService:
                 f"角色代码 {role_code!r} 无效，有效值: {[r.value for r in BambooRole]}",
             ) from error
 
+        # V1 Runtime Closure §5: Only SYSTEM_ADMIN can create employees.
+        # Plant Manager can only view personnel and initiate transfer requests.
         is_admin = actor.role is BambooRole.SYSTEM_ADMIN
-        is_manager = actor.role is BambooRole.PLANT_MANAGER
-        if not is_admin and not is_manager:
-            raise BambooOperationError("MANAGER_REQUIRED", "仅厂长或管理员可新增人员")
-
-        if is_manager and role_code not in self._MANAGER_ASSIGNABLE_ROLES:
-            raise BambooOperationError("ASSIGNMENT_FORBIDDEN", "厂长不能分配该职位")
+        if not is_admin:
+            raise BambooOperationError(
+                "ADMIN_REQUIRED",
+                "仅系统管理员可新增员工。厂长只能发起人员调动申请。",
+            )
 
         name = employee_name.strip()
         if not name:
             raise BambooOperationError("EMPLOYEE_NAME_REQUIRED", "请填写员工姓名")
 
         target_factory_id = factory_id or actor.factory_id
-        web_role_list = web_roles or (["WORKER"] if is_manager else [])
+        web_role_list = web_roles or []
 
         now = datetime.now(UTC)
         with Session(self._engine) as session, session.begin():
@@ -2747,6 +2777,7 @@ class BambooOperationsService:
             "appeal_claimed_by": window.appeal_claimed_by,
             "appeal_submitted_at": window.appeal_submitted_at,
             "appeal_decision": window.appeal_decision,
+            "appeal_payload": window.appeal_payload,
             "revision": window.revision,
         }
 

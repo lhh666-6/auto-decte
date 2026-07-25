@@ -17,13 +17,11 @@ import { BambooPersonnelPage } from "../mobile/personnel/BambooPersonnelPage";
 import { MobileSessionProvider } from "../mobile/session/MobileSessionProvider";
 import { RequireMobileSession } from "../mobile/session/RequireMobileSession";
 import { RequireWebSession } from "../web/RequireWebSession";
-import { AdminAISettingsPage } from "../web/AdminAISettingsPage";
 import { AdminAuditPage } from "../web/AdminAuditPage";
 import { AdminBusinessFormsPage } from "../web/AdminBusinessFormsPage";
 import { AdminFactoriesPage } from "../web/AdminFactoriesPage";
 import { AdminOverviewPage } from "../web/AdminOverviewPage";
 import { AdminFormApprovalsPage } from "../web/AdminFormApprovalsPage";
-import { AdminNotificationsPage } from "../web/AdminNotificationsPage";
 import { AdminOrganizationPage } from "../web/AdminOrganizationPage";
 import { AdminPayrollApprovalsPage } from "../web/AdminPayrollApprovalsPage";
 import { AdminRolesPage } from "../web/AdminRolesPage";
@@ -131,13 +129,11 @@ export function AppRoutes() {
           <Route path="business-forms" element={<AdminBusinessFormsPage />} />
           <Route path="factories" element={<AdminFactoriesPage />} />
           <Route path="audit" element={<AdminAuditPage />} />
-          {/* V1 暂缓导航入口，路由保留: roles, notifications, form-approvals, workflow-approvals, payroll-approvals, version-exceptions, ai-settings, payroll, report-templates */}
+          {/* V1 暂缓导航入口，路由保留: roles, form-approvals, workflow-approvals, payroll-approvals, version-exceptions, payroll, report-templates */}
           <Route path="roles" element={<AdminRolesPage />} />
-          <Route path="notifications" element={<AdminNotificationsPage />} />
           <Route path="form-approvals" element={<AdminFormApprovalsPage />} />
           <Route path="payroll-approvals" element={<AdminPayrollApprovalsPage />} />
           <Route path="version-exceptions" element={<AdminVersionExceptionsPage />} />
-          <Route path="ai-settings" element={<AdminAISettingsPage />} />
           <Route path="payroll" element={<PayrollResultsPage workspace="admin" />} />
           <Route path="*" element={<WorkspaceComingSoon />} />
         </Route>

@@ -7,7 +7,7 @@ interface PositionDataItem {
   values: Record<string, unknown>; status: string; current_stage: string;
 }
 
-interface FactoryInfo { factory_id: string; code: string; name: string; }
+interface FactoryInfo { factory_id: string; factory_name: string; }
 
 const POSITIONS = [
   { value: "", label: "全部岗位" },
@@ -64,9 +64,9 @@ export function FinancePositionDataPage() {
   const [exporting, setExporting] = useState(false);
 
   useEffect(() => {
-    fetch("/api/v1/admin/factories", { credentials: "include" })
+    fetch("/api/v1/finance/factories", { credentials: "include" })
       .then((r) => r.json())
-      .then((d: { factories?: FactoryInfo[] }) => setFactories(d.factories ?? []))
+      .then((d: { items?: FactoryInfo[] }) => setFactories(d.items ?? []))
       .catch(() => {});
   }, []);
 
@@ -123,7 +123,7 @@ export function FinancePositionDataPage() {
         <label>工厂
           <select value={factoryId} onChange={(e) => setFactoryId(e.target.value)}>
             <option value="">全部工厂</option>
-            {factories.map((f) => <option key={f.factory_id} value={f.factory_id}>{f.name}</option>)}
+            {factories.map((f) => <option key={f.factory_id} value={f.factory_id}>{f.factory_name}</option>)}
           </select>
         </label>
         <label>岗位

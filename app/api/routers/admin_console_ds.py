@@ -441,11 +441,74 @@ def admin_list_employees(
     request: Request,
     factory_id: str | None = None,
 ) -> dict[str, object]:
-    """Admin lists employees across all factories (or filtered by factory)."""
+    """Admin lists all employees (ACTIVE/FROZEN/REMOVED) with account state.
+
+    V1 Runtime Closure §6.5: factory_id filter must actually work.
+    Shows current/last position and account state for all employees.
+    """
     _admin_actor(request)
-    actor_info = require_web_actor(request)
-    dummy_actor = _admin_bamboo_actor(actor_info, factory_id or "ADMIN")
-    return {"items": _bamboo(request).list_factory_employees(dummy_actor)}
+    services: Any = request.app.state.services
+    engine = services.engine
+
+    from sqlalchemy import select
+    from sqlalchemy.orm import Session
+    from app.adapters.database.models import (
+        EmployeeBambooAssignmentRow,
+        MasterDataRecordRow,
+        MobileAccessProfileRow,
+    )
+
+    with Session(engine) as session:
+        # Query all employees from master data (not just ACTIVE assignments)
+        emp_query = select(MasterDataRecordRow).where(
+            MasterDataRecordRow.catalog == "employees",
+        )
+        employees = session.scalars(emp_query).all()
+
+        result: list[dict[str, Any]] = []
+        for emp in employees:
+            # Get account state from profile
+            profile = session.scalar(
+                select(MobileAccessProfileRow).where(
+                    MobileAccessProfileRow.employee_code == emp.code
+                )
+            )
+            account_state = profile.account_state if profile else "ACTIVE"
+            is_active_profile = profile.active if profile else True
+
+            # Get current/last assignment
+            assignment_query = select(EmployeeBambooAssignmentRow).where(
+                EmployeeBambooAssignmentRow.employee_code == emp.code,
+            )
+            if factory_id:
+                assignment_query = assignment_query.where(
+                    EmployeeBambooAssignmentRow.factory_id == factory_id
+                )
+            assignment = session.scalar(
+                assignment_query.order_by(
+                    EmployeeBambooAssignmentRow.effective_at.desc()
+                ).limit(1)
+            )
+
+            # V1 §6.5: factory_id filter must exclude employees without
+            # any assignment in that factory
+            if factory_id and assignment is None:
+                continue
+
+            result.append({
+                "employee_code": emp.code,
+                "employee_name": emp.display_name,
+                "factory_id": assignment.factory_id if assignment else "",
+                "role_code": assignment.role_code if assignment else "",
+                "assignment_status": assignment.status if assignment else "NONE",
+                "account_state": account_state,
+                "active": is_active_profile,
+            })
+
+        return {"items": sorted(
+            result,
+            key=lambda item: (item["account_state"], item["employee_name"]),
+        )}
 
 
 @router.get("/personnel-transfers")
@@ -489,9 +552,10 @@ async def set_employee_account_state(
     employee_code: str,
     body: SetAccountStateRequest,
     request: Request,
+    x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token"),
 ) -> dict:
     actor = _admin_actor(request)
-    require_web_csrf(str(employee_code), request)
+    require_web_csrf(request, x_csrf_token)
     services: Any = request.app.state.services
     try:
         return services.personnel.set_account_state(
@@ -543,8 +607,10 @@ class CreateManagementSalaryRequest(BaseModel):
 async def create_management_salary(
     body: CreateManagementSalaryRequest,
     request: Request,
+    x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token"),
 ) -> dict:
-    _admin_actor(request)
+    actor = _admin_actor(request)
+    require_web_csrf(request, x_csrf_token)
     services: Any = request.app.state.services
     return services.management_salary.create_salary(
         employee_code=body.employee_code,
@@ -554,7 +620,7 @@ async def create_management_salary(
         salary_type=body.salary_type,
         amount=body.amount,
         effective_from=body.effective_from,
-        created_by=body.employee_code or "ADMIN",
+        created_by=actor.employee_code,
     )
 
 

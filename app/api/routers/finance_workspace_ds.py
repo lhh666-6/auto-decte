@@ -801,13 +801,39 @@ def submit_workflow(
 # V1 Position Data (simplified finance)
 # ─────────────────────────────────────────────────────────────
 
-from typing import cast  # noqa: E402
+from typing import Any, cast  # noqa: E402
 
 from app.application.bamboo_operations_ds import BambooOperationsService  # noqa: E402
 
 
 def _bamboo(request: Request) -> BambooOperationsService:
     return cast(BambooOperationsService, request.app.state.services.bamboo_operations)
+
+
+# ── V1 Runtime Closure §12: Finance factories endpoint ──
+
+
+@router.get("/factories")
+def finance_factories(request: Request) -> dict[str, object]:
+    """Finance read-only factory list. Returns { items: [...] }."""
+    _finance_actor(request)
+    factories = _bamboo(request).list_factories_for_admin()
+    return {"items": factories}
+
+
+# ── V1 Runtime Closure §19.3: Finance Management Salary read-only ──
+
+
+@router.get("/management-salaries")
+def finance_management_salaries(
+    request: Request,
+    factory_id: str | None = None,
+) -> dict[str, object]:
+    """Finance read-only view of management salaries."""
+    _finance_actor(request)
+    services: Any = request.app.state.services
+    items = services.management_salary.list_salaries(factory_id)
+    return {"items": items}
 
 
 @router.get("/position-data")
@@ -840,9 +866,14 @@ def export_position_data(
     date_to: str = Query(default=""),
     employee_code: str = Query(default=""),
 ) -> Response:
-    """V1: Export position data as XLSX."""
+    """V1: Export position data as XLSX with fixed column schemas per position.
+
+    V1 Runtime Closure §13: Fixed columns per stage, NOT dynamic sample.values().keys().
+    Internal IDs (record_id, submission_id) excluded from main sheet.
+    """
     _finance_actor(request)
     from io import BytesIO
+    from datetime import UTC, datetime
 
     items = _bamboo(request).list_position_data(
         factory_id=factory_id or None,
@@ -851,32 +882,90 @@ def export_position_data(
         date_to=date_to or None,
         employee_code=employee_code or None,
     )
+
+    # V1 §13: Fixed column schemas per position
+    SORT_COLUMNS = [
+        "日期", "员工工号", "员工姓名", "工厂", "表号", "笼号",
+        "把数", "长度", "深浅", "原评级", "最终评级", "净重", "含水率", "状态",
+    ]
+    DIPPING_COLUMNS = [
+        "日期", "员工工号", "员工姓名", "工厂", "表号", "笼号",
+        "胶前重", "胶后重", "上胶量", "胶液批次", "开始时间", "结束时间",
+        "含水率", "原评级", "最终评级", "状态",
+    ]
+    DRYING_COLUMNS = [
+        "日期", "员工工号", "员工姓名", "工厂", "表号", "笼号",
+        "干燥架号", "架数", "开始时间", "结束时间",
+        "含水率", "原评级", "最终评级", "状态",
+    ]
+
+    # Value-key to column label mapping per stage
+    SORT_VALUE_KEYS = {
+        "bundle_count": "把数", "length": "长度", "shade": "深浅",
+        "net_weight": "净重", "moisture_average": "含水率",
+    }
+    DIPPING_VALUE_KEYS = {
+        "glue_before_weight": "胶前重", "glue_after_weight": "胶后重",
+        "glue_gain": "上胶量", "glue_batch": "胶液批次",
+        "started_at": "开始时间", "ended_at": "结束时间",
+        "moisture_average": "含水率",
+    }
+    DRYING_VALUE_KEYS = {
+        "rack_numbers": "干燥架号", "rack_count": "架数",
+        "started_at": "开始时间", "ended_at": "结束时间",
+        "moisture_average": "含水率",
+    }
+
+    stage_col = stage or ""
+    if stage_col == "SORT":
+        columns = SORT_COLUMNS
+        value_keys = SORT_VALUE_KEYS
+    elif stage_col == "DIPPING":
+        columns = DIPPING_COLUMNS
+        value_keys = DIPPING_VALUE_KEYS
+    elif stage_col == "DRYING":
+        columns = DRYING_COLUMNS
+        value_keys = DRYING_VALUE_KEYS
+    else:
+        # Mixed/unknown: use all columns
+        columns = SORT_COLUMNS
+        value_keys = SORT_VALUE_KEYS
+
     from openpyxl import Workbook
 
     wb = Workbook()
     ws = wb.active
     ws.title = "岗位数据"
-    if items:
-        sample = items[0]
-        headers = ["日期", "工号", "姓名", "工厂", "记录号", "笼号", "工序"]
-        if sample.get("values"):
-            headers += list(sample["values"].keys())
-        headers.append("状态")
-        ws.append(headers)
-        for item in items:
-            row = [
-                item.get("date", ""),
-                item.get("employee_code", ""),
-                item.get("employee_name", ""),
-                item.get("factory_id", ""),
-                item.get("display_no", ""),
-                item.get("cage_no", ""),
-                item.get("stage", ""),
-            ]
-            for vk in (sample.get("values") or {}).keys():
-                row.append(str(item.get("values", {}).get(vk, "")))
-            row.append(item.get("status", ""))
-            ws.append(row)
+    ws.append(columns)
+
+    for item in items:
+        vals = item.get("values", {}) or {}
+        row_data = {
+            "日期": (item.get("date", "") or "")[:10],
+            "员工工号": item.get("employee_code", ""),
+            "员工姓名": item.get("employee_name", ""),
+            "工厂": item.get("factory_id", ""),
+            "表号": item.get("display_no", ""),
+            "笼号": item.get("cage_no", ""),
+            "原评级": item.get("original_grade", ""),
+            "最终评级": item.get("effective_grade", ""),
+            "状态": item.get("status", ""),
+        }
+        # Map value keys to their Chinese labels
+        for vk, label in value_keys.items():
+            row_data[label] = str(vals.get(vk, ""))
+        ws.append([row_data.get(col, "") for col in columns])
+
+    # V1 §13: Add metadata sheet
+    ws_meta = wb.create_sheet("导出说明")
+    ws_meta.append(["字段", "值"])
+    ws_meta.append(["导出时间", datetime.now(UTC).isoformat()])
+    ws_meta.append(["工厂", factory_id or "全部"])
+    ws_meta.append(["工序", stage_col or "全部"])
+    ws_meta.append(["日期范围", f"{date_from or '不限'} ~ {date_to or '不限'}"])
+    ws_meta.append(["记录数", str(len(items))])
+    ws_meta.append(["schema_version", "V1_FIXED_SCHEMA"])
+
     dest = BytesIO()
     wb.save(dest)
     dest.seek(0)

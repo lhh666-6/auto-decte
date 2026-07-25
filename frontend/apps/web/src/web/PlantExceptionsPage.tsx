@@ -24,6 +24,18 @@ const STATUS_LABELS: Record<string, string> = {
 
 const STAGE_LABELS: Record<string, string> = {
   SORT: "分选", DIPPING: "浸胶", DRYING: "干燥",
+  SUPERVISOR: "主管审核", PLANT_AUDIT: "厂长确认",
+};
+
+const ROLE_LABELS: Record<string, string> = {
+  SORT_OPERATOR: "分选工",
+  DIPPING_OPERATOR: "浸胶工",
+  DRYING_RACK_OPERATOR: "干燥工",
+  INSPECTOR: "检测人",
+  SUPERVISOR: "主管",
+  PLANT_MANAGER: "厂长",
+  FINANCE_APPROVER: "财务审批",
+  SYSTEM_ADMIN: "系统管理员",
 };
 
 type Bucket = "active" | "history" | "all";
@@ -170,8 +182,6 @@ export function PlantExceptionsPage() {
         <button type="button" onClick={() => setError("")}>✕</button></div>}
       {message && <div role="status" className="ledger-success">{message}
         <button type="button" onClick={() => setMessage("")}>✕</button></div>}
-      {loading && <div role="status">正在加载检测队列…</div>}
-
       <div className="ledger-filters">
         <label>搜索表号或笼号
           <input type="search" value={query}
@@ -187,13 +197,21 @@ export function PlantExceptionsPage() {
       </div>
 
       <div className="ledger-case-list">
-        {!loading && items.length === 0 && !error && (
+        {loading ? (
+          <div role="status" className="ledger-empty"><p>正在加载检测队列…</p></div>
+        ) : error && items.length === 0 ? (
+          <div className="ledger-empty" role="alert">
+            <p className="ledger-error">{error}</p>
+            <button type="button" className="primary-button" onClick={reload}>重试</button>
+          </div>
+        ) : items.length === 0 ? (
           <div className="ledger-empty">
             <p><strong>当前没有检测待办事项。</strong></p>
             <p className="signature-muted">检测窗口在生产记录进入 PLANT_AUDIT 环节后自动开启。</p>
           </div>
-        )}
-        {items.map((item) => (
+        ) : (
+          <>
+            {items.map((item) => (
           <article key={item.record_id} className="ledger-exception-item">
             <header>
               <strong>{item.display_no} · 笼号 {item.cage_no || "—"}</strong>
@@ -242,7 +260,7 @@ export function PlantExceptionsPage() {
             {item.status === "APPEAL_SUBMITTED" && item.appeal_payload && (
               <div className="ledger-exception-appeal">
                 <h4>上诉理由</h4>
-                {item.appeal_payload.target_stage && <p>目标环节：{item.appeal_payload.target_stage}</p>}
+                {item.appeal_payload.target_stage && <p>目标环节：{STAGE_LABELS[item.appeal_payload.target_stage] ?? item.appeal_payload.target_stage}</p>}
                 <blockquote className="signature-appeal-quote">
                   {item.appeal_payload.text_evidence || "未提供上诉证据"}
                 </blockquote>
@@ -256,6 +274,8 @@ export function PlantExceptionsPage() {
             )}
           </article>
         ))}
+          </>
+        )}
       </div>
 
       {/* ── Quality Disposition Modal ─────────────────────────── */}
@@ -273,8 +293,7 @@ export function PlantExceptionsPage() {
                 <div className="disposition-summary">
                   <p><strong>表号：</strong>{dispDetail.display_no}</p>
                   <p><strong>笼号：</strong>{dispDetail.cage_no || "—"}</p>
-                  <p><strong>工厂：</strong>{dispDetail.factory_id}</p>
-                  <p><strong>当前状态：</strong>{dispDetail.current_stage}</p>
+                  <p><strong>当前状态：</strong>{STAGE_LABELS[dispDetail.current_stage ?? ""] ?? dispDetail.current_stage}</p>
                   {dispExisting && (
                     <p className="signature-muted">已有处置记录（可修订）· 版本 {dispExisting.revision}</p>
                   )}
@@ -293,7 +312,7 @@ export function PlantExceptionsPage() {
                   <div className="disposition-responsible">
                     <p><strong>责任人员：</strong>{responsiblePerson.name}
                       <span className="signature-muted">（系统自动绑定，不可手输）</span></p>
-                    <p className="signature-muted">工号 {responsiblePerson.code} · {responsiblePerson.role}</p>
+                    <p className="signature-muted">工号 {responsiblePerson.code} · {ROLE_LABELS[responsiblePerson.role] ?? responsiblePerson.role}</p>
                   </div>
                 )}
 

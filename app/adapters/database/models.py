@@ -808,6 +808,11 @@ class BambooRecordRow(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     create_payload_hash: Mapped[str | None] = mapped_column(String(64))
+    # V1 Final Verification §4: BusinessForm Version Binding (Migration 039)
+    # FK constraints omitted for SQLite compatibility; referential integrity
+    # is maintained by the application layer.
+    form_version_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    form_definition_id: Mapped[str | None] = mapped_column(String, nullable=True)
 
 
 class BambooStageSubmissionRow(Base):

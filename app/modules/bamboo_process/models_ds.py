@@ -70,6 +70,8 @@ class BambooRecord:
     source_record_id: str | None = None
     source_snapshot: dict[str, object] = field(default_factory=dict)
     create_payload_hash: str | None = None
+    form_version_id: str | None = None
+    form_definition_id: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
