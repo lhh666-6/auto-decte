@@ -75,7 +75,7 @@ describe("Web three-role workspaces", () => {
     );
 
     await user.type(await screen.findByLabelText("员工号"), "FINANCE-1");
-    await user.type(screen.getByLabelText("PIN"), "2468");
+    await user.type(screen.getByLabelText("密码"), "2468");
     await user.click(screen.getByRole("button", { name: "登录工作区" }));
 
     await waitFor(() => {
@@ -131,7 +131,7 @@ describe("Web three-role workspaces", () => {
     );
 
     await user.type(await screen.findByLabelText("员工号"), "WORKER-1");
-    await user.type(screen.getByLabelText("PIN"), "2468");
+    await user.type(screen.getByLabelText("密码"), "2468");
     await user.click(screen.getByRole("button", { name: "登录工作区" }));
 
     expect(await screen.findByRole("alert")).toHaveProperty(

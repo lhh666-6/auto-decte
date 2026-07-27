@@ -102,6 +102,8 @@ export function BambooTaskListPage() {
   const [formError, setFormError] = useState("");
   const [picker, setPicker] = useState<PickerKey | null>(null);
   const [confirming, setConfirming] = useState(false);
+  const [editCageNo, setEditCageNo] = useState(false);
+  const [cageNoOverride, setCageNoOverride] = useState("");
   const [presets, setPresets] = useState<BambooRecordPresetOptions | null>(null);
   const [presetsLoading, setPresetsLoading] = useState(false);
   const [presetsError, setPresetsError] = useState("");
@@ -294,6 +296,8 @@ export function BambooTaskListPage() {
     setPresets(null);
     setPresetsError("");
     setConfirming(false);
+    setEditCageNo(false);
+    setCageNoOverride("");
     setPicker(null);
     setCreating(true);
     void loadPresets();
@@ -332,7 +336,7 @@ export function BambooTaskListPage() {
         shade: baseInfo.shade,
         grade: baseInfo.grade,
         supplier: baseInfo.supplier.trim(),
-        cage_no: baseInfo.cage_no.trim(),
+        cage_no: (cageNoOverride || baseInfo.cage_no).trim(),
         bundle_count: Number(baseInfo.bundle_count),
         net_weight: netWeight?.value,
         options_version: presets!.options_version,
@@ -382,7 +386,16 @@ export function BambooTaskListPage() {
       setCreating(false);
       navigate(`/mobile/records/${encodeURIComponent(created.record_id)}`);
     } catch (cause) {
-      setFormError(message(cause, pending.createdRecord ? "分选签字失败，可稍后继续；系统不会重复建表。" : "请求结果尚未确认，可稍后用同一请求继续。"));
+      const msg = message(cause, pending.createdRecord ? "分选签字失败，可稍后继续；系统不会重复建表。" : "请求结果尚未确认，可稍后用同一请求继续。");
+      setFormError(msg);
+      setConfirming(false);
+      // Detect duplicate cage error — allow inline edit
+      if (cause instanceof MobileApiError && cause.code === "DUPLICATE_CAGE_NO") {
+        setEditCageNo(true);
+        setCageNoOverride("");
+      }
+      // Allow user to discard the stuck pending submission
+      setPendingSubmission((prev) => prev ? { ...prev, lastError: msg } : prev);
     } finally {
       setSaving(false);
     }
@@ -494,7 +507,7 @@ export function BambooTaskListPage() {
             <div className="banner info">预设选项由管理员后台发布；手机端只能点选，不能临时新增。</div>
             {presetsLoading && <div className="banner info" role="status">正在加载后台发布选项…</div>}
             {presetsError && <div className="banner danger bamboo-preset-error" role="alert"><span>{presetsError}</span><button type="button" className="btn secondary small" disabled={presetsLoading || saving} onClick={() => void loadPresets()}>重新加载</button></div>}
-            {hasPendingSubmission && <div className="banner info" role="status">待继续提交，字段已锁定。继续操作将使用已保存的原始数据。</div>}
+            {hasPendingSubmission && <div className="banner info" role="status">待继续提交，字段已锁定。继续操作将使用已保存的原始数据。{formError && <button type="button" className="btn secondary small" style={{marginLeft:12}} disabled={saving} onClick={() => { clearPendingSortingSubmission(scopedPendingSubmission!); setPendingSubmission(null); setFormError(""); setPresets(null); closeCreateSheet(); }}>放弃并退出</button>}</div>}
             {formError && <div className="banner danger" role="alert">{formError}</div>}
             <div className="field-group field-group--production-method">
               <div className="field">
@@ -604,7 +617,10 @@ export function BambooTaskListPage() {
               recordCreated={createdRecord !== null}
               pending={hasPendingSubmission}
               saving={saving}
-              onCancel={() => setConfirming(false)}
+              editCageNo={editCageNo}
+              cageNoOverride={cageNoOverride}
+              onChangeCageNo={setCageNoOverride}
+              onCancel={() => { setConfirming(false); setEditCageNo(false); }}
               onDefer={closeCreateSheet}
               onConfirm={() => { void createRecord(); }}
             />
@@ -708,6 +724,9 @@ function ConfirmCreateModal({
   recordCreated,
   pending,
   saving,
+  editCageNo,
+  cageNoOverride,
+  onChangeCageNo,
   onCancel,
   onDefer,
   onConfirm,
@@ -720,6 +739,9 @@ function ConfirmCreateModal({
   recordCreated: boolean;
   pending: boolean;
   saving: boolean;
+  editCageNo: boolean;
+  cageNoOverride: string;
+  onChangeCageNo: (v: string) => void;
   onCancel: () => void;
   onDefer: () => void;
   onConfirm: () => void;
@@ -735,6 +757,14 @@ function ConfirmCreateModal({
         {recordCreated && <div className="banner info">分选表已建立；本次重试只继续签字，不会重复创建。</div>}
         {pending && !recordCreated && <div className="banner info">上次建表请求结果尚未确认；继续会用原幂等键重放，不会换键重建。</div>}
         {error && <div className="banner danger" role="alert">{error}</div>}
+        {editCageNo && !recordCreated && (
+          <div className="field" style={{marginBottom:12}}>
+            <span className="field-label">修改笼号后重试</span>
+            <input type="text" className="field-input" value={cageNoOverride || draft.cage_no.trim()}
+              onChange={(e) => onChangeCageNo(e.target.value)}
+              placeholder="输入新笼号" disabled={saving} autoFocus />
+          </div>
+        )}
         <div className="confirm-summary">
           <b>{draft.mode}</b><br />
           {draft.grade}级 · {draft.length} m · {draft.shade} · {draft.bundle_count} 把 · 笼号 {draft.cage_no.trim()}<br />

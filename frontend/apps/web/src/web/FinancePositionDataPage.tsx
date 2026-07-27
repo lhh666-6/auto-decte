@@ -4,6 +4,7 @@ interface PositionDataItem {
   record_id: string; display_no: string; form_type: string;
   factory_id: string; date: string; employee_code: string;
   employee_name: string; stage: string; cage_no: string;
+  original_grade: string; effective_grade: string;
   values: Record<string, unknown>; status: string; current_stage: string;
 }
 
@@ -16,11 +17,15 @@ const POSITIONS = [
   { value: "DRYING", label: "干燥工" },
 ];
 
+const STATUS_CN: Record<string, string> = {
+  ACTIVE: "进行中", COMPLETED: "已完成", EARLY_TERMINATED: "已终止",
+};
+
 /* Per-position column definitions */
-const SORT_COLUMNS = ["日期","员工","笼号","把数","长度","深浅","品级","最终评级","净重","含水率","状态"];
-const DIP_COLUMNS  = ["日期","员工","笼号","胶前重","胶后重","上胶量","胶液批次","浸胶开始","浸胶结束","含水率","最终评级"];
-const DRY_COLUMNS  = ["日期","员工","笼号","干燥架号","架数","干燥开始","干燥结束","含水率","最终评级"];
-const ALL_COLUMNS  = ["日期","工号","姓名","岗位","笼号","表号","状态"];
+const SORT_COLUMNS = ["日期","员工","笼号","把数","长度","深浅","原评级","最终评级","净重","含水率","状态"];
+const DIP_COLUMNS  = ["日期","员工","笼号","胶前重","胶后重","上胶量","胶液批次","浸胶开始","浸胶结束","含水率","原评级","最终评级"];
+const DRY_COLUMNS  = ["日期","员工","笼号","干燥架号","架数","干燥开始","干燥结束","含水率","原评级","最终评级"];
+const ALL_COLUMNS  = ["日期","工号","姓名","岗位","笼号","表号","把数","长度","深浅","胶前重","胶后重","上胶量","胶液批次","浸胶开始","浸胶结束","干燥架号","架数","干燥开始","干燥结束","净重","含水率","原评级","最终评级","状态"];
 
 function columnsFor(stage: string): string[] {
   if (stage === "SORT") return SORT_COLUMNS;
@@ -32,16 +37,15 @@ function columnsFor(stage: string): string[] {
 function extractVal(v: Record<string, unknown>, key: string): string {
   const m: Record<string, string[]> = {
     把数: ["bundle_count"], 长度: ["length"], 深浅: ["shade"],
-    品级: ["grade"], 最终评级: ["effective_grade","grade"],
-    净重: ["net_weight"], 含水率: ["moisture_average","moisture"],
+    净重: ["net_weight"], 含水率: ["moisture"],
     胶前重: ["glue_before_weight"], 胶后重: ["glue_after_weight"],
     上胶量: ["glue_gain"], 胶液批次: ["glue_batch"],
     浸胶开始: ["dipping_start"], 浸胶结束: ["dipping_end"],
     干燥架号: ["rack_numbers"], 架数: ["rack_count"],
     干燥开始: ["drying_start"], 干燥结束: ["drying_end"],
   };
-  const keys = m[key] || [key];
-  for (const k of keys) {
+  const ks = m[key] || [key];
+  for (const k of ks) {
     const raw = v[k];
     if (raw !== undefined && raw !== null && raw !== "") {
       if (Array.isArray(raw)) return raw.join(", ");
@@ -172,7 +176,9 @@ export function FinancePositionDataPage() {
                     if (c === "岗位") return <td key={c}>{POSITIONS.find(p=>p.value===item.stage)?.label ?? item.stage}</td>;
                     if (c === "笼号") return <td key={c}>{item.cage_no || "—"}</td>;
                     if (c === "表号") return <td key={c}>{item.display_no}</td>;
-                    if (c === "状态") return <td key={c}>{item.status}</td>;
+                    if (c === "状态") return <td key={c}>{STATUS_CN[item.status] ?? item.status}</td>;
+                    if (c === "原评级") return <td key={c}>{item.original_grade || "—"}</td>;
+                    if (c === "最终评级") return <td key={c}>{item.effective_grade || "—"}</td>;
                     return <td key={c}>{extractVal(item.values, c)}</td>;
                   })}
                 </tr>

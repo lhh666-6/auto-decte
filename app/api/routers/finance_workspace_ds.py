@@ -921,62 +921,46 @@ def export_position_data(
         employee_code=employee_code or None,
     )
 
-    # V1 §13: Fixed column schemas per position
+    # V1: Fixed column schemas per position
     SORT_COLUMNS = [
         "日期", "员工工号", "员工姓名", "工厂", "表号", "笼号",
         "把数", "长度", "深浅", "原评级", "最终评级", "净重", "含水率", "状态",
     ]
     DIPPING_COLUMNS = [
         "日期", "员工工号", "员工姓名", "工厂", "表号", "笼号",
-        "胶前重", "胶后重", "上胶量", "胶液批次", "开始时间", "结束时间",
+        "胶前重", "胶后重", "上胶量", "胶液批次", "浸胶开始", "浸胶结束",
         "含水率", "原评级", "最终评级", "状态",
     ]
     DRYING_COLUMNS = [
         "日期", "员工工号", "员工姓名", "工厂", "表号", "笼号",
-        "干燥架号", "架数", "开始时间", "结束时间",
+        "干燥架号", "架数", "干燥开始", "干燥结束",
         "含水率", "原评级", "最终评级", "状态",
     ]
 
     # Value-key to column label mapping per stage
+    def _val(vals: dict, key: str) -> str:
+        raw = vals.get(key, "")
+        if isinstance(raw, list):
+            return ", ".join(str(x) for x in raw)
+        return str(raw) if raw else ""
+
     SORT_VALUE_KEYS = {
         "bundle_count": "把数", "length": "长度", "shade": "深浅",
-        "net_weight": "净重", "moisture_average": "含水率",
+        "net_weight": "净重", "moisture": "含水率",
     }
     DIPPING_VALUE_KEYS = {
         "glue_before_weight": "胶前重", "glue_after_weight": "胶后重",
         "glue_gain": "上胶量", "glue_batch": "胶液批次",
-        "started_at": "开始时间", "ended_at": "结束时间",
-        "moisture_average": "含水率",
+        "dipping_start": "浸胶开始", "dipping_end": "浸胶结束",
+        "moisture": "含水率",
     }
     DRYING_VALUE_KEYS = {
         "rack_numbers": "干燥架号", "rack_count": "架数",
-        "started_at": "开始时间", "ended_at": "结束时间",
-        "moisture_average": "含水率",
+        "drying_start": "干燥开始", "drying_end": "干燥结束",
+        "moisture": "含水率",
     }
 
-    stage_col = stage or ""
-    if stage_col == "SORT":
-        columns = SORT_COLUMNS
-        value_keys = SORT_VALUE_KEYS
-    elif stage_col == "DIPPING":
-        columns = DIPPING_COLUMNS
-        value_keys = DIPPING_VALUE_KEYS
-    elif stage_col == "DRYING":
-        columns = DRYING_COLUMNS
-        value_keys = DRYING_VALUE_KEYS
-    else:
-        # Mixed/unknown: use all columns
-        columns = SORT_COLUMNS
-        value_keys = SORT_VALUE_KEYS
-
-    from openpyxl import Workbook
-
-    wb = Workbook()
-    ws = wb.active
-    ws.title = "岗位数据"
-    ws.append(columns)
-
-    for item in items:
+    def _make_row(item: dict, columns: list[str], value_keys: dict[str, str]) -> list[str]:
         vals = item.get("values", {}) or {}
         row_data = {
             "日期": (item.get("date", "") or "")[:10],
@@ -989,10 +973,44 @@ def export_position_data(
             "最终评级": item.get("effective_grade", ""),
             "状态": item.get("status", ""),
         }
-        # Map value keys to their Chinese labels
         for vk, label in value_keys.items():
-            row_data[label] = str(vals.get(vk, ""))
-        ws.append([row_data.get(col, "") for col in columns])
+            row_data[label] = _val(vals, vk)
+        return [row_data.get(col, "") for col in columns]
+
+    stage_col = stage or ""
+
+    from openpyxl import Workbook
+    wb = Workbook()
+
+    if stage_col in ("SORT", "DIPPING", "DRYING"):
+        if stage_col == "SORT":
+            columns, value_keys = SORT_COLUMNS, SORT_VALUE_KEYS
+        elif stage_col == "DIPPING":
+            columns, value_keys = DIPPING_COLUMNS, DIPPING_VALUE_KEYS
+        else:
+            columns, value_keys = DRYING_COLUMNS, DRYING_VALUE_KEYS
+        ws = wb.active
+        ws.title = "岗位数据"
+        ws.append(columns)
+        for item in items:
+            ws.append(_make_row(item, columns, value_keys))
+    else:
+        # "全部岗位": three sheets — SORT / DIPPING / DRYING
+        stage_specs = [
+            ("分选工", SORT_COLUMNS, SORT_VALUE_KEYS, "SORT"),
+            ("浸胶工", DIPPING_COLUMNS, DIPPING_VALUE_KEYS, "DIPPING"),
+            ("干燥工", DRYING_COLUMNS, DRYING_VALUE_KEYS, "DRYING"),
+        ]
+        for idx, (sheet_title, columns, value_keys, stage_filter) in enumerate(stage_specs):
+            if idx == 0:
+                ws = wb.active
+            else:
+                ws = wb.create_sheet()
+            ws.title = sheet_title
+            ws.append(columns)
+            stage_items = [i for i in items if i.get("stage") == stage_filter]
+            for item in stage_items:
+                ws.append(_make_row(item, columns, value_keys))
 
     # V1 §13: Add metadata sheet
     ws_meta = wb.create_sheet("导出说明")

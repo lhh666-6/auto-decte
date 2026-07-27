@@ -20,6 +20,9 @@ const TRANSFER_STATUS_LABELS: Record<string, string> = {
   EXECUTED: "已执行",
   CANCELLED: "已取消",
 };
+const TRANSFER_TYPE_LABELS: Record<string, string> = {
+  ROLE_CHANGE: "岗位调动", FACTORY_TRANSFER: "跨厂调动",
+};
 
 export function PlantEmployeesPage() {
   const { session } = useWebSession();
@@ -381,7 +384,7 @@ export function PlantEmployeesPage() {
               </header>
               <p className="signature-muted">
                 {item.source_factory_id} → {item.target_factory_id}
-                {item.transfer_type && ` · 类型：${item.transfer_type}`}
+                {item.transfer_type ? ` · 类型：${TRANSFER_TYPE_LABELS[item.transfer_type] ?? item.transfer_type}` : ""}
                 {item.reason && ` · 原因：${item.reason}`}
               </p>
 

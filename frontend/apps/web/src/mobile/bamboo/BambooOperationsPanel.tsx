@@ -213,7 +213,7 @@ export function BambooOperationsPanel({
       <strong>{inspection.serial_no} · {inspection.target_stage} · 平均 {inspection.average_value}</strong>
       <span>{inspection.conclusion === "CONFORMING" ? "合格" : "异常"} · {inspection.actor_name}</span>
       <p>{inspection.note}</p>
-      <p>留痕：{inspection.evidence.map((item) => item.evidence_type).join("、") || "无"}</p>
+      <p>留痕：{inspection.evidence.map((item) => evidenceLabel(item.evidence_type)).join("、") || "无"}</p>
     </article>
   ));
 
@@ -259,7 +259,7 @@ export function BambooOperationsPanel({
                 <div><dt>检测结论</dt><dd>{submitSuccess.conclusion === "CONFORMING" ? "合格" : "异常"}</dd></div>
                 <div><dt>平均值</dt><dd>{submitSuccess.average_value}</dd></div>
                 <div><dt>检测人</dt><dd>{submitSuccess.actor_name}</dd></div>
-                <div><dt>留痕</dt><dd>{submitSuccess.evidence.map((item) => item.evidence_type).join("、") || "无"}</dd></div>
+                <div><dt>留痕</dt><dd>{submitSuccess.evidence.map((item) => evidenceLabel(item.evidence_type)).join("、") || "无"}</dd></div>
                 {submitSuccess.note && <div><dt>备注</dt><dd>{submitSuccess.note}</dd></div>}
               </dl>
               <button type="button" className="btn secondary" onClick={() => setSubmitSuccess(null)}>关闭</button>
@@ -481,4 +481,7 @@ function formatDuration(seconds: number): string {
 
 function inspectionStatus(status: string): string {
   return ({ OPEN: "待领取", CLAIMED: "检测中", COMPLETED: "检测完成", EARLY_TERMINATED: "厂长提前终止", EXPIRED: "检测超时", APPEAL_CLAIMED: "申诉填写中", APPEAL_SUBMITTED: "申诉待审批", APPEAL_APPROVED: "申诉已通过", APPEAL_REJECTED: "申诉已驳回" } as Record<string, string>)[status] ?? status;
+}
+function evidenceLabel(etype: string): string {
+  return ({ PHOTO: "照片", AUDIO: "录音", TEXT: "文字" } as Record<string, string>)[etype] ?? etype;
 }

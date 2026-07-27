@@ -662,7 +662,7 @@ export function FinanceLedgerPage({ scope }: { scope: LedgerScope }) {
       <div className="ledger-case-list">
         {corrections.map((item) => (
           <article key={item.correction_id}>
-            <strong>{item.original_submission_id} · {item.status}</strong>
+            <strong>{item.original_submission_id} · <StatusBadge status={item.status} /></strong>
             <span>{item.reason}</span>
             {item.status === "REPLACED" && (
               <div>

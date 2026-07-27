@@ -253,6 +253,26 @@ class SqlAlchemyBambooProcessRepository:
                 )
         return self.get(row.record_id)
 
+    def find_active_by_cage(self, factory_id: str, cage_no: str) -> BambooRecord | None:
+        """Return an ACTIVE SORTING record with the same cage_no in the factory."""
+        if not cage_no:
+            return None
+        import json
+        target = str(cage_no).strip()
+        with Session(self._engine) as session:
+            rows = session.scalars(
+                select(BambooRecordRow).where(
+                    BambooRecordRow.factory_id == factory_id,
+                    BambooRecordRow.form_type == "SORTING",
+                    BambooRecordRow.status == "ACTIVE",
+                )
+            ).all()
+            for row in rows:
+                base = row.base_info or {}
+                if str(base.get("cage_no", "")).strip() == target:
+                    return self.get(row.record_id)
+            return None
+
     def find_idempotent_result(
         self,
         actor_id: str,

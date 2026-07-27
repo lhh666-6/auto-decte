@@ -206,7 +206,7 @@ export function AdminOrganizationPage() {
     if (!createEmpFactory) { setCreateEmpError("请选择所属工厂"); return; }
     if (!createEmpJob) { setCreateEmpError("请选择岗位"); return; }
     if (!createEmpPin || createEmpPin.length < 4) { setCreateEmpError("PIN 至少 4 位数字"); return; }
-    if (createEmpPin !== createEmpPinConfirm) { setCreateEmpError("两次输入的 PIN 不一致"); return; }
+    if (createEmpPin !== createEmpPinConfirm) { setCreateEmpError("两次输入的 密码 不一致"); return; }
 
     const job = jobPresets.find((j) => j.label === createEmpJob);
     if (!job) { setCreateEmpError("所选岗位无效"); return; }
@@ -817,10 +817,10 @@ export function AdminOrganizationPage() {
                   <details className="admin-org-tech-fold" style={{ marginTop: 16 }}>
                     <summary className="admin-org-tech-fold-summary">技术详情</summary>
                     <div style={{ marginTop: 8, padding: "0 8px" }}>
-                      <DetailField label="Bamboo Role" value={selectedEmployee.role_code} />
-                      <DetailField label="Allowed Stage" value={extStr(selectedEmployee, "allowed_stage") || "—"} />
-                      <DetailField label="Factory ID" value={selectedEmployee.factory_id} />
-                      <DetailField label="Role Code" value={selectedEmployee.role_code} />
+                      <DetailField label="生产角色" value={selectedEmployee.role_code} />
+                      <DetailField label="允许工序" value={extStr(selectedEmployee, "allowed_stage") || "—"} />
+                      <DetailField label="工厂编号" value={selectedEmployee.factory_id} />
+                      <DetailField label="角色代码" value={selectedEmployee.role_code} />
                     </div>
                   </details>
 
@@ -1092,7 +1092,7 @@ export function AdminOrganizationPage() {
                     </div>
                   )}
                   <label>
-                    初始 PIN *
+                    初始 密码 *
                     <input
                       type="password"
                       value={createEmpPin}
@@ -1108,12 +1108,12 @@ export function AdminOrganizationPage() {
                     </span>
                   </label>
                   <label>
-                    确认 PIN *
+                    确认 密码 *
                     <input
                       type="password"
                       value={createEmpPinConfirm}
                       onChange={(e) => setCreateEmpPinConfirm(e.target.value.replace(/\D/g, ""))}
-                      placeholder="再次输入 PIN"
+                      placeholder="再次输入 密码"
                       maxLength={12}
                       disabled={createEmpSubmitting}
                       inputMode="numeric"
@@ -1209,7 +1209,7 @@ export function AdminOrganizationPage() {
                       <span className="wizard-confirm-value">{createEmpResult.job_label}</span>
                     </div>
                     <div className="wizard-confirm-row">
-                      <span className="wizard-confirm-label">初始 PIN</span>
+                      <span className="wizard-confirm-label">初始 密码</span>
                       <span className="wizard-confirm-value">{createEmpPin}</span>
                     </div>
                   </div>

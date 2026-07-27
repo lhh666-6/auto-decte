@@ -5,6 +5,18 @@ import { DetailDrawer, DetailField } from "./shared/DetailDrawer";
 import { GovernedDataTable } from "./shared/GovernedDataTable";
 import type { DataColumn } from "./shared/GovernedDataTable";
 
+const ACTION_LABELS: Record<string, string> = {
+  EMPLOYEE_CREATED: "创建员工", FACTORY_CREATED: "创建工厂",
+  FACTORY_DEACTIVATED: "停用工厂", FACTORY_ACTIVATED: "启用工厂",
+  RECORD_CREATED: "创建记录", INSPECTION_SUBMITTED: "提交检测",
+  INSPECTION_TERMINATED: "终止检测", QUALITY_DISPOSITION: "质量处置",
+  FORM_ACTIVATED: "启用表单", FORM_DEACTIVATED: "停用表单",
+  ROLE_ASSIGNED: "分配角色", ROLE_REVOKED: "撤销角色",
+  ACCOUNT_FROZEN: "冻结账户", ACCOUNT_RESTORED: "恢复账户",
+  ACCOUNT_REMOVED: "移除账户",
+};
+function actionLabel(action: string): string { return ACTION_LABELS[action] ?? action; }
+
 interface AuditEntry {
   id: string;
   timestamp: string;
@@ -132,7 +144,7 @@ export function AdminAuditPage() {
     {
       key: "action",
       header: "动作",
-      render: (row) => row.action,
+      render: (row) => actionLabel(row.action),
     },
     {
       key: "object",
@@ -217,7 +229,7 @@ export function AdminAuditPage() {
           {actionOptions.length > 0 ? (
             <select value={filterAction} onChange={(e) => setFilterAction(e.target.value)}>
               <option value="">全部</option>
-              {actionOptions.map((a) => <option key={a} value={a}>{a}</option>)}
+              {actionOptions.map((a) => <option key={a} value={a}>{actionLabel(a)}</option>)}
             </select>
           ) : (
             <input
@@ -284,7 +296,7 @@ export function AdminAuditPage() {
             <DetailField label="时间" value={formatTimestamp(selectedEntry.timestamp)} />
             <DetailField label="操作者" value={selectedEntry.actor_name} />
             <DetailField label="操作者工号" value={selectedEntry.actor_code} />
-            <DetailField label="动作" value={selectedEntry.action} />
+            <DetailField label="动作" value={actionLabel(selectedEntry.action)} />
             <DetailField label="对象类型" value={selectedEntry.object_type} />
             <DetailField label="对象 ID" value={selectedEntry.object_id} />
             <DetailField label="工厂" value={selectedEntry.factory_id} />

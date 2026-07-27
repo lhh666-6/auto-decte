@@ -83,10 +83,10 @@ REWORK_DEPENDENCIES = {
     ),
 }
 DEFAULT_SPECIAL_CLASSES = ["直装", "防霉"]
-DEFAULT_LENGTHS = ["2.1", "2.3", "2.5"]
+DEFAULT_LENGTHS = ["1.93", "2.1", "2.35"]
 DEFAULT_SHADES = ["深", "浅"]
 DEFAULT_GRADES = ["A", "B"]
-DEFAULT_WEIGHT_FACTORS = {"2.1": "5", "2.3": "6", "2.5": "7"}
+DEFAULT_WEIGHT_FACTORS = {"1.93": "5", "2.1": "5", "2.35": "6"}
 DEFAULT_ROLE_DEFINITIONS = {
     "SORT_OPERATOR": ("分选工", "PRODUCTION", True),
     "DIPPING_OPERATOR": ("浸胶工", "PRODUCTION", True),
@@ -1366,7 +1366,7 @@ class BambooOperationsService:
                     "cage_no": str(base.get("cage_no", "")),
                     "original_grade": original_grade,
                     "effective_grade": effective_grade,
-                    "values": submission.values,
+                    "values": {**base, **(submission.values or {})},
                     "status": record.status,
                     "current_stage": record.current_stage or "",
                 })

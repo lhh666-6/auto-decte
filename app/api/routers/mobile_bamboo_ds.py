@@ -231,6 +231,20 @@ def create_record(
     ).encode()
     create_payload_hash = hashlib.sha256(canonical).hexdigest()
 
+    # Prevent duplicate cage_no for ACTIVE SORTING records
+    if form_type == BambooFormType.SORTING:
+        dup = services.bamboo_repository.find_active_by_cage(
+            actor.factory_id, base_info.get("cage_no", "")
+        )
+        if dup is not None:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "DUPLICATE_CAGE_NO",
+                    "detail": f"笼号 {base_info.get('cage_no')!r} 已经存在有效记录，请使用不同的笼号。",
+                },
+            )
+
     try:
         repeated = services.bamboo_repository.find_created_result(
             actor.actor_id, key, payload_hash=create_payload_hash

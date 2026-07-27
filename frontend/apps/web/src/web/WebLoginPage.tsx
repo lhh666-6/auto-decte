@@ -47,8 +47,8 @@ export function WebLoginPage() {
           <input name="employee_code" aria-label="员工号" autoComplete="username" required />
         </label>
         <label>
-          PIN
-          <input name="pin" type="password" aria-label="PIN" autoComplete="current-password" required />
+          密码
+          <input name="pin" type="password" aria-label="密码" autoComplete="current-password" required />
         </label>
         <button type="submit" disabled={pending}>
           {pending ? "正在登录…" : "登录工作区"}

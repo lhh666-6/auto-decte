@@ -38,7 +38,7 @@ export function MobileLoginPage() {
     <div className="mobile-page mobile-login-page bamboo-v3-login">
       <header className="mobile-login-header">
         <span className="bamboo-v3-login-mark" aria-hidden="true">竹</span>
-        <span className="bamboo-v3-eyebrow">BAMBOO WORKFLOW</span>
+        <span className="bamboo-v3-eyebrow">竹条生产系统</span>
         <h1>竹丝工序记录</h1>
         <p>工序流转与签字记录</p>
       </header>

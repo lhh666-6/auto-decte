@@ -110,6 +110,78 @@ const STATUS_META: Record<string, { display: string; color: string; bg: string; 
     bg: "#fce4e4",
     description: "处理失败",
   },
+  COMPLETED: {
+    display: "已完成",
+    color: "#1a6b3c",
+    bg: "#d4edda",
+    description: "已完成",
+  },
+  EXPIRED: {
+    display: "已过期",
+    color: "#596579",
+    bg: "#e8ecf1",
+    description: "已过期",
+  },
+  SUPERSEDED: {
+    display: "已被替代",
+    color: "#8a6300",
+    bg: "#fff3cd",
+    description: "已被新版本替代",
+  },
+  OPEN: {
+    display: "待处理",
+    color: "#155eef",
+    bg: "#e0ecfe",
+    description: "待处理",
+  },
+  CLAIMED: {
+    display: "处理中",
+    color: "#d97706",
+    bg: "#fff7ed",
+    description: "已被认领处理中",
+  },
+  EARLY_TERMINATED: {
+    display: "已终止",
+    color: "#596579",
+    bg: "#e8ecf1",
+    description: "已提前终止",
+  },
+  RETURNED: {
+    display: "已退回",
+    color: "#9d2424",
+    bg: "#fce4e4",
+    description: "已退回",
+  },
+  OVERRULED: {
+    display: "已驳回",
+    color: "#9d2424",
+    bg: "#fce4e4",
+    description: "已驳回",
+  },
+  CLOSED: {
+    display: "已关闭",
+    color: "#596579",
+    bg: "#e8ecf1",
+    description: "已关闭",
+  },
+  APPEAL_SUBMITTED: {
+    display: "上诉待审批",
+    color: "#d97706",
+    bg: "#fff7ed",
+    description: "上诉待审批",
+  },
+  APPEAL_APPROVED: {
+    display: "上诉已批准",
+    color: "#1a6b3c",
+    bg: "#d4edda",
+    description: "上诉已批准",
+  },
+  APPEAL_REJECTED: {
+    display: "上诉已驳回",
+    color: "#9d2424",
+    bg: "#fce4e4",
+    description: "上诉已驳回",
+  },
 };
 
 /** 状态指示灯符号（辅助颜色传达，确保颜色不是唯一的信息传达方式） */
@@ -130,6 +202,18 @@ const STATUS_ICON: Record<string, string> = {
   CONFIRMED: "✓",
   SUBMITTED: "◆",
   FAILED: "✗",
+  COMPLETED: "✓",
+  EXPIRED: "✗",
+  SUPERSEDED: "↺",
+  OPEN: "○",
+  CLAIMED: "◆",
+  EARLY_TERMINATED: "✗",
+  RETURNED: "↩",
+  OVERRULED: "✗",
+  CLOSED: "✓",
+  APPEAL_SUBMITTED: "◆",
+  APPEAL_APPROVED: "✓",
+  APPEAL_REJECTED: "✗",
 };
 
 export function StatusBadge({ status }: { status: string }) {
